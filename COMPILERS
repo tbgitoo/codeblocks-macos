@@ -1,5 +1,24 @@
 What follows is a description of the steps required to install a compiler for use in Code::Blocks.
 
+macOS
+-----
+This unofficial macOS build does not include a compiler. Install Apple's clang from the Xcode Command Line Tools.
+
+In Terminal, run:
+
+	xcode-select --install
+
+Accept the dialog. When the install finishes, these commands should succeed:
+
+	clang --version
+	clang++ --version
+
+That places clang and clang++ in /usr/bin. The full Xcode app from the Mac App Store also provides them; the Command Line Tools alone are enough to build console C and C++ programs.
+
+In Code::Blocks, open Settings -> Compiler, choose "LLVM Clang Compiler", and set the compiler's installation directory to /usr if Auto-detect does not find it. The C compiler is clang, the C++ compiler and linker are clang++, and the archiver is ar (or llvm-ar when present).
+
+Apple does not ship GDB. Debugging needs a separate GDB binary that works on your Mac; point Settings -> Debugger -> GDB/CDB debugger at that executable when you have one.
+
 Unix platforms
 ----------------
 Code::Blocks comes with pre-configured settings for the GNU GCC compiler & GDB debugger. Just make sure they are installed. This depends on your distribution, but virtually all wide-spread distributions today include them by default.
@@ -41,4 +60,3 @@ Compiler-neutral setup steps
 Now that you have downloaded the setup file, launch the installation by double-clicking on the setup file. The actual installation process is really simple. Just press "Next" all the way and you 're done.
 
 If you installed the compiler on a directory other than its default, launch Code::Blocks. If it is the first time you launch it, the compiler will be auto-detected. If not, go to "Settings/Configure plugins/Compiler", select the compiler you installed, switch to the "Programs" tab and press "Auto-detect". If you get a message saying that the compiler was auto-detected, congratulations! If not, then press the button with the three dots next to the "Auto-detect" button and select the installation directory of your compiler manually.
-
