@@ -848,10 +848,18 @@ int cbDebuggerPlugin::RunNixConsole(wxString &consoleTty)
     wxString term = Manager::Get()->GetConfigManager("app")->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
 
     term.Replace("$TITLE", wxString("'")+_("Program Console")+"'");
-    cmd << term << " ";
+    cmd << term;
 
     const wxString &sleepCommand = MakeSleepCommand();
-    cmd << sleepCommand;
+    // macOS terminal templates (osascript "do script \"$SCRIPT\"") run whatever
+    // is substituted for $SCRIPT. This must happen before ReplaceEnvVars(): an
+    // unset SCRIPT is expanded to empty. Appending the sleep command instead
+    // only adds an extra osascript argument, so no sleep process appears on the
+    // terminal slave and the TTY search below waits until it times out.
+    // Templates without $SCRIPT (for example "xterm -T $TITLE -e") still get the
+    // sleep command appended, which is what their -e option consumes.
+    if (!cmd.Replace("$SCRIPT", sleepCommand))
+        cmd << " " << sleepCommand;
 
     Manager::Get()->GetMacrosManager()->ReplaceEnvVars(cmd);
 
