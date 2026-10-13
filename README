@@ -1,7 +1,7 @@
 This is the Code::Blocks IDE version 25.03
-For the unofficial macOS build, see the file "README.macos"
-For license info, see the file "COPYING"
-For compilers info, see the file "COMPILERS"
-For Debian packaging notes, see the file "README.debian"
-For release preparations, see the file "README.release"
+For the unofficial macOS build, see [README.macos.md](README.macos.md).
+For license info, see [COPYING](COPYING).
+For compilers info, see [COMPILERS](COMPILERS).
+For Debian packaging notes, see [README.debian](README.debian).
+For release preparations, see [README.release](README.release).
 For support/feedback visit http://www.codeblocks.org
