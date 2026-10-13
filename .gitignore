@@ -63,3 +63,5 @@ src/src/codeblocks
 src/tools/ConsoleRunner/cb_console_runner
 src/tools/cb_share_config/cb_share_config
 src/build_tools/autorevision/auto_revision
+
+CodeBlocks-macos-arm64.dmg
