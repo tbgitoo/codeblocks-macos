@@ -24,3 +24,15 @@ Makefile.in
 *.cbTemp
 **/.cache
 **/compile_commands.json
+
+# Local build output
+_cb_install/
+config.log
+config.status
+autom4te.cache/
+.deps/
+.libs/
+*.o
+*.lo
+*.la
+*.gch
