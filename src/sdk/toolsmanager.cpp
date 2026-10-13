@@ -118,9 +118,20 @@ bool ToolsManager::Execute(const cbTool* tool)
             cmdline << baseDir << wxT("/" CONSOLE_RUNNER " ");
     }
 
-    if (!cmdline.Replace("$SCRIPT", cmd << " " << params))
-        // if they didn't specify $SCRIPT, append:
-        cmdline << cmd;
+    // Debugger and Build and Run fill this same $SCRIPT with their own
+    // payloads. A tool must do the same, not leave $SCRIPT for the shell.
+    // On macOS the terminal template is an osascript string, so quotes in the
+    // payload have to be AppleScript concatenations. A tool that is itself
+    // osascript would otherwise close that string early.
+    wxString payload = cmd + " " + params;
+    wxString embedded = payload;
+    if (platform::macosx)
+    {
+        embedded.Replace("\"", "\"&quote&\"", true);
+        embedded.Replace("'", "\"&ASCII character 39&\"", true);
+    }
+    if (!cmdline.Replace("$SCRIPT", embedded))
+        cmdline << payload;
 
     if(!(Manager::Get()->GetMacrosManager()))
         return false; // We cannot afford the Macros Manager to fail here!
