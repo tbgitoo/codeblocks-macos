@@ -4,12 +4,15 @@ Unofficial native macOS build of Code::Blocks for Apple Silicon, on top of trunk
 
 The IDE is GPL-3 (`COPYING`). The SDK is LGPL-3, as stated in the SDK file headers.
 
-On macOS the default terminal command is an `osascript` that runs whatever is substituted for `$SCRIPT`. These changes fill that in:
+On macOS the default terminal command is an `osascript` that runs `clear; $SCRIPT; exit` in Terminal.app. No home-directory scripts are required. `clear` hides the long helper command line; `exit` leaves no interactive shell after the helper finishes. If Terminal was not already running, the script reuses the window created on launch so Run/Debug do not open a second empty window.
 
-- The debugger console runs its `sleep` command inside Terminal, so the debugger can find the window and attach the program's input and output to it.
-- A tool launched in a new console is placed in that same `$SCRIPT`, with quotes escaped so an `osascript` tool does not close the Terminal string early.
+- **Run:** `$SCRIPT` is the bundled `cb_console_runner` plus the program. The runner shows “Press any key to continue.” inside Terminal; Code::Blocks does not wait for that keypress.
+- **Debug:** `$SCRIPT` is the bundled `cb_debug_console_hold` with a unique token. It keeps the Terminal tty alive for GDB. On normal inferior exit it may show “Press any key to close…” (Code::Blocks does not wait). Stop Debugger / app quit sends a forced signal so the holder exits immediately with no prompt.
+- Tools launched in a new console are placed in the same `$SCRIPT`, with quotes escaped so an `osascript` tool does not close the Terminal string early.
 
-Build and Run already uses `$SCRIPT`. No custom tool is required.
+Helpers live next to the IDE binary (`Contents/MacOS/` in the app bundle), resolved via `ConfigManager::GetExecutableFolder()` (relocatable; not hardcoded to `/Applications`).
+
+An old workaround that wrapped `$SCRIPT` with `~/.codeblocks_run.sh` is detected once and reset to the built-in default. Unrelated custom Terminal commands are left alone.
 
 ### Debugger console and `inferior-tty-claim` (v1.1)
 

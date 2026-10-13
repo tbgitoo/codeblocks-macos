@@ -772,6 +772,9 @@ void GDB_driver::ParseOutput(const wxString& output)
         {
             m_pDBG->Log(lines[i]);
             m_ProgramIsStopped = true;
+            // Soft-finish the Terminal holder (may prompt for a key). Does not
+            // block; later KillConsole will not SIGTERM that waiting helper.
+            m_pDBG->NotifyDebugConsoleFinished();
             QueueCommand(new DebuggerCmd(this, "quit"));
             m_IsStarted = false;
         }

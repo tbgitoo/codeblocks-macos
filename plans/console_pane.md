@@ -177,5 +177,5 @@ This disables the operation that causes the warning; it does not filter Terminal
 
 | Version | Status |
 |---------|--------|
-| **v1.1** | **Implemented (uncommitted).** GDB: `set inferior-tty-claim` in companion `binutils-gdb` (`gdb/inflow.c`, Darwin exp updated); rebuilt `build-aarch64-darwin/gdb/gdb`. Smoke test on busy pty: claim **off** → no warning + I/O; claim **on** → full Darwin warning + I/O. CB: macOS probe + deferred Start in `debuggergdb.cpp`; `libdebugger` rebuilt; `README.macos.md` updated. Still worth a manual CB Step-Into with the paired GDB after installing/signing as you usually do. **No commits.** |
+| **v1.1** | **Implemented (uncommitted).** GDB `inferior-tty-claim`; CB probe; bundled `cb_console_runner` + `cb_debug_console_hold` replace `~/.codeblocks_run.sh`/`sleep`; SIGUSR1 soft finish vs SIGTERM force (CB never waits on keypress); one-way Terminal setting migration. |
 | **v2.0** | Planned only; **blocked** until v1.1 implementation and tests are complete. |
