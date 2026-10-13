@@ -1,0 +1,70 @@
+/*
+* This file is part of HexEditor plugin for Code::Blocks Studio
+* Copyright (C) 2008-2009 Bartlomiej Swiecki
+*
+* HexEditor plugin is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; either version 3 of the License, or
+* (at your option) any later version.
+*
+* HexEditor pluging is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with HexEditor. If not, see <http://www.gnu.org/licenses/>.
+*
+* $Revision: 13957 $
+* $Id: CharacterView.h 13957 2026-08-17 11:45:21Z wh11204 $
+* $HeadURL: https://svn.code.sf.net/p/codeblocks/code/trunk/src/plugins/contrib/HexEditor/CharacterView.h $
+*/
+
+#ifndef CHARACTERVIEW_H
+#define CHARACTERVIEW_H
+
+#include "HexEditViewBase.h"
+
+/** \brief Class representing the character view in hes editor */
+class CharacterView: public HexEditViewBase
+{
+    public:
+
+        /** \brief Ctor */
+        explicit CharacterView( HexEditPanel* panel );
+
+    protected:
+
+        /** \brief Called when switching the active state */
+        void OnActivate( bool becomesActive ) override;
+
+        /** \brief Called when character is sent to this view */
+        void OnProcessChar( wxChar ch ) override;
+
+        /** \brief Called when moving left */
+        void OnMoveLeft() override;
+
+        /** \brief Called when moving right */
+        void OnMoveRight() override;
+
+        /** \brief Called when moving up */
+        void OnMoveUp() override;
+
+        /** \brief Called when moving down */
+        void OnMoveDown() override;
+
+        /** \brief Called when there's need to fill line buffer for this content */
+        virtual void OnPutLine( OffsetT startOffset, HexEditLineBuffer& buff, char* content, int bytes );
+
+        /** \brief Get block sizes */
+        void OnGetBlockSizes( int& blockLength, int& blockBytes, int& spacing ) override;
+
+        /** \brief Calculate offset from the beginning of the line at given position */
+        int OnGetOffsetFromColumn( int column, int& positionFlags ) override;
+
+        /** \brief Convert character for the one that will be displayable for sure */
+        inline char Strip( char ch );
+
+};
+
+#endif

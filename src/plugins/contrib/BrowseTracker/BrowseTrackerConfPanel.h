@@ -1,0 +1,75 @@
+/***************************************************************
+ * Name:      BrowseTrackerConfPanel
+ * Purpose:   This class implements the configuration panel used
+ *            in modal dialog called on "Settings" menu click
+ *            and by C::B on "Environment" settings window.
+ * Author:    Pecan
+ * Created:   2008/03/13
+ * Copyright: Pecan
+ * License:   GPL
+ **************************************************************/
+
+#ifndef BROWSETRACKER_CONF_PANEL_H
+#define BROWSETRACKER_CONF_PANEL_H
+
+#include "configurationpanel.h"
+#include "ConfigPanel.h"
+
+class BrowseTracker;
+
+// ----------------------------------------------------------------------------
+class BrowseTrackerConfPanel: public cbConfigurationPanel
+// ----------------------------------------------------------------------------
+{
+  public:
+
+	/** Constructor. */
+    BrowseTrackerConfPanel(BrowseTracker& browseTrackerPlugin, wxWindow* parent = nullptr, wxWindowID id = wxID_ANY);
+
+	/** Returns the title displayed in the left column of the "Settings/Environment" dialog. */
+	wxString GetTitle()          const {return "BrowseTracker";}
+
+	/** Returns string used to build active/inactive images path in the left column
+	  * of the "Settings/Environment" dialog.
+	  */
+	wxString GetBitmapBaseName() const {return "BrowseTracker";}
+
+	/** Called automatically when user clicks on OK
+	  */
+	void OnApply();
+
+	/** Called automatically when user clicks on Cancel
+	  */
+	void OnCancel() {}
+
+  private:
+
+    BrowseTracker& m_BrowseTrackerPlugin;  // Reference on the BrowseTracker plugin we configure
+
+ protected:
+
+    DECLARE_EVENT_TABLE();
+
+    // -----------------------------------------------------
+    // Shell class for wxFormBuilder generated CfgPanel.cpp/h
+    // -----------------------------------------------------
+  public:
+
+        void GetUserOptions( wxString cfgFullPath);
+
+  protected:
+    ConfigPanel* m_pConfigPanel;
+    bool bEdMultiSelOn;
+  private:
+
+    // Virtual event handlers, overriden fron ConfigPanel.h
+    virtual void OnEnableBrowseMarks( wxCommandEvent& event );
+    virtual void OnToggleBrowseMarkKey( wxCommandEvent& event );
+    virtual void OnClearAllBrowseMarksKey( wxCommandEvent& event );
+    virtual void OnWrapJumpEntries( wxCommandEvent& event );
+    virtual void OnShowToolbar( wxCommandEvent& event );
+    virtual void OnActivatePrevEd( wxCommandEvent& event );
+    virtual void OnJumpTrackerSpinCtrl( wxSpinEvent& event );
+
+};
+#endif // BROWSETRACKER_CONF_PANEL_H
