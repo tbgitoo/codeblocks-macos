@@ -748,9 +748,19 @@ void cbDebuggerPlugin::OnCompilerFinished(cb_unused CodeBlocksEvent& event)
 #ifndef __WXMSW__
 namespace
 {
-wxString MakeSleepCommand()
+// Unique token so `ps` can find the holder among other processes. Formerly a
+// huge `sleep N` delay; now the argument to bundled cb_debug_console_hold.
+unsigned long MakeConsoleHoldToken()
 {
-    return wxString::Format("sleep %lu", 80000000 + ::wxGetProcessId());
+    return 80000000ul + static_cast<unsigned long>(::wxGetProcessId());
+}
+
+wxString MakeDebugConsoleHoldCommand()
+{
+    wxString hold = ConfigManager::GetExecutableFolder() + wxFILE_SEP_PATH
+                    + "cb_debug_console_hold";
+    QuoteStringIfNeeded(hold);
+    return wxString::Format("%s %lu", hold, MakeConsoleHoldToken());
 }
 
 struct ConsoleInfo
@@ -760,7 +770,7 @@ struct ConsoleInfo
     bool IsValid() const { return !ttyPath.empty() && sleepPID > 0; }
 
     wxString ttyPath;
-    int sleepPID;
+    int sleepPID; // PID of the tty holder (historically sleep; now cb_debug_console_hold)
 };
 
 ConsoleInfo GetConsoleTty(int consolePID)
@@ -773,8 +783,9 @@ ConsoleInfo GetConsoleTty(int consolePID)
     if (result != 0)
         return ConsoleInfo();
 
-    // find task with our unique sleep time
-    const wxString &uniqueSleepTimeStr = MakeSleepCommand();
+    // Match the unique hold token (also present in the Terminal -e / $SCRIPT line).
+    const wxString uniqueHoldToken = wxString::Format("%lu", MakeConsoleHoldToken());
+    const wxString holdNeedle = "cb_debug_console_hold " + uniqueHoldToken;
 
     // search the output of "ps pid" command
     int count = psOutput.GetCount();
@@ -785,23 +796,20 @@ ConsoleInfo GetConsoleTty(int consolePID)
         // The output of ps looks like:
         // TT       PID   COMMAND
         // pts/0    13342 /bin/sh ./run.sh
-        // pts/0    13343 /home/pecanpecan/devel/trunk/src/devel/codeblocks
-        // pts/0    13361 /usr/bin/gdb -nx -fullname -quiet -args ./conio
-        // pts/0    13362 xterm -font -*-*-*-*-*-*-20-*-*-*-*-*-*-* -T Program Console -e sleep 93343
-        // pts/2    13363 sleep 93343
-        // ?        13365 /home/pecan/proj/conio/conio
+        // pts/0    13362 xterm … -e /path/cb_debug_console_hold 80012345
+        // pts/2    13363 /path/cb_debug_console_hold 80012345
         // pts/1    13370 ps x -o tty,pid,command
 
         const wxString &psCmd = psOutput.Item(i);
-        if (psCmd.Contains(uniqueSleepTimeStr))
+        if (psCmd.Contains(holdNeedle) ||
+            (psCmd.Contains("cb_debug_console_hold") && psCmd.Contains(uniqueHoldToken)))
         {
             // Extract the pid for the line
             long pidForLine;
             if (psCmd.AfterFirst(' ').Trim(false).BeforeFirst(' ').Trim(true).ToLong(&pidForLine))
             {
-                // Check if we are at the correct line. It is possible that there are two lines which contain the
-                // "sleep" string. One for the sleep process and one for the terminal process. We want to skip the
-                // line for the terminal process.
+                // Skip the terminal launcher line when it also mentions the holder;
+                // keep the actual holder process.
                 if (pidForLine != consolePID)
                     return ConsoleInfo("/dev/" + psCmd.BeforeFirst(' '), pidForLine);
             }
@@ -838,9 +846,9 @@ int cbDebuggerPlugin::RunNixConsole(wxString &consoleTty)
 {
     consoleTty = wxEmptyString;
 #ifndef __WXMSW__
-    // Start a terminal and put the shell to sleep with -e sleep 80000.
-    // Fetch the terminal's tty, so we can tell the debugger what TTY to use,
-    // thus redirecting program's stdin/stdout/stderr to the terminal.
+    // Start a terminal and run bundled cb_debug_console_hold so the tty stays
+    // alive for GDB. Fetch that tty and tell the debugger to use it for the
+    // inferior's stdin/stdout/stderr.
 
     wxString cmd;
     int consolePid = 0;
@@ -850,16 +858,16 @@ int cbDebuggerPlugin::RunNixConsole(wxString &consoleTty)
     term.Replace("$TITLE", wxString("'")+_("Program Console")+"'");
     cmd << term;
 
-    const wxString &sleepCommand = MakeSleepCommand();
+    const wxString &holdCommand = MakeDebugConsoleHoldCommand();
     // macOS terminal templates (osascript "do script \"$SCRIPT\"") run whatever
     // is substituted for $SCRIPT. This must happen before ReplaceEnvVars(): an
-    // unset SCRIPT is expanded to empty. Appending the sleep command instead
-    // only adds an extra osascript argument, so no sleep process appears on the
+    // unset SCRIPT is expanded to empty. Appending the hold command instead
+    // only adds an extra osascript argument, so no holder appears on the
     // terminal slave and the TTY search below waits until it times out.
     // Templates without $SCRIPT (for example "xterm -T $TITLE -e") still get the
-    // sleep command appended, which is what their -e option consumes.
-    if (!cmd.Replace("$SCRIPT", sleepCommand))
-        cmd << " " << sleepCommand;
+    // hold command appended, which is what their -e option consumes.
+    if (!cmd.Replace("$SCRIPT", holdCommand))
+        cmd << " " << holdCommand;
 
     Manager::Get()->GetMacrosManager()->ReplaceEnvVars(cmd);
 
@@ -875,7 +883,7 @@ int cbDebuggerPlugin::RunNixConsole(wxString &consoleTty)
     // to a slow starting terminal.
     for (int ii = 0; ii < 100; ++ii)
     {
-        // First, wait for the terminal to settle down, else PS won't see the sleep task
+        // First, wait for the terminal to settle down, else PS won't see the holder.
         Manager::Yield();
         ::wxMilliSleep(200);
 
@@ -887,29 +895,20 @@ int cbDebuggerPlugin::RunNixConsole(wxString &consoleTty)
             break;
         }
 
-        // Try to find tty path and pid for the sleep command we've just executed.
+        // Try to find tty path and pid for the hold command we've just executed.
         const ConsoleInfo &info = GetConsoleTty(consolePid);
 
-        // If there is no sleep command yet, do another iteration after a small delay.
+        // If there is no holder yet, do another iteration after a small delay.
         if (!info.IsValid())
             continue;
 
-        // Try to find if the console window is still alive. Newer terminals like gnome-terminal
-        // try to be easier on resources and use a shared server process. For these terminals the
-        // spawned terminal process exits immediately, but the sleep command is still executed.
-        // If we detect such case we will return the PID for the sleep command instead of the PID
-        // for the terminal.
-        if (kill(consolePid, 0) == -1 && errno == ESRCH) {
-            DebugLog(wxString::Format("Using sleep command's PID as console PID %d, TTY %s", info.sleepPID, info.ttyPath));
-            consoleTty = info.ttyPath;
-            return info.sleepPID;
-        }
-        else
-        {
-            DebugLog(wxString::Format("Using terminal's PID as console PID %d, TTY %s", info.sleepPID, info.ttyPath));
-            consoleTty = info.ttyPath;
-            return consolePid;
-        }
+        // Always track the holder PID (not the Terminal/osascript/xterm launcher).
+        // Soft finish (SIGUSR1) and forced cleanup (SIGTERM) must address the
+        // holder process itself. Launcher PIDs often exit immediately on macOS.
+        DebugLog(wxString::Format("Using console holder's PID as console PID %d, TTY %s",
+                                  info.sleepPID, info.ttyPath));
+        consoleTty = info.ttyPath;
+        return info.sleepPID;
     }
     // failed to find the console tty
     if (consolePid != 0)

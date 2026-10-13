@@ -642,6 +642,7 @@ AC_CONFIG_FILES([Makefile
 	src/tools/Makefile
 	src/tools/cb_share_config/Makefile
 	src/tools/ConsoleRunner/Makefile
+	src/tools/DebugConsoleHold/Makefile
 	src/tools/CBLauncher/Makefile
 	src/templates/Makefile
 	src/templates/common/Makefile

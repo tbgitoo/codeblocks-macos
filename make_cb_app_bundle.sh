@@ -38,6 +38,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$FW"
 
 cp -v "$PREFIX/bin/codeblocks" "$MAC"
 cp -v "$PREFIX/bin/cb_console_runner" "$APP/Contents/MacOS/"
+cp -v "$PREFIX/bin/cb_debug_console_hold" "$APP/Contents/MacOS/"
 cp -v "$PREFIX/bin/cb_share_config" "$APP/Contents/MacOS/"
 chmod 755 "$APP/Contents/MacOS/"*
 

@@ -76,6 +76,10 @@ inline BOOL WINAPI HandlerRoutine(cb_unused DWORD dwCtrlType)
 {
     return TRUE;
 }
+#else
+#include <errno.h>
+#include <signal.h>
+#include <sys/types.h>
 #endif
 
 #if !defined(__WXMSW__)
@@ -2052,12 +2056,37 @@ void DebuggerGDB::KillConsole()
         m_bIsConsole = false;
     }
 #else
-    // kill any linux console
+    // Forced cleanup: SIGTERM → cb_debug_console_hold exits immediately (no key wait).
+    // wxKill does not wait for the process; it only delivers the signal.
     if ( m_bIsConsole && (m_nConsolePid > 0) )
     {
        ::wxKill(m_nConsolePid, wxSIGTERM, nullptr, wxKILL_CHILDREN); //ticket 1571
         m_nConsolePid = 0;
         m_bIsConsole = false;
+        m_stopDebuggerConsoleClosed = false;
+    }
+#endif
+}
+
+void DebuggerGDB::NotifyDebugConsoleFinished()
+{
+#ifndef __WXMSW__
+    // Soft finish: SIGUSR1 → holder may show "Press any key to close...".
+    // Clear PID first so OnGDBTerminated / KillConsole will not SIGTERM a
+    // helper that is legitimately waiting for keyboard input.
+    // (wxSignal has no USR1; use POSIX kill.)
+    if (m_bIsConsole && m_nConsolePid > 0)
+    {
+        const int pid = m_nConsolePid;
+        m_nConsolePid = 0;
+        m_bIsConsole = false;
+        m_stopDebuggerConsoleClosed = false;
+        if (kill(pid, SIGUSR1) != 0 && errno != ESRCH)
+        {
+            DebugLog(wxString::Format(
+                _("Failed to signal debug console holder %d: %s"),
+                pid, wxSysErrorMsg()));
+        }
     }
 #endif
 }

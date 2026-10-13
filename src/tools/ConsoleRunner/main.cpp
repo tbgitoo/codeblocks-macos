@@ -9,18 +9,36 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #ifdef __WXMSW__
     #include <windows.h>
     #include <conio.h>
     #define wait_key getch
 #else
-    #define wait_key getchar
-#endif
-#if defined(__unix__) || defined(__unix)
+    #include <termios.h>
+    #include <unistd.h>
+#if defined(__unix__) || defined(__unix) || defined(__APPLE__)
     #include <sys/wait.h>
 #endif
-#include <string.h>
+
+/* Match Windows: any key, not only Enter. */
+static int wait_key(void)
+{
+    struct termios oldt, newt;
+    int ch;
+
+    if (tcgetattr(STDIN_FILENO, &oldt) != 0)
+        return getchar();
+
+    newt = oldt;
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    ch = getchar();
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    return ch;
+}
+#endif
 
 #ifdef __MINGW32__
 int _CRT_glob = 0;
@@ -132,16 +150,7 @@ int main(int argc, char** argv)
     cl = (tv.tv_sec + (double)tv.tv_usec / 1000000) - cl;
 
     printf("\nProcess returned %d (0x%X)   execution time : %0.3f s", ret, ret, cl);
-    printf
-    (
-        "\nPress "
-#ifdef __WXMSW__
-        "any key"
-#else
-        "ENTER"
-#endif
-        " to continue.\n"
-    );
+    printf("\nPress any key to continue.\n");
 
     wait_key();
 

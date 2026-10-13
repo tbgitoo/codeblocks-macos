@@ -58,7 +58,21 @@ const wxString DEFAULT_WORKSPACE     = "default.workspace";
 const wxString DEFAULT_ARRAY_SEP     = ";";
 
 #ifdef __WXMAC__
-const wxString DEFAULT_CONSOLE_TERM  = "osascript -e 'tell app \"Terminal\"' -e 'activate' -e 'do script \"$SCRIPT\"' -e 'end tell'";
+// clear/exit: hide the helper echo and avoid dropping to an interactive shell.
+// If Terminal was not already running, activate creates one empty window; a
+// bare "do script" would open a second. Reuse window 1 on cold start only.
+const wxString DEFAULT_CONSOLE_TERM  =
+    "osascript "
+    "-e 'tell application \"System Events\" to set terminalWasRunning to "
+        "(name of processes) contains \"Terminal\"' "
+    "-e 'tell application \"Terminal\"' "
+    "-e 'activate' "
+    "-e 'if terminalWasRunning then' "
+    "-e 'do script \"clear; $SCRIPT; exit\"' "
+    "-e 'else' "
+    "-e 'do script \"clear; $SCRIPT; exit\" in window 1' "
+    "-e 'end if' "
+    "-e 'end tell'";
 const wxString DEFAULT_CONSOLE_SHELL = "/bin/zsh -c";
 #else
 const wxString DEFAULT_CONSOLE_TERM  = "xterm -T $TITLE -e";

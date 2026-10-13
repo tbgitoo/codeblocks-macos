@@ -137,6 +137,13 @@ class DebuggerGDB : public cbDebuggerPlugin
 
         void DetermineLanguage();
 
+        /** Forced console cleanup (SIGTERM): holder exits immediately, no key wait. */
+        void KillConsole();
+
+        /** Normal inferior completion (SIGUSR1): holder may prompt for a key.
+            Does not wait; clears the stored console PID so later KillConsole is a no-op. */
+        void NotifyDebugConsoleFinished();
+
     protected:
         cbProject* GetProject() override { return m_pProject; }
         void ResetProject() override { m_pProcess = NULL; }
@@ -167,7 +174,6 @@ class DebuggerGDB : public cbDebuggerPlugin
         void OnCursorChanged(wxCommandEvent& event);
 
         void SetupToolsMenu(wxMenu &menu) override;
-        void KillConsole();
         void CheckIfConsoleIsClosed();
 
         void OnInfoFrame(wxCommandEvent& event);
