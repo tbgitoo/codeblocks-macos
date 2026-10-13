@@ -13,7 +13,7 @@ Build and Run already uses `$SCRIPT`. No custom tool is required.
 
 ## Build
 
-Install wxWidgets, then from this directory:
+Install the build tools and wxWidgets, then from this directory:
 
 ```bash
 brew install wxwidgets autoconf automake libtool pkg-config
@@ -23,5 +23,13 @@ make -j"$(sysctl -n hw.ncpu)"
 make install
 ./make_cb_app_bundle.sh
 ```
+
+`./bootstrap` needs the wxWidgets autoconf macros (`wxwin.m4`). Homebrew keeps them under `share/wx/<version>/aclocal`, which `aclocal` does not search by default. The script adds that path automatically when `wx-config` is on `PATH`. If bootstrap still cannot find `AM_OPTIONS_WXCONFIG`, run:
+
+```bash
+ACLOCAL_FLAGS="-I $(wx-config --prefix)/share/wx/$(wx-config --release)/aclocal" ./bootstrap
+```
+
+The obsolete-macro warnings from autoconf are harmless. The fatal error is only a missing `wxwin.m4`.
 
 `make_cb_app_bundle.sh` reads `_cb_install` next to `configure` and installs a self-contained `/Applications/CodeBlocks.app`. Quit any running Code::Blocks before replacing that app.
