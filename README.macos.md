@@ -11,6 +11,12 @@ On macOS the default terminal command is an `osascript` that runs whatever is su
 
 Build and Run already uses `$SCRIPT`. No custom tool is required.
 
+### Debugger console and `inferior-tty-claim` (v1.1)
+
+Terminal’s session already owns that pty, so Darwin refuses GDB’s attempt to make it the inferior’s controlling terminal (`TIOCSCTTY`). Program input/output still work; only the claim fails. With a matching Darwin GDB build that supports it, Code::Blocks probes `show inferior-tty-claim` and, if available, runs `set inferior-tty-claim off` before `tty …`. That keeps I/O on the Terminal window without attempting the claim, so the long “Failed to set controlling terminal” / “Darwin will not transfer it” warning is not printed.
+
+Use the Apple Silicon GDB from the companion `binutils-gdb` port (or any build that implements `inferior-tty-claim`). Stock GDB without that setting is detected and left unchanged (the warning may still appear). Linux and Windows debugger paths are not affected.
+
 ## Build
 
 Install the build tools and wxWidgets, then from this directory:

@@ -78,6 +78,66 @@ inline BOOL WINAPI HandlerRoutine(cb_unused DWORD dwCtrlType)
 }
 #endif
 
+#if !defined(__WXMSW__)
+namespace
+{
+// Probe Darwin GDB for "inferior-tty-claim", optionally disable claiming, then
+// attach the Terminal console tty and start/attach.  Must run before Start() is
+// queued so set/tty precede "run".
+class GdbCmd_SetupMacOSInferiorTty : public DebuggerCmd
+{
+    public:
+        GdbCmd_SetupMacOSInferiorTty(DebuggerDriver* driver,
+                                     const wxString& ttyPath,
+                                     bool breakOnEntry,
+                                     int pidToAttach)
+            : DebuggerCmd(driver, "show inferior-tty-claim", true),
+              m_ttyPath(ttyPath),
+              m_breakOnEntry(breakOnEntry),
+              m_pidToAttach(pidToAttach)
+        {
+        }
+
+        void ParseOutput(const wxString& output) override
+        {
+            const bool unsupported = output.Contains("Undefined")
+                                  || output.Contains("No symbol")
+                                  || output.Contains("Ambiguous");
+            const bool supported = !unsupported
+                && (output.Contains("on") || output.Contains("off"));
+
+            if (supported)
+            {
+                m_pDriver->QueueCommand(new DebuggerCmd(m_pDriver,
+                    "set inferior-tty-claim off", true));
+                m_pDriver->DebugLog(_("GDB supports inferior-tty-claim; "
+                    "disabling claim for Terminal.app console"));
+            }
+            else
+            {
+                m_pDriver->DebugLog(_("GDB lacks inferior-tty-claim; "
+                    "leaving default tty claim behaviour"));
+            }
+
+            wxString gdbTtyCmd;
+            gdbTtyCmd << "tty " << m_ttyPath;
+            m_pDriver->QueueCommand(new DebuggerCmd(m_pDriver, gdbTtyCmd, true));
+            m_pDriver->DebugLog(wxString::Format(_("Queued:[%s]"), gdbTtyCmd.wx_str()));
+
+            if (m_pidToAttach == 0)
+                m_pDriver->Start(m_breakOnEntry);
+            else
+                m_pDriver->Attach(m_pidToAttach);
+        }
+
+    private:
+        wxString m_ttyPath;
+        bool m_breakOnEntry;
+        int m_pidToAttach;
+};
+} // namespace
+#endif // !__WXMSW__
+
 // valid debugger command constants
 enum DebugCommandConst
 {
@@ -968,9 +1028,10 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     m_State.ApplyBreakpoints();
 
    #ifndef __WXMSW__
-    // create xterm and issue tty "/dev/pts/#" to GDB where
-    // # is the tty for the newly created xterm
+    // create xterm/Terminal and issue tty "/dev/pts/#" to GDB where
+    // # is the tty for the newly created console
     m_bIsConsole = target && target->GetUseConsoleRunner();
+    bool deferStartForMacOSTty = false;
     if (m_bIsConsole)
     {
         wxString consoleTty;
@@ -978,19 +1039,40 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
         if (m_nConsolePid > 0)
         {
             m_stopDebuggerConsoleClosed = true;
-            wxString gdbTtyCmd;
-            gdbTtyCmd << "tty " << consoleTty;
-            m_State.GetDriver()->QueueCommand(new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
-            DebugLog(wxString::Format( _("Queued:[%s]"), gdbTtyCmd.wx_str()) );
+            // On macOS the Terminal+sleep holder already owns the pty.  Probe
+            // for set inferior-tty-claim (Darwin GDB) and disable claiming so
+            // the long TIOCSCTTY warning is not printed.  Start/Attach run from
+            // the probe's ParseOutput so they stay after set/tty in the queue.
+            if (platform::macosx)
+            {
+                m_State.GetDriver()->QueueCommand(
+                    new GdbCmd_SetupMacOSInferiorTty(m_State.GetDriver(),
+                                                     consoleTty,
+                                                     breakOnEntry,
+                                                     m_PidToAttach));
+                deferStartForMacOSTty = true;
+            }
+            else
+            {
+                wxString gdbTtyCmd;
+                gdbTtyCmd << "tty " << consoleTty;
+                m_State.GetDriver()->QueueCommand(new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
+                DebugLog(wxString::Format( _("Queued:[%s]"), gdbTtyCmd.wx_str()) );
+            }
         }
     }//if
    #endif//ndef __WXMSW__
 
     // Don't issue 'run' if attaching to a process (Bug #1391904)
-    if (m_PidToAttach == 0)
-        m_State.GetDriver()->Start(breakOnEntry);
-    else
-        m_State.GetDriver()->Attach(m_PidToAttach);
+#ifndef __WXMSW__
+    if (!deferStartForMacOSTty)
+#endif
+    {
+        if (m_PidToAttach == 0)
+            m_State.GetDriver()->Start(breakOnEntry);
+        else
+            m_State.GetDriver()->Attach(m_PidToAttach);
+    }
 
     // switch to the user-defined layout for debugging
     if (m_pProcess)
