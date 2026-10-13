@@ -177,5 +177,5 @@ This disables the operation that causes the warning; it does not filter Terminal
 
 | Version | Status |
 |---------|--------|
-| **v1.1** | Planned; **next to implement** after this document. GDB command must be added — not present in tree yet. |
+| **v1.1** | **Implemented (uncommitted).** GDB: `set inferior-tty-claim` in companion `binutils-gdb` (`gdb/inflow.c`, Darwin exp updated); rebuilt `build-aarch64-darwin/gdb/gdb`. Smoke test on busy pty: claim **off** → no warning + I/O; claim **on** → full Darwin warning + I/O. CB: macOS probe + deferred Start in `debuggergdb.cpp`; `libdebugger` rebuilt; `README.macos.md` updated. Still worth a manual CB Step-Into with the paired GDB after installing/signing as you usually do. **No commits.** |
 | **v2.0** | Planned only; **blocked** until v1.1 implementation and tests are complete. |
