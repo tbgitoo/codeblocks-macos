@@ -112,13 +112,19 @@ The important inputs include:
 ../binutils-gdb/staging/share/gdb/
 ```
 
-The bundle script copies the debugger and its required runtime files into:
+`make_cb_app_bundle.sh` copies those into the app and vendors the license-permitted runtime dylibs currently required by that GDB build (`libzstd`, `libmpfr`, `libgmp`, with install-name rewrite). Override the staging prefix with `CB_BUNDLE_GDB_PREFIX` if the sister tree is elsewhere. The bundle fails if GDB or `share/gdb` is missing.
+
+Resulting layout:
 
 ```text
 CodeBlocks.app/Contents/Resources/debugger/
+  bin/gdb
+  share/gdb/
+  lib/           # vendored dylibs
+  licenses/      # GDB + dylib license notices
 ```
 
-The resulting debugger tree is kept inside the application bundle so that users do not need a separate GDB installation.
+No separate GDB installation is required for the macOS default. Existing debugger or Terminal settings in `default.conf` are **not** auto-migrated; clear or edit them manually to use the bundled defaults.
 
 ## If `bootstrap` cannot find the wxWidgets macros
 

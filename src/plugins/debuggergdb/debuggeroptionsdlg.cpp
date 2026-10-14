@@ -14,6 +14,7 @@
     #include <wx/checkbox.h>
     #include <wx/choice.h>
     #include <wx/filedlg.h>
+    #include <wx/filename.h>
     #include <wx/intl.h>
     #include <wx/radiobox.h>
     #include <wx/spinctrl.h>
@@ -25,6 +26,7 @@
 #endif
 
 #include "debuggergdb.h"
+#include "debuggermanager.h"
 
 class DebuggerConfigurationPanel : public wxPanel
 {
@@ -191,7 +193,19 @@ wxString DebuggerConfiguration::GetDebuggerExecutable(bool expandMacro)
     wxString result = m_config.Read("executable_path", wxEmptyString);
     if (expandMacro)
         Manager::Get()->GetMacrosManager()->ReplaceEnvVars(result);
-    return !result.empty() ? result : cbDetectDebuggerExecutable("gdb");
+    if (!result.empty())
+        return result;
+
+#ifdef __WXMAC__
+    // Bundled Darwin GDB: Contents/Resources/debugger/bin/gdb
+    // GetDataFolder() is Contents/Resources/share/codeblocks.
+    wxFileName bundled(ConfigManager::GetDataFolder() + "/../../debugger/bin/gdb");
+    bundled.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
+    if (bundled.FileExists())
+        return bundled.GetFullPath();
+#endif
+
+    return cbDetectDebuggerExecutable("gdb");
 }
 
 wxString DebuggerConfiguration::GetUserArguments(bool expandMacro)

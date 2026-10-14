@@ -698,33 +698,6 @@ bool CodeBlocksApp::OnInit()
         if (!LoadConfig())
             return false;
 
-#ifdef __WXMAC__
-        // One-way migration of known obsolete/incomplete macOS Terminal commands
-        // to the built-in default. Do not touch unrelated custom values.
-        {
-            ConfigManager *appCfgMac = Manager::Get()->GetConfigManager("app");
-            const wxString term = appCfgMac->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
-            // Home wrapper; bare do-script (echo + interactive shell); or
-            // clear/exit without cold-start reuse (opens two windows when
-            // Terminal was not already running).
-            const wxString bareDefault =
-                "osascript -e 'tell app \"Terminal\"' -e 'activate' "
-                "-e 'do script \"$SCRIPT\"' -e 'end tell'";
-            const wxString clearExitNoReuse =
-                "osascript -e 'tell app \"Terminal\"' -e 'activate' "
-                "-e 'do script \"clear; $SCRIPT; exit\"' -e 'end tell'";
-            if (term.Contains(".codeblocks_run.sh") ||
-                term == bareDefault ||
-                term == clearExitNoReuse)
-            {
-                appCfgMac->Write("/console_terminal", DEFAULT_CONSOLE_TERM);
-                Manager::Get()->GetLogManager()->Log(
-                    _("Migrated macOS Terminal command to the built-in default "
-                      "(single window on cold start; clear; $SCRIPT; exit)."));
-            }
-        }
-#endif
-
         if (m_SilenceCompilerLog) // Adjust according command line option
             Manager::Get()->GetConfigManager("compiler")->Write("/silence_compiler_log", true);
 
