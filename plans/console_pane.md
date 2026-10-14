@@ -348,5 +348,5 @@ v1.1 done → build sibling staging gdb → bundle into .app → macOS empty-pat
 | Version | Status |
 |---------|--------|
 | **v1.1** | **Implemented (uncommitted).** GDB `inferior-tty-claim`; CB probe; bundled `cb_console_runner` + `cb_debug_console_hold` replace `~/.codeblocks_run.sh`/`sleep`; SIGUSR1 soft finish vs SIGTERM force (CB never waits on keypress); cold-start single-window default Terminal command. (Temporary Terminal migration code may still be present — **remove in v1.2**.) |
-| **v1.2** | **Planned only.** Bundle sister-repo staging into `Contents/Resources/debugger/{bin,share,lib}`; macOS-only default `Resources/debugger/bin/gdb`; license-permitted dylibs only (`zstd`/`mpfr`/`gmp`); Linux/Windows unchanged; **no config migration** (remove Terminal migration from `app.cpp`; GDB path left to the user). **Blocked** until v1.1 is considered complete. **Blocks v2.0.** |
+| **v1.2** | **Implemented (uncommitted).** Bundle sister-repo staging into `Contents/Resources/debugger/{bin,share,lib,licenses}`; macOS-only empty-path default `Resources/debugger/bin/gdb`; license-permitted dylibs (`zstd`/`mpfr`/`gmp`); Terminal migration removed from `app.cpp`; no config migration. **Blocks v2.0.** |
 | **v2.0** | Planned only; **blocked** until v1.2 is complete. |

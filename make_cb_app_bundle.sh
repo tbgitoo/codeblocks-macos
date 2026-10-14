@@ -4,13 +4,17 @@ set -euo pipefail
 # Build a self-contained /Applications/CodeBlocks.app from the local prefix.
 # Copies files into the bundle. Does not leave symlinks to the build tree.
 
-PREFIX="$(cd "$(dirname "$0")" && pwd)/_cb_install"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PREFIX="$SCRIPT_DIR/_cb_install"
 STAGE="/tmp/CodeBlocks-stage"
 APP="$STAGE/CodeBlocks.app"
 DEST="/Applications/CodeBlocks.app"
 FW="$APP/Contents/Frameworks"
 MAC="$APP/Contents/MacOS/codeblocks"
 RES="$APP/Contents/Resources/share/codeblocks"
+# Sister-repo staging prefix (override with CB_BUNDLE_GDB_PREFIX). Never hardcode a home path.
+GDB_PREFIX="${CB_BUNDLE_GDB_PREFIX:-$SCRIPT_DIR/../binutils-gdb/staging}"
+DBG="$APP/Contents/Resources/debugger"
 
 require() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -54,6 +58,68 @@ done
 
 cp -v "$PREFIX/share/codeblocks/osx_bundle/codeblocks.plist" "$APP/Contents/Info.plist"
 cp -v "$PREFIX/share/codeblocks/osx_bundle/icons/"*.icns "$APP/Contents/Resources/"
+
+# --- Bundled Darwin GDB (Resources/debugger) ---------------------------------
+if [[ ! -d "$GDB_PREFIX" ]]; then
+    echo "ERROR: GDB staging prefix not found: $GDB_PREFIX" >&2
+    echo "Build the sister binutils-gdb staging tree, or set CB_BUNDLE_GDB_PREFIX." >&2
+    exit 2
+fi
+GDB_PREFIX="$(cd "$GDB_PREFIX" && pwd)"
+GDB_BIN_SRC="$GDB_PREFIX/bin/gdb"
+GDB_SHARE_SRC="$GDB_PREFIX/share/gdb"
+[[ -x "$GDB_BIN_SRC" ]] || {
+    echo "ERROR: Missing GDB executable: $GDB_BIN_SRC" >&2
+    exit 2
+}
+[[ -d "$GDB_SHARE_SRC" ]] || {
+    echo "ERROR: Missing GDB data directory: $GDB_SHARE_SRC" >&2
+    exit 2
+}
+
+echo "==> Bundling GDB from $GDB_PREFIX"
+mkdir -p "$DBG/bin" "$DBG/share" "$DBG/lib" "$DBG/licenses"
+cp -v "$GDB_BIN_SRC" "$DBG/bin/gdb"
+chmod 755 "$DBG/bin/gdb"
+rsync -a "$GDB_SHARE_SRC/" "$DBG/share/gdb/"
+
+# License-permitted runtime dylibs currently linked from Homebrew (zstd BSD/MIT,
+# mpfr/gmp LGPL-or-later). Vendor under debugger/lib and rewrite load paths.
+copy_gdb_license_file() {
+    local dest_name="$1"
+    shift
+    local candidate
+    for candidate in "$@"; do
+        if [[ -f "$candidate" ]]; then
+            cp -v "$candidate" "$DBG/licenses/$dest_name"
+            return 0
+        fi
+    done
+    echo "WARNING: No license file found for $dest_name" >&2
+}
+
+GDB_REPO_ROOT="$(cd "$GDB_PREFIX/.." && pwd)"
+copy_gdb_license_file "gdb-COPYING" \
+    "$GDB_REPO_ROOT/COPYING" "$GDB_REPO_ROOT/gdb/COPYING"
+copy_gdb_license_file "zstd-LICENSE" \
+    "$(brew --prefix zstd 2>/dev/null)/LICENSE" \
+    /opt/homebrew/opt/zstd/LICENSE
+copy_gdb_license_file "mpfr-COPYING.LESSER" \
+    "$(brew --prefix mpfr 2>/dev/null)/COPYING.LESSER" \
+    /opt/homebrew/opt/mpfr/COPYING.LESSER
+copy_gdb_license_file "gmp-README-license" \
+    "$(brew --prefix gmp 2>/dev/null)/README" \
+    /opt/homebrew/opt/gmp/README
+
+cat >"$DBG/licenses/README.txt" <<'EOF'
+Bundled debugger components inside CodeBlocks.app/Contents/Resources/debugger/
+
+- bin/gdb and share/gdb come from the companion binutils-gdb Darwin port (GPL).
+- lib/ may contain redistributable shared libraries required by that gdb build.
+  Current permitted set: zstd (BSD/MIT dual), mpfr (LGPL-3.0-or-later),
+  gmp (LGPL-3.0-or-later OR GPL-2.0-or-later). LGPL libraries remain replaceable
+  shared objects under lib/.
+EOF
 
 deps_of() {
     otool -L "$1" | tail -n +2 | awk '{print $1}'
@@ -169,6 +235,87 @@ already_seen() {
     return 1
 }
 
+# Vendor non-system dylibs required by bundled gdb into Resources/debugger/lib.
+echo "==> Vendoring GDB runtime dylibs into Resources/debugger/lib"
+gdb_queue=("$DBG/bin/gdb")
+gdb_seen=()
+while ((${#gdb_queue[@]})); do
+    gdb_current="${gdb_queue[0]}"
+    gdb_queue=("${gdb_queue[@]:1}")
+    gdb_key="$(real_path "$gdb_current")"
+    already=0
+    for item in "${gdb_seen[@]:-}"; do
+        [[ "$item" == "$gdb_key" ]] && { already=1; break; }
+    done
+    ((already)) && continue
+    gdb_seen+=("$gdb_key")
+
+    while read -r dep; do
+        [[ -n "$dep" ]] || continue
+        is_system_lib "$dep" && continue
+        case "$dep" in
+            @loader_path/*|@rpath/*|@executable_path/*)
+                # Already rewritten or relative; still enqueue local lib if present.
+                base="$(basename "$dep")"
+                if [[ -f "$DBG/lib/$base" ]]; then
+                    gdb_queue+=("$DBG/lib/$base")
+                fi
+                continue
+                ;;
+        esac
+        if ! source_path="$(resolve_dep "$dep" "$gdb_current")"; then
+            echo "ERROR: Unable to resolve GDB dependency: $dep" >&2
+            exit 3
+        fi
+        base="$(basename "$dep")"
+        dest="$DBG/lib/$base"
+        if [[ ! -f "$dest" ]]; then
+            canonical="$(real_path "$source_path")"
+            echo "Copying GDB dependency: $canonical -> $dest"
+            cp -v "$canonical" "$dest"
+            chmod 755 "$dest"
+            install_name_tool -id "@loader_path/$base" "$dest"
+        fi
+        # From gdb in bin/: libs live in ../lib. From a lib dylib: same directory.
+        if [[ "$gdb_current" == "$DBG/bin/gdb" ]]; then
+            new_ref="@loader_path/../lib/$base"
+        else
+            new_ref="@loader_path/$base"
+        fi
+        if [[ "$dep" != "$new_ref" ]]; then
+            echo "Rewriting in $(basename "$gdb_current"): $dep -> $new_ref"
+            install_name_tool -change "$dep" "$new_ref" "$gdb_current"
+        fi
+        gdb_queue+=("$dest")
+    done < <(deps_of "$gdb_current")
+done
+
+# Fail if gdb still references Homebrew / user prefixes.
+gdb_outside=0
+while read -r dep; do
+    case "$dep" in
+        /Users/*|/opt/*)
+            echo "OUTSIDE (gdb): $dep" >&2
+            gdb_outside=1
+            ;;
+    esac
+done < <(deps_of "$DBG/bin/gdb")
+for library in "$DBG/lib/"*.dylib; do
+    [[ -f "$library" ]] || continue
+    while read -r dep; do
+        case "$dep" in
+            /Users/*|/opt/*)
+                echo "OUTSIDE ($(basename "$library")): $dep" >&2
+                gdb_outside=1
+                ;;
+        esac
+    done < <(deps_of "$library")
+done
+if ((gdb_outside)); then
+    echo "ERROR: Bundled GDB still references files outside the app." >&2
+    exit 3
+fi
+
 add_rpath_if_missing "$MAC" "@executable_path/../Frameworks"
 add_rpath_if_missing "$APP/Contents/MacOS/cb_share_config" "@executable_path/../Frameworks" || true
 
@@ -231,7 +378,7 @@ while IFS= read -r -d '' binary; do
                 ;;
         esac
     done < <(deps_of "$binary")
-done < <(find "$APP" -type f \( -name '*.dylib' -o -name 'codeblocks' -o -name 'cb_share_config' -o -name 'cb_console_runner' \) -print0)
+done < <(find "$APP" -type f \( -name '*.dylib' -o -name 'codeblocks' -o -name 'cb_share_config' -o -name 'cb_console_runner' -o -name 'cb_debug_console_hold' -o -name 'gdb' \) -print0)
 
 if ((outside)); then
     echo "ERROR: Bundle still references files outside the app." >&2
@@ -250,8 +397,20 @@ done < <(find "$APP" -type l)
 
 echo "==> Ad-hoc signing"
 xattr -cr "$APP" || true
+# Sign nested debugger Mach-Os first. install_name_tool invalidates any prior
+# signature, and codesign --deep alone is not reliable for Resources/debugger.
+if compgen -G "$DBG/lib/"*.dylib >/dev/null; then
+    for library in "$DBG/lib/"*.dylib; do
+        [[ -f "$library" && ! -L "$library" ]] || continue
+        codesign --force --sign - "$library"
+    done
+fi
+codesign --force --sign - "$DBG/bin/gdb"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
+codesign --verify --verbose=2 "$DBG/bin/gdb"
+"$DBG/bin/gdb" -nx -batch -ex 'show data-directory' >/dev/null
+echo "Bundled GDB smoke check OK."
 
 echo "==> Installing to $DEST"
 if [[ -e "$DEST" ]]; then
