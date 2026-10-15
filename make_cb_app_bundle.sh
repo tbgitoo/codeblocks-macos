@@ -397,20 +397,32 @@ done < <(find "$APP" -type l)
 
 echo "==> Ad-hoc signing"
 xattr -cr "$APP" || true
+GDB_ENTITLEMENTS="$SCRIPT_DIR/osx/gdb.entitlements"
+[[ -f "$GDB_ENTITLEMENTS" ]] || {
+    echo "ERROR: Missing GDB entitlements file: $GDB_ENTITLEMENTS" >&2
+    exit 2
+}
 # Sign nested debugger Mach-Os first. install_name_tool invalidates any prior
 # signature, and codesign --deep alone is not reliable for Resources/debugger.
+# GDB must keep com.apple.security.cs.debugger or taskgated refuses debugging.
 if compgen -G "$DBG/lib/"*.dylib >/dev/null; then
     for library in "$DBG/lib/"*.dylib; do
         [[ -f "$library" && ! -L "$library" ]] || continue
         codesign --force --sign - "$library"
     done
 fi
-codesign --force --sign - "$DBG/bin/gdb"
+codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
 codesign --force --deep --sign - "$APP"
+# Re-apply debugger entitlement after --deep (which may resign nested code).
+codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign --verify --verbose=2 "$DBG/bin/gdb"
+if ! codesign -d --entitlements - "$DBG/bin/gdb" 2>&1 | grep -Fq "com.apple.security.cs.debugger"; then
+    echo "ERROR: Bundled GDB is missing com.apple.security.cs.debugger entitlement." >&2
+    exit 3
+fi
 "$DBG/bin/gdb" -nx -batch -ex 'show data-directory' >/dev/null
-echo "Bundled GDB smoke check OK."
+echo "Bundled GDB smoke check OK (debugger entitlement present)."
 
 echo "==> Installing to $DEST"
 if [[ -e "$DEST" ]]; then

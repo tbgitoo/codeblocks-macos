@@ -114,6 +114,8 @@ The important inputs include:
 
 `make_cb_app_bundle.sh` copies those into the app and vendors the license-permitted runtime dylibs currently required by that GDB build (`libzstd`, `libmpfr`, `libgmp`, with install-name rewrite). Override the staging prefix with `CB_BUNDLE_GDB_PREFIX` if the sister tree is elsewhere. The bundle fails if GDB or `share/gdb` is missing.
 
+Bundled `gdb` is ad-hoc signed with the `com.apple.security.cs.debugger` entitlement (`osx/gdb.entitlements`). Without that entitlement, macOS refuses the Mach task port and debugging stops with “Unable to find Mach task port” / “No stack”.
+
 Resulting layout:
 
 ```text
