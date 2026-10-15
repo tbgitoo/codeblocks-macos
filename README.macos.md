@@ -24,6 +24,8 @@ Code::Blocks is an IDE. A separate debugger is required for debugging C and C++ 
 
 The companion Apple Silicon GDB port is available in the [binutils-gdb repository](https://github.com/tbgitoo/binutils-gdb).
 
+If debugging stops with **No stack** or “Unable to find Mach task port”, GDB is not accepted by macOS as a debugger. See **[code_signing.md](code_signing.md)** for the symptom, certificate setup, and `codesign` commands for a working local signature (including the `com.apple.security.cs.debugger` entitlement).
+
 ### Code::Blocks v1.0 and v1.1
 
 The debugger is not included in Code::Blocks v1.0 or v1.1.
@@ -114,7 +116,7 @@ The important inputs include:
 
 `make_cb_app_bundle.sh` copies those into the app and vendors the license-permitted runtime dylibs currently required by that GDB build (`libzstd`, `libmpfr`, `libgmp`, with install-name rewrite). Override the staging prefix with `CB_BUNDLE_GDB_PREFIX` if the sister tree is elsewhere. The bundle fails if GDB or `share/gdb` is missing.
 
-Bundled `gdb` is ad-hoc signed with the `com.apple.security.cs.debugger` entitlement (`osx/gdb.entitlements`). Without that entitlement, macOS refuses the Mach task port and debugging stops with “Unable to find Mach task port” / “No stack”.
+Bundled `gdb` is ad-hoc signed with the `com.apple.security.cs.debugger` entitlement (`osx/gdb.entitlements`). Without that entitlement, macOS refuses the Mach task port and debugging stops with “Unable to find Mach task port” / “No stack”. Ad-hoc signing is not always enough on every Mac and is not reliable for downloaded `.dmg` installs; full local certificate steps are in [code_signing.md](code_signing.md).
 
 Resulting layout:
 
