@@ -28,6 +28,19 @@
 #include "debuggergdb.h"
 #include "debuggermanager.h"
 
+#ifdef __WXMAC__
+namespace
+{
+wxFileName MacBundledGdbFileName()
+{
+    // Contents/Resources/share/codeblocks → ../../debugger/bin/gdb
+    wxFileName bundled(ConfigManager::GetDataFolder() + "/../../debugger/bin/gdb");
+    bundled.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
+    return bundled;
+}
+} // namespace
+#endif
+
 class DebuggerConfigurationPanel : public wxPanel
 {
     public:
@@ -36,15 +49,16 @@ class DebuggerConfigurationPanel : public wxPanel
             wxTextCtrl *pathCtrl = XRCCTRL(*this, "txtExecutablePath", wxTextCtrl);
             wxString path = pathCtrl->GetValue();
             Manager::Get()->GetMacrosManager()->ReplaceEnvVars(path);
+            // Do not force a white foreground: on macOS SetBackgroundColour is often
+            // ignored for native wxTextCtrl, which made missing paths invisible.
+            pathCtrl->SetForegroundColour(wxNullColour);
             if (!wxFileExists(path))
             {
-                pathCtrl->SetForegroundColour(*wxWHITE);
-                pathCtrl->SetBackgroundColour(*wxRED);
+                pathCtrl->SetBackgroundColour(wxColour(255, 200, 200));
                 pathCtrl->SetToolTip(_("Full path to the debugger's executable. Executable can't be found on the filesystem!"));
             }
             else
             {
-                pathCtrl->SetForegroundColour(wxNullColour);
                 pathCtrl->SetBackgroundColour(wxNullColour);
                 pathCtrl->SetToolTip(_("Full path to the debugger's executable."));
             }
@@ -55,7 +69,31 @@ class DebuggerConfigurationPanel : public wxPanel
         {
             wxString oldPath = XRCCTRL(*this, "txtExecutablePath", wxTextCtrl)->GetValue();
             Manager::Get()->GetMacrosManager()->ReplaceEnvVars(oldPath);
-            wxFileDialog dlg(this, _("Select executable file"), wxEmptyString, oldPath,
+
+            wxString startDir;
+            wxString startFile;
+            wxFileName oldFn(oldPath);
+            if (oldFn.FileExists())
+            {
+                startDir = oldFn.GetPath();
+                startFile = oldFn.GetFullName();
+            }
+            else if (!oldPath.empty())
+            {
+                startDir = oldFn.GetPath();
+                startFile = oldFn.GetFullName();
+            }
+#ifdef __WXMAC__
+            // Open inside Contents/Resources/debugger/bin so the user does not have
+            // to navigate into the .app package (the system picker blocks that).
+            const wxFileName bundled = MacBundledGdbFileName();
+            if (bundled.FileExists())
+            {
+                startDir = bundled.GetPath();
+                startFile = bundled.GetFullName();
+            }
+#endif
+            wxFileDialog dlg(this, _("Select executable file"), startDir, startFile,
                              wxFileSelectorDefaultWildcardStr, wxFD_OPEN | wxFD_FILE_MUST_EXIST);
             PlaceWindow(&dlg);
             if (dlg.ShowModal() == wxID_OK)
@@ -64,6 +102,20 @@ class DebuggerConfigurationPanel : public wxPanel
                 XRCCTRL(*this, "txtExecutablePath", wxTextCtrl)->SetValue(newPath);
             }
         }
+
+#ifdef __WXMAC__
+        void OnUseBundled(cb_unused wxCommandEvent &event)
+        {
+            const wxFileName bundled = MacBundledGdbFileName();
+            if (!bundled.FileExists())
+            {
+                cbMessageBox(_("The bundled GDB was not found in this application."),
+                             _("Debugger"), wxOK | wxICON_WARNING, this);
+                return;
+            }
+            XRCCTRL(*this, "txtExecutablePath", wxTextCtrl)->SetValue(bundled.GetFullPath());
+        }
+#endif
 
         void OnTextChange(cb_unused wxCommandEvent &event)
         {
@@ -75,6 +127,9 @@ class DebuggerConfigurationPanel : public wxPanel
 
 BEGIN_EVENT_TABLE(DebuggerConfigurationPanel, wxPanel)
     EVT_BUTTON(XRCID("btnBrowse"), DebuggerConfigurationPanel::OnBrowse)
+#ifdef __WXMAC__
+    EVT_BUTTON(XRCID("btnBundledGdb"), DebuggerConfigurationPanel::OnUseBundled)
+#endif
     EVT_TEXT(XRCID("txtExecutablePath"), DebuggerConfigurationPanel::OnTextChange)
 END_EVENT_TABLE()
 
@@ -94,6 +149,19 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
         return panel;
 
     XRCCTRL(*panel, "txtExecutablePath", wxTextCtrl)->ChangeValue(GetDebuggerExecutable(false));
+#ifdef __WXMAC__
+    {
+        wxWindow *bundledBtn = XRCCTRL(*panel, "btnBundledGdb", wxWindow);
+        if (bundledBtn)
+            bundledBtn->Show(MacBundledGdbFileName().FileExists());
+    }
+#else
+    {
+        wxWindow *bundledBtn = panel->FindWindow(XRCID("btnBundledGdb"));
+        if (bundledBtn)
+            bundledBtn->Show(false);
+    }
+#endif
     panel->ValidateExecutablePath();
     XRCCTRL(*panel, "chkDisableInit", wxCheckBox)->SetValue(GetFlag(DisableInit));
     XRCCTRL(*panel, "txtArguments", wxTextCtrl)->ChangeValue(GetUserArguments(false));
@@ -197,10 +265,7 @@ wxString DebuggerConfiguration::GetDebuggerExecutable(bool expandMacro)
         return result;
 
 #ifdef __WXMAC__
-    // Bundled Darwin GDB: Contents/Resources/debugger/bin/gdb
-    // GetDataFolder() is Contents/Resources/share/codeblocks.
-    wxFileName bundled(ConfigManager::GetDataFolder() + "/../../debugger/bin/gdb");
-    bundled.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
+    const wxFileName bundled = MacBundledGdbFileName();
     if (bundled.FileExists())
         return bundled.GetFullPath();
 #endif
