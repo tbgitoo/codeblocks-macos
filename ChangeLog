@@ -1,3 +1,46 @@
+2026-10-15 06:34  tbgitoo
+
+v1.2 (80d8e89): unofficial Apple Silicon macOS port
+	  * Bundle companion Darwin GDB from binutils-gdb 5564fbe into
+	    CodeBlocks.app/Contents/Resources/debugger/ (bin, share, lib,
+	    licenses); package via make_cb_app_bundle.sh
+	  * macOS default debugger path when executable_path is empty;
+	    Settings: Bundled button, picker opens in debugger/bin,
+	    theme-safe path colours
+	  * Sign bundled gdb with com.apple.security.cs.debugger
+	    (osx/gdb.entitlements)
+	  * Remove Terminal / ~/.codeblocks_run.sh config migration
+	  * Add code_signing.md; refresh README.md / README.macos.md
+	  * No Linux/Windows GDB bundling; no auto-migration of user
+	    debugger settings
+
+2026-10-14 17:57  tbgitoo
+
+v1.1 (cf3e4f0): unofficial Apple Silicon macOS port
+	  * On macOS, probe show inferior-tty-claim and set
+	    inferior-tty-claim off before tty … (companion Darwin GDB);
+	    stock GDB without the setting unchanged
+	  * Add cb_debug_console_hold; replace sleep /
+	    ~/.codeblocks_run.sh for Debug console; soft SIGUSR1 vs
+	    force SIGTERM so the IDE does not block on keypress
+	  * Default Terminal osascript: clear; $SCRIPT; exit; cold-start
+	    reuses window 1 (single Terminal window)
+	  * Bundle console helpers; document handshake in README.macos.md
+	  * GDB still external (not bundled until v1.2)
+
+2026-10-13 20:28  tbgitoo
+
+v1.0 (e5bc580): unofficial Apple Silicon macOS port
+	  * Import Code::Blocks trunk r14050 (2408e77) as git baseline
+	  * Terminal osascript: $SCRIPT substitution for debugger sleep
+	    holder and Tools; AppleScript-safe quote escaping
+	  * make_cb_app_bundle.sh: self-contained CodeBlocks.app from
+	    _cb_install (rpaths, plugins, ad-hoc codesign)
+	  * make_cb_dmg.sh; bootstrap finds Homebrew wxwin.m4
+	  * README.macos.md / COMPILERS; gitignore build artifacts and
+	    DMGs
+	  * GDB not bundled; user configures an external debugger
+
 2010-09-03 18:30  mortenmacfly
 
 svn6570:  * updated wxPropGrid from to 1.4.14 to hopefully fix
