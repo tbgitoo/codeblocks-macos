@@ -154,41 +154,54 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ## v2.0 — Integrated Program Console (pending implementation)
 
-Status: Planned
+**Status: Planned** (decisions locked below; not yet implemented).
 
 ### Goals
 
 - Code::Blocks owns the **PTY master**; the program / inferior uses the **slave**.  
-- Run and Debug share one Program Console UI and PTY service.  
+- Run and Debug share one **Program Console** UI and PTY service.  
 - Debugger log stays separate from inferior I/O.  
 - Pane inactive until Run/Debug needs a console; GUI targets unchanged.  
-- External Terminal remains a **fallback**.
+- **Default on macOS:** integrated pane. **User option** retains the existing Terminal.app path (v1.x behaviour).  
+- **Windows and Linux:** no behaviour change — keep their current console modes; do not modify those paths in an untested open loop.
+
+### Product decisions (locked)
+
+| Topic | Decision |
+|-------|----------|
+| UI placement | New **tab inside Logs & others** (`InfoPane` / Messages notebook), **not** a separate dockable AUI pane. |
+| Platform | **macOS only** for new PTY/pane code and defaults. No Linux/Windows console-path edits without a machine to test. |
+| Milestone style | Small, realizable steps; prove PTY/GDB before full Run/Debug wiring. |
+| Feature order after PoC | **GDB → PTY first**, then **Run → pane**, then **Debug → pane**. |
+| Terminal.app | Remains a **user-selectable option**, not merely an emergency fallback. Default = integrated pane on macOS. |
+| Console contract | Line-oriented I/O plus **colours / simple ANSI** (not full VT100/curses). Ctrl-C, Ctrl-D/EOF, resize, scrollback. |
+| Scrollback | **Keep** until the next Run or Debug session starts (then clear / replace). |
+| Debuggers | **GDB only** for this version (bundled Darwin GDB from v1.2). No LLDB work. |
 
 ### Design constraints (summary)
 
-1. “Unclaimed slave removes Darwin claim warning” is a **hypothesis to test**, not a given.  
-2. Explicit ownership: CB must not claim the slave for Debug; Run child may claim as needed; no Terminal/holder merely to keep the slave alive.  
+1. “Unclaimed slave removes Darwin claim warning” is a **hypothesis to test** (especially Milestone 2 / 4), not a given.  
+2. Explicit ownership: CB must not claim the slave for Debug; Run child may claim as needed; no Terminal/holder merely to keep the slave alive when using the pane.  
 3. Small session API (`CreateSession`, master/slave accessors, `SendInput`, `Resize`, `Close`) — not a full process manager.  
-4. Limited first console contract (text, line input, Ctrl-C/D, resize); not full VT100/curses.  
-5. Non-blocking master I/O off the GUI thread; bound buffers.  
-6. Bundle-relative paths; macOS first; do not change Linux xterm only for symmetry.  
-7. Keep using bundled macOS GDB from v1.2.
+4. Non-blocking master I/O off the GUI thread; bound buffers; simple ANSI/colour parsing in the pane.  
+5. Bundle-relative paths; use bundled macOS GDB from v1.2.  
+6. Setting (name TBD) chooses **Program Console pane** vs **Terminal.app** on macOS only; Windows/Linux settings untouched.
 
 ### Milestones
 
 | # | Milestone | Intent |
 |---|-----------|--------|
-| 1 | Minimal PTY proof of concept | Outside deep CB integration; prove Darwin semantics. |
-| 2 | Program Console pane + transport | Idle pane; master I/O; echo/input policy. |
-| 3 | Normal Run integration | Console targets via session API; fallback. |
-| 4 | GDB inferior I/O | Replace Terminal+holder with acquire + `tty`/`inferior-tty`; test claim warning, stdio, Ctrl-C. |
-| 5 | Lifecycle / fallback / polish | Persistence, `README.macos.md`, edge cases. |
+| 1 | Standalone PTY proof of concept | Outside deep CB UI integration: create PTY; launch a small test program; verify output, prompt without newline, stdin, EOF, Ctrl-C, clean exit, resize. Prove Darwin semantics first. |
+| 2 | GDB → PTY | Point bundled GDB at a CB-owned slave (`tty` / `inferior-tty`); prove inferior I/O, breakpoints/continue, and whether Darwin claim warning disappears / still needs `inferior-tty-claim off`. Minimal display is enough; full Run wiring not required yet. |
+| 3 | Run → Program Console tab | Add the Logs & others tab + transport; console Run targets use the session API into the pane; honour scrollback-until-next-session; GUI targets untouched; Terminal.app remains available via option. |
+| 4 | Debug → Program Console tab | Replace Terminal+holder debug console when pane mode is selected; same tab as Run; Debugger log unchanged; full Ctrl-C / session restart behaviour. |
+| 5 | Option / lifecycle / polish | Persist pane-vs-Terminal preference; docs (`README.macos.md`); edge cases; ensure Linux/Windows paths never regressed. |
 
 ### Hooks (reference)
 
-- Debug: `RunNixConsole` → `tty …` (`cbplugin.cpp`, `debuggergdb.cpp`).  
-- Run: `CompilerGCC` + `DEFAULT_CONSOLE_TERM` / `$SCRIPT`.  
-- After v1.1: Darwin may queue `set inferior-tty-claim off` on the Terminal path; v2.0 may drop that if Milestone 4 shows claim succeeds on an unclaimed slave.
+- Debug (today): `RunNixConsole` → `tty …` (`cbplugin.cpp`, `debuggergdb.cpp`).  
+- Run (today): `CompilerGCC` + `DEFAULT_CONSOLE_TERM` / `$SCRIPT`.  
+- After v1.1: Darwin may queue `set inferior-tty-claim off` on the Terminal path; pane mode may drop that if Milestone 2/4 shows claim succeeds on an unclaimed slave.
 
 ---
 
@@ -199,4 +212,4 @@ Status: Planned
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **Planned** - Integrated Program Console / PTY architecture |
+| **v2.0** | **Planned** — Program Console tab in Logs & others; macOS-only PTY; GDB→PTY then Run→pane then Debug→pane; Terminal.app as user option; Windows/Linux unchanged. |
