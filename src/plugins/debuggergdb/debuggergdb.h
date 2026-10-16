@@ -140,9 +140,12 @@ class DebuggerGDB : public cbDebuggerPlugin
         /** Forced console cleanup (SIGTERM): holder exits immediately, no key wait. */
         void KillConsole();
 
-        /** Normal inferior completion (SIGUSR1): holder may prompt for a key.
-            Does not wait; clears the stored console PID so later KillConsole is a no-op. */
-        void NotifyDebugConsoleFinished();
+        /** Normal inferior completion.
+            Program Console: optional exit-code banner (no timing), then EndDebugSession.
+            Terminal holder: SIGUSR1 (may prompt for a key). Clears console PID so later
+            KillConsole is a no-op. @a announceExitCode false skips the Program Console banner
+            (detach / signal / unknown). */
+        void NotifyDebugConsoleFinished(bool announceExitCode = false, int exitCode = 0);
 
     protected:
         cbProject* GetProject() override { return m_pProject; }

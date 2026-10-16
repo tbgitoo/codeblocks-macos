@@ -2109,11 +2109,13 @@ void DebuggerGDB::KillConsole()
 #endif
 }
 
-void DebuggerGDB::NotifyDebugConsoleFinished()
+void DebuggerGDB::NotifyDebugConsoleFinished(bool announceExitCode, int exitCode)
 {
 #ifndef __WXMSW__
     if (m_programConsoleDebug)
     {
+        if (announceExitCode)
+            ProgramConsole::AnnounceDebugFinished(exitCode);
         ProgramConsole::EndDebugSession();
         m_programConsoleDebug = false;
         m_bIsConsole = false;
@@ -2121,6 +2123,8 @@ void DebuggerGDB::NotifyDebugConsoleFinished()
         m_nConsolePid = 0;
         return;
     }
+    wxUnusedVar(announceExitCode);
+    wxUnusedVar(exitCode);
     // Soft finish: SIGUSR1 → holder may show "Press any key to close...".
     // Clear PID first so OnGDBTerminated / KillConsole will not SIGTERM a
     // helper that is legitimately waiting for keyboard input.

@@ -396,6 +396,22 @@ void AnnounceRunFinished(int exitCode)
 #endif
 }
 
+void AnnounceDebugFinished(int exitCode)
+{
+#if defined(__WXMAC__)
+    /* Exit code only — do not report wall time under the debugger. */
+    g_coord.active = false;
+    if (!g_appendOutput || g_coord.currentGeneration == 0)
+        return;
+    const wxString line = wxString::Format(
+        "\nProcess returned %d (0x%X)\n",
+        exitCode, exitCode);
+    g_appendOutput(g_coord.currentGeneration, line);
+#else
+    wxUnusedVar(exitCode);
+#endif
+}
+
 bool IsRunSessionActive()
 {
 #if defined(__WXMAC__)

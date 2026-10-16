@@ -46,6 +46,12 @@ namespace ProgramConsole
      */
     DLLIMPORT void AnnounceRunFinished(int exitCode);
 
+    /**
+     * Debug inferior finished: exit code only
+     * ("Process returned N (0xN)"). No execution time (breakpoints inflate wall clock).
+     */
+    DLLIMPORT void AnnounceDebugFinished(int exitCode);
+
     /** True while a Run or Debug session is active on the Program Console PTY. */
     DLLIMPORT bool IsRunSessionActive();
 
