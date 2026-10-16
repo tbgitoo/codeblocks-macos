@@ -152,9 +152,17 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ---
 
-## v2.0 — Integrated Program Console (pending implementation)
+## v2.0 — Integrated Program Console
 
-**Status: Planned** (product decisions locked; repository hooks verified below; **not implemented**).
+**Status: In progress** — high-risk PTY/GDB handoffs experimentally validated (M1+M2 **PASS**); production UI integration starts at **M3**.
+
+```text
+  M1 Darwin PTY semantics              PASS
+  M2 GDB → CB-owned PTY semantics      PASS  (17/17)
+  M3 Run → Program Console             NEXT
+  M4 Debug → Program Console           PLANNED
+  M5 Preference / lifecycle / docs     PLANNED
+```
 
 ### Goals (unchanged)
 
@@ -201,11 +209,14 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
    - Holder exists so the slave **stays open** and Terminal owns the session; GDB did not allocate the pty.  
    - `m_nConsolePid` / `KillConsole` / `NotifyDebugConsoleFinished`: SIGTERM (force) vs SIGUSR1 (soft finish) to the **holder**, not a general process manager for the inferior.  
 3. **Slave name to GDB:** path string from `RunNixConsole` (e.g. `/dev/ttys…`).  
-4. **Command used (do not rename in code):** the driver queues **`tty <path>`** (literal GDB `tty` command). On macOS this is done inside `GdbCmd_SetupMacOSInferiorTty` after probing claim. Linux path queues the same `tty <path>` without the claim probe. The repository does **not** currently use `set inferior-tty` for this attach.  
-5. **Claim-off:** `GdbCmd_SetupMacOSInferiorTty` queues `show inferior-tty-claim`, then on success `set inferior-tty-claim off`, then `tty <path>`, then `Start`/`Attach`. This stays on the **Terminal.app** path unless inspection later moves it.  
+4. **Command used (do not rename in code):** the driver queues **`tty <path>`** (literal GDB `tty` command). On macOS Terminal mode this is done inside `GdbCmd_SetupMacOSInferiorTty` after probing claim. Linux path queues the same `tty <path>` without the claim probe. The repository does **not** currently use `set inferior-tty` for this attach.  
+5. **Claim-off (Terminal.app path only):** `GdbCmd_SetupMacOSInferiorTty` queues `show inferior-tty-claim`, then on success `set inferior-tty-claim off`, then `tty <path>`, then `Start`/`Attach`. **Preserve this handshake unchanged for Terminal.app Debug.** Do **not** generalise it to Program Console mode.  
 6. **Bundled GDB:** `DebuggerConfiguration::GetDebuggerExecutable` — empty config → `…/Resources/debugger/bin/gdb` via `GetDataFolder()/../../debugger/bin/gdb` (`debuggeroptionsdlg.cpp`).  
-7. **Narrowest Program Console branch:** when macOS + Program Console mode + console debug, **skip** `RunNixConsole` / holder; `CreateSession` → pass `GetSlaveName()` into the same tty-queue path (reuse or thin variant of `GdbCmd_SetupMacOSInferiorTty`); leave GDB MI/CLI **pipes and debugger log** unchanged.  
-8. **Hypothesis:** unclaimed CB-owned slave may allow omitting `set inferior-tty-claim off` — **test in Milestone 2 and re-check in Milestone 4**; do not assume.
+7. **Narrowest Program Console branch:** when macOS + Program Console mode + console debug, **skip** `RunNixConsole` / Terminal / holder; `CreateSession` → retain master + one slave FD → pass `GetSlaveName()` into a **Program Console** tty-queue path that issues **`tty <path>` only** (no `set inferior-tty-claim off`); leave GDB MI/CLI **pipes and debugger log** unchanged.  
+8. **`inferior-tty-claim` (M2 RESOLVED — production contract):**  
+   - **Program Console Debug:** leave claim **ON**; do **not** queue `set inferior-tty-claim off`; queue existing `tty <slave-path>`; allow GDB’s normal tty claim. Required so Program Console **VINTR** delivers SIGINT to the inferior.  
+   - **Terminal.app Debug:** keep existing v1.x/v1.2 claim-off handshake (holder already owns ctty).  
+   - Claim-off is **not** required for inferior stdio on a CB-owned PTY; claim-on is **required** for correct PTY VINTR → inferior SIGINT.
 
 #### C. UI integration (verified)
 
@@ -237,38 +248,96 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 | Component | Owns | Does not own |
 |-----------|------|----------------|
-| **Program Console session coordinator** (small; owned by Program Console integration) | **Current** monotonic generation; which Run/Debug session is active; rejecting stale events | Master FD; child/GDB processes |
-| **PtySession / transport** | Master FD; reader thread/source; events **stamped** with the assigned generation; `SendInput` / `Resize` / `Close`; slave **name** for GDB | Deciding which generation is current; child PID; UI widgets |
-| **macOS Run launch adapter** | PTY-aware child launch (setsid/claim/pgrp as proven); integrates PID/exit into `CompilerGCC` lifecycle | Master reads; Terminal.app; being a second process manager |
-| **CompilerGCC** (Run) | Queue, cwd, env, Stop, PID/exit reporting, completion semantics | PTY master; forced use of `PipedProcess` if unsuitable |
-| **DebuggerGDB** | GDB process, command queue, debugger log, breakpoints | Inferior stdio bytes (PtySession → pane) |
-| **Program Console panel** | Display, key→bytes, scrollback buffer | Master FD; process kill; generation allocation |
+| **Program Console session coordinator** (small; owned by Program Console integration) | **Current** monotonic generation; which Run/Debug session is active; rejecting stale events | Master FD; slave FD; child/GDB processes |
+| **PtySession / transport** | Master FD; **one retained slave FD** (PTY lifetime); slave pathname; reader thread/source; events **stamped** with the assigned generation; `SendInput` / `Resize` / `Close` | Run child lifecycle; GDB process; debugger interrupt; UI widgets; which generation is current |
+| **macOS Run launch adapter** | PTY-aware child launch (setsid / TIOCSCTTY / pgrp as proven in M1); integrates PID/exit into `CompilerGCC` lifecycle | Master reads; Terminal.app; GDB tty-claim; being a second process manager |
+| **CompilerGCC** (Run) | Queue, cwd, env, Stop, PID/exit reporting, completion semantics | PTY master/slave; forced use of `PipedProcess` if unsuitable |
+| **DebuggerGDB** | GDB process, command queue, debugger log, breakpoints, **debugger interrupt** (existing driver/control path) | Inferior stdio bytes (PtySession → pane); Program Console Ctrl-C / VINTR |
+| **Program Console panel** | Display, key→bytes (incl. VINTR/VEOF), scrollback buffer | Master/slave FDs; process kill; generation allocation |
 
-Conceptual layering:
+Conceptual layering (slave hold visible):
 
 ```text
-Program Console UI
-        |
-session coordinator  — current generation; active session; drop stale events
-        |
-     PtySession      — PTY master transport; events carry assigned generation
+                 Program Console
+                       |
+             session coordinator
+                       |
+                   PtySession
+            master + held slave FD
+                  /          \
+         macOS Run adapter    GDB tty setup
+                |                  |
+             program            inferior
 ```
 
-**Destruction order (session end / shutdown):** coordinator marks generation inactive → stop reader → ignore further events for that generation → close master (hang-up) → join reader → clear session pointer on UI → (Run) wait/reap via CompilerGCC lifecycle / (Debug) existing GDB teardown. UI must not receive callbacks after destroy (unbind + generation check).
+Shared vs not shared:
+
+- Run and Debug **share** Program Console, coordinator, and PtySession transport.  
+- Run and Debug **do not share** process launching.  
+- Run adapter launches the ordinary child on the slave (M1 semantics).  
+- GDB receives the slave pathname via the existing **`tty <path>`** mechanism.  
+- **Program Console Debug** uses **normal GDB tty claim** (claim left **ON**).  
+- **Terminal.app Debug** retains the existing **claim-off** path + holder.
+
+#### PtySession slave lifetime (M2 RESOLVED — production requirement)
+
+`PtySession` **must** retain:
+
+- the PTY master FD;  
+- **one open slave FD**;  
+- the slave pathname.
+
+**Why (M2):** If the final slave FD is closed before GDB attaches, Darwin reports terminal completion on the master and a naive master reader can terminate before GDB opens the slave by pathname.
+
+```text
+CreateSession()
+    |
+    +-- retain master FD
+    |
+    +-- retain one slave FD
+    |
+    +-- expose slave pathname to GDB
+    |
+    +-- GDB: tty <slave-path>
+    |
+    +-- inferior runs on slave
+    |
+    +-- Close() performs deterministic teardown
+```
+
+No Terminal.app or `cb_debug_console_hold` is required in Program Console mode. The retained slave FD replaces the **PTY-lifetime** function previously supplied by the Terminal/holder arrangement, **not** its process-management behaviour.
+
+**Consequence:** Because PtySession deliberately retains a slave FD, **inferior exit alone may not produce final-slave EOF on the master**. Production must use existing Run/Debug lifecycle notifications **plus explicit `PtySession::Close()`**. Do **not** rely on master EOF alone to detect inferior exit.
 
 #### Session API (refined)
 
 ```text
-CreateSession(options) -> SessionHandle   // allocates PTY; coordinator assigns generation
+CreateSession(options) -> SessionHandle   // allocates PTY; retains master + one slave FD; coordinator assigns generation
 GetSlaveName(handle) -> path              // e.g. /dev/ttysN; for GDB tty command
 SendInput(handle, bytes)
 Resize(handle, rows, cols)                // Darwin TIOCSWINSZ; optional pixel fields if API allows
-Close(handle)                             // lifecycle close; may HUP slave
+Close(handle)                             // deterministic teardown (see below); not “wait for master EOF”
 ```
 
 - Do **not** expose raw master FD on the general API.  
 - Do **not** grow this into a process manager or large framework — coordinator may be a small object beside the pane.  
 - Run adapter and GDB attach are callers, not part of the transport.
+
+#### Deterministic Close() (accounts for retained slave FD)
+
+Exact ordering may be adjusted for thread safety; the retained slave FD must have **explicit ownership and deterministic closure**. Do **not** use final-slave EOF as the only process-completion signal.
+
+1. Session coordinator marks the generation inactive / closing.  
+2. Existing Run or Debug lifecycle establishes that the process/inferior is finished or being terminated.  
+3. Stop / disable further input for the session.  
+4. Stop or prepare the master reader for intentional teardown.  
+5. Close the retained slave FD.  
+6. Close the master FD.  
+7. Join / finish the reader.  
+8. Reject any queued events from the obsolete generation.  
+9. Release the session.
+
+UI must not receive callbacks after destroy (unbind + generation check).
 
 #### Lifecycle state machine
 
@@ -280,26 +349,44 @@ Close(handle)                             // lifecycle close; may HUP slave
 
 Every PtySession is stamped with a generation; the **coordinator** owns which generation is current. Queued output/exit/error/completion events carry that id. After the new session becomes **active**, drop events whose generation ≠ current (prevents A-finished → B-started → clear → stale A output).
 
-#### Run-mode Darwin sequence (intended; Milestone 1 proves details)
+#### Run-mode Darwin sequence (M1 proven; M3 implements)
 
-1. Allocate PTY; parent keeps master, obtains slave path/FD.  
-2. Fork; child: `setsid`, open slave, `TIOCSCTTY` if required, set foreground pgrp, dup slave→0/1/2, close extras, exec.  
-3. Parent: close slave FD copies; start master reader; track child PID via **CompilerGCC** lifecycle (adapter integrates notification; `PipedProcess` only if suitable).  
-4. Exit: detect child exit **and** the observed master-side final-slave-closure condition (EOF, EIO if observed, etc.); then Close session. 
-5. Exec failure: report without leaving orphan master/reader; **retain** prior scrollback.
+1. Allocate PTY; **retain master and one slave FD**; obtain slave pathname.  
+2. Fork; child: `setsid`, open/use slave, `TIOCSCTTY` (required after setsid per M1), set foreground pgrp, dup slave→0/1/2, close extras, exec.  
+3. Parent: start master reader; **keep PtySession’s held slave FD open** until `Close()`; track child PID via **CompilerGCC** lifecycle (adapter integrates notification; `PipedProcess` only if suitable).  
+4. Exit: detect child exit via **CompilerGCC / adapter lifecycle**; then **explicit `Close()`** (do not wait for master EOF alone — held slave FD may prevent final-slave EOF).  
+5. Exec failure: report without leaving orphan master/reader/slave; **retain** prior scrollback.  
 
-Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB launches the inferior after `tty <slave>`. Milestone 2 records what Darwin GDB actually does with claim / `inferior-tty-claim`.
+Do **not** add GDB-specific tty-claim behaviour to Run.
 
-#### Input / signals (keep separate)
+#### Debug-mode Darwin sequence (M2 proven; M4 implements)
+
+1. Create PtySession (master + held slave FD + pathname).  
+2. Queue **`tty <GetSlaveName()>`** only — **do not** queue `set inferior-tty-claim off`.  
+3. GDB launches the inferior after `tty`; normal claim remains **ON**.  
+4. Inferior stdio flows through PtySession → Program Console.  
+5. Inferior exit / debug stop → existing debugger lifecycle → **explicit PtySession teardown**.
+
+#### Input / signals (M1+M2 established)
 
 | Action | Mechanism |
 |--------|-----------|
-| Focus in Program Console, Ctrl-C | Send the slave’s configured **VINTR** character through the master (normally `0x03` / Ctrl-C); line discipline signals the foreground pgrp. Record termios control chars when the session is configured. **Verify VINTR delivery** in M1 (and re-check in M2). |
-| Focus in Program Console, Ctrl-D | Send the slave’s configured **VEOF** character (normally `0x04` / Ctrl-D). **Not** implemented by closing the master. **Verify VEOF** in M1. |
+| Focus in Program Console, Ctrl-C | Send configured **VINTR** through the master (normally `0x03`). Line discipline → SIGINT to foreground inferior pgrp. **Established (M2):** works when GDB `inferior-tty-claim` remains **ON**. Remains **PTY input** — **not** a GDB debugger interrupt. |
+| Focus in Program Console, Ctrl-D | Send configured **VEOF** (normally `0x04`). **Not** by closing the master. **Verified in M1.** |
 | Printable / Enter / Backspace | Encode to bytes (UTF-8); write to master; **no local echo** of printables if slave ECHO is on — display only master output. |
 | Run/Debug **Stop** | Existing CB lifecycle (kill run process / stop debugger); **not** “only write VINTR”. |
-| Debugger interrupt | GDB control channel; **not** Program Console Ctrl-C / VINTR. |
-| Session **Close** | Lifecycle; may cause hang-up; distinct from VEOF. |
+| Debugger interrupt | **Existing GDB driver/control path** → debugger-controlled stop. **Not** PTY VINTR; **not** a naive sync CLI `interrupt` while `continue` blocks (M2). Keep independent from Program Console input. |
+| Session **Close** | Deterministic lifecycle teardown (above); distinct from VEOF. |
+
+Program Console Ctrl-C path (established):
+
+```text
+keyboard Ctrl-C
+    → PtySession sends configured VINTR
+    → PTY master
+    → terminal line discipline
+    → foreground inferior process group receives SIGINT
+```
 
 #### Resize
 
@@ -312,8 +399,9 @@ Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB l
 
 - **Never** block the GUI thread on master `read`.  
 - Reader: dedicated thread or non-blocking FD + existing wake patterns (`PipedProcess` / idle timers / `wxQueueEvent` / `CallAfter`). Prefer one worker reading master, batching bytes, posting **generation-tagged** events to the GUI.  
-- Distinguish: normal EOF, the observed Darwin master-side condition after final slave closure (including EIO if observed), genuine errors, hard errors, explicit `Close`.  
-- Shutdown: `Close` → interrupt read → join → no UI callbacks into freed panel (`Destroy` unregisters first).  
+- Distinguish master EOF, genuine read errors, and explicit `Close`. Because PtySession retains a slave FD, process completion is determined by the Run/Debug lifecycle rather than master EOF alone.  
+- **Do not** treat master EOF alone as inferior-exit while PtySession still holds a slave FD.  
+- Shutdown: follow deterministic `Close()` (above).  
 - Rapid stop/restart: coordinator assigns new generation; clear display only when replacement becomes **active**; stale events ignored.
 
 #### Buffering / UTF-8 / ANSI
@@ -328,15 +416,74 @@ Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB l
 
 ### Milestones and acceptance
 
-| # | Milestone | Form | Must prove / deliver |
-|---|-----------|------|----------------------|
-| **1** | Standalone Darwin PTY proof | Small **repo test utility** (e.g. `src/tools/` or `tests/`); Darwin-only; **not** production UI | Focus on **Darwin/Unix PTY semantics:** allocation; session / controlling-terminal setup; process groups; stdin/stdout/stderr on slave; output with newline; **prompt without newline**; terminal echo (no harness double-echo); **VINTR** (Ctrl-C) to expected pgrp; **VEOF** (Ctrl-D) EOF **without** closing master; record termios VINTR/VEOF; resize / SIGWINCH as applicable; CR progress; child exit / immediate exit; exec failure; close unused FDs; clean reader stop; rapid create/close/recreate without leaks. Defer rich UTF-8/ANSI split-display proofs to later pane work. |
-| **2** | Bundled GDB → CB-owned PTY | Minimal harness using v1.2 bundled `gdb` + PtySession; optional tiny console dump | GDB accepts slave via **`tty <path>`** (as in tree); inferior stdio through PTY; break / continue; input when appropriate; Console VINTR vs debugger interrupt distinguishable; document **`inferior-tty-claim`** still needed or not; **no** Terminal/holder unless proof shows Darwin requires it |
-| **3** | Run → Program Console tab | Production: InfoPane tab + coordinator + transport + macOS Run adapter | Console Run uses pane when mode=program_console; Terminal path when mode=terminal_app; GUI targets unchanged; **scrollback cleared only after successful Run launch / active session**; failures keep prior output; generation safety via coordinator |
-| **4** | Debug → Program Console tab | Production: skip `RunNixConsole` in pane mode; same tab | Inferior I/O in pane; debugger log unchanged; Stop/shutdown safe; **scrollback cleared only after successful Debug inferior/session activation**; failures keep prior output; re-validate claim-off hypothesis; holder unused in pane mode |
-| **5** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases |
+| # | Status | Milestone | Form / how to run | Must prove / deliver |
+|---|--------|-----------|-------------------|----------------------|
+| **1** | **PASS** | Standalone Darwin PTY proof | `src/tools/PtyProof/` — `make -C src/tools/PtyProof run` | Darwin/Unix PTY semantics: allocation; setsid+TIOCSCTTY required; process groups; stdio on slave; newline + prompt without newline; terminal echo; **VINTR**; **VEOF** without closing master; termios VINTR/VEOF; resize/SIGWINCH; CR progress; exit paths; exec failure; FD hygiene; reader stop; rapid recreate. Master after final slave close: `read`→0 (EOF). |
+| **2** | **PASS (17/17)** | Bundled GDB → CB-owned PTY | `make -C src/tools/PtyProof run-m2` (default GDB `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`; override `CB_GDB` / argv). No Terminal / holder. | See **M2 results** below. All prior M2 claim/lifetime questions **RESOLVED**. |
+| **3** | **NEXT** | Run → Program Console tab | Production: InfoPane tab + coordinator + transport + macOS Run adapter | Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. Use **M1** Darwin PTY semantics for the Run adapter. **No** GDB tty-claim behaviour on Run. |
+| **4** | **PLANNED** | Debug → Program Console tab | Production: Program Console PtySession + `tty <path>` | See **M4 requirements** below. Terminal.app mode completely unchanged (including claim-off). |
+| **5** | **PLANNED** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
 
 **Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
+
+#### Milestone 2 results (RESOLVED — implementation requirements)
+
+Proof GDB: `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`. Inferior I/O over CB-owned PTY **without** Terminal.app or `cb_debug_console_hold`. **17/17 PASS.**
+
+| Result | Fact |
+|--------|------|
+| Bundled GDB | Found and executed |
+| `tty <path>` | CB-owned slave accepted |
+| Inferior stdout/stderr | Works through PtySession |
+| Inferior stdin | Works through PtySession |
+| Break / continue | Works |
+| Terminal.app | **Not required** in Program Console mode |
+| `cb_debug_console_hold` | **Not required** in Program Console mode |
+| `inferior-tty-claim` support | Bundled GDB supports it |
+| Claim-off for I/O | **Not required** for inferior stdio on CB-owned PTY |
+| Claim-on warning | Claim-on works **without** the Terminal claim warning |
+| Claim-on for VINTR | **Required** for PTY VINTR → inferior SIGINT |
+| Claim-off + VINTR | Echoes `^C`; does **not** deliver SIGINT |
+| Debugger interrupt | Separate from PTY VINTR; no new `^C` on PTY stream |
+| Slave FD hold | **One slave FD must remain open** until `Close()` so the PTY stays alive before GDB attaches |
+| Sync CLI `interrupt` | Not a substitute for the production GDB driver interrupt path |
+
+#### Milestone 4 production requirements (from M2)
+
+1. Program Console mode creates a PtySession.  
+2. PtySession retains master FD and one slave FD.  
+3. Pass `GetSlaveName()` into the existing GDB **`tty <path>`** setup path.  
+4. Do **not** call `RunNixConsole` in Program Console mode.  
+5. Do **not** launch Terminal.app in Program Console mode.  
+6. Do **not** launch `cb_debug_console_hold` in Program Console mode.  
+7. Do **not** issue `set inferior-tty-claim off` in Program Console mode.  
+8. Leave normal GDB tty claiming enabled (claim **ON**).  
+9. Inferior stdio flows through PtySession and Program Console.  
+10. Program Console Ctrl-C sends VINTR through the PTY.  
+11. Debugger Interrupt continues using the existing GDB driver/control path.  
+12. Inferior exit triggers **explicit** session teardown rather than relying solely on master EOF.  
+13. Terminal.app mode remains completely unchanged, including its existing claim-off behaviour.
+
+---
+
+### Open questions (M3/M4 implementation only)
+
+Resolved by M1/M2 — **do not reopen** unless production evidence contradicts:
+
+- whether GDB can use a CB-owned slave;  
+- whether Terminal.app / `cb_debug_console_hold` is required in Program Console mode;  
+- whether `inferior-tty-claim off` is required for Program Console;  
+- whether PTY VINTR reaches the inferior with claim-on;  
+- whether debugger interrupt should be implemented as PTY VINTR;  
+- setsid / TIOCSCTTY / VEOF / resize / master-after-slave-close Darwin basics.
+
+Still open (implementation detail):
+
+- exact integration point for retained slave lifetime in production PtySession;  
+- exact Code::Blocks lifecycle event used to trigger Debug session teardown;  
+- exact Run adapter integration into `CompilerGCC` lifecycle;  
+- UI / event-thread integration details;  
+- generation-safe activation and teardown wiring in the IDE.
 
 ---
 
@@ -346,8 +493,10 @@ Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB l
 
 ### Hooks (reference)
 
-- Debug (Terminal mode): `RunNixConsole` → `tty <path>` (+ macOS claim probe).  
+- Debug (**Terminal.app** mode): `RunNixConsole` → `tty <path>` (+ macOS **claim-off** probe).  
+- Debug (**Program Console** mode): PtySession → `tty <path>` only (**claim ON**); no holder.  
 - Run (Terminal mode): `CompilerGCC` + `/console_terminal` + `$SCRIPT`.  
+- Run (Program Console mode): macOS Run adapter + PtySession (M3).  
 - GDB binary: `GetDebuggerExecutable` → bundled path when empty.
 
 ---
@@ -359,4 +508,4 @@ Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB l
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **Planned (refined)** — InfoPane Program Console; macOS PTY; findings-backed Run/Debug branches; M1→M2→M3→M4→M5; Terminal option; Win/Linux unchanged. |
+| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)** (`make -C src/tools/PtyProof run` / `run-m2`); Program Console keeps claim **ON** + held slave FD; Terminal.app keeps claim-off + holder; **M3 NEXT**; M4–M5 planned; Win/Linux unchanged. |
