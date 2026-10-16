@@ -40,8 +40,7 @@ void HookShow()
     if (!g_panel)
         return;
     /* Closing the tab Toggle()s it hidden; ShowNonLogger re-inserts it.
-     * Do not steal editor focus here — launch should leave the caret in the
-     * editor. Focus moves to the console only after output settles (cin). */
+     * Focus policy (on_launch / silence) is applied separately. */
     wxWindow* p = g_panel->GetParent();
     if (InfoPane* pane = dynamic_cast<InfoPane*>(p))
         pane->ShowNonLogger(g_panel);
@@ -65,6 +64,12 @@ void HookCancelInputFocus()
 {
     if (g_panel)
         g_panel->CancelInputFocusTimer();
+}
+
+void HookFocusNow()
+{
+    if (g_panel)
+        g_panel->FocusConsoleNow();
 }
 } // namespace
 
@@ -108,7 +113,7 @@ ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
     g_panel = this;
 #if defined(__WXMAC__)
     ProgramConsole::BindPanelHooks(&HookClear, &HookAppend, &HookShow, &HookSetGen,
-                                   &HookArmInputFocus, &HookCancelInputFocus);
+                                   &HookArmInputFocus, &HookCancelInputFocus, &HookFocusNow);
 #endif
 }
 
@@ -118,7 +123,7 @@ ProgramConsolePanel::~ProgramConsolePanel()
     if (g_panel == this)
         g_panel = nullptr;
 #if defined(__WXMAC__)
-    ProgramConsole::BindPanelHooks(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    ProgramConsole::BindPanelHooks(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 #endif
 }
 
@@ -180,11 +185,23 @@ void ProgramConsolePanel::FlushPending()
     ArmInputFocusTimer();
 }
 
+void ProgramConsolePanel::FocusConsoleNow()
+{
+#if defined(__WXMAC__)
+    wxWindow* p = GetParent();
+    if (InfoPane* pane = dynamic_cast<InfoPane*>(p))
+        pane->ShowNonLogger(this);
+    CodeBlocksLogEvent evtShow(cbEVT_SHOW_LOG_MANAGER);
+    Manager::Get()->ProcessEvent(evtShow);
+    if (m_stc)
+        m_stc->SetFocus();
+#endif
+}
+
 void ProgramConsolePanel::ArmInputFocusTimer()
 {
 #if defined(__WXMAC__)
-    /* Run: after quiet output. Debug: only while inferior is running (cin blocking),
-     * not while stopped on the cin line with the debugger triangle visible. */
+    /* Silence / step-silence policies only (see AllowInputFocusSteal). */
     if (!ProgramConsole::AllowInputFocusSteal())
         return;
     /* One-shot: restart on each flush so continuous cout does not steal focus. */

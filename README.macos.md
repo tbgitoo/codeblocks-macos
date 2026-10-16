@@ -176,9 +176,31 @@ CodeBlocks.app/
 
 ## Technical notes
 
-### Terminal-based console handling
+### Program Console (default) and Terminal.app
 
-The current macOS implementation uses Terminal.app for console programs.
+On macOS, console Run and Debug default to the in-IDE **Program Console** tab under **Logs & others** (a Code::Blocks–owned PTY). Choose the mode under:
+
+```text
+Settings > Environment > Console programs
+```
+
+- **Program Console (Logs & others)** — default. Stdio appears in the IDE; no Terminal.app window.
+- **Terminal.app** — previous external-terminal behaviour (see below).
+
+**Keyboard focus (Program Console only):**
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| Program Console focus (Run) | On launch | Focus the pane when Run starts (like an external terminal opening). Options: Never; On silence (~250 ms quiet output — heuristic, may fire during quiet computation). |
+| Program Console focus (Debug) | Never | Keep focus in the IDE (like Linux/Windows `BringCBToFront` on stop). Options: On launch; On silence in a running step (heuristic). |
+
+These focus controls are disabled when Console programs is Terminal.app. They do not apply on Windows or Linux.
+
+Display notes: Program Console treats output as UTF-8 (with a simple fallback), handles CR/BS for in-line updates, and does not implement a full ANSI/VT100 emulator.
+
+### Terminal.app console handling
+
+When **Console programs** is **Terminal.app**, Code::Blocks uses Terminal.app as before.
 
 The built-in terminal command uses `osascript` to run:
 

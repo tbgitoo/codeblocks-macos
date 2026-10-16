@@ -14,7 +14,8 @@ void BindPanelHooks(void (*clear)(),
                     void (*show)(),
                     void (*setGen)(std::uint64_t),
                     void (*armInputFocus)() = nullptr,
-                    void (*cancelInputFocus)() = nullptr);
+                    void (*cancelInputFocus)() = nullptr,
+                    void (*focusNow)() = nullptr);
 bool SendPanelInput(const void* data, size_t len);
 bool ResizeSession(unsigned rows, unsigned cols);
 unsigned char GetVIntrByte();

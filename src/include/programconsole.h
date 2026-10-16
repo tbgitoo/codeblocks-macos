@@ -16,11 +16,22 @@ namespace ProgramConsole
     /** True on macOS when /console_output_mode is program_console (default). */
     DLLIMPORT bool PreferProgramConsole();
 
+    /**
+     * Program Console keyboard-focus policy (macOS + program_console only).
+     * Config: /program_console_focus_run — on_launch (default) | never | on_silence
+     * Config: /program_console_focus_debug — on_launch | never (default) | on_step_silence
+     */
+    DLLIMPORT wxString GetFocusPolicyRun();
+    DLLIMPORT wxString GetFocusPolicyDebug();
+
     /** Create/register the InfoPane page (macOS only; no-op elsewhere). */
     DLLIMPORT void RegisterPanel(wxWindow* infoPaneParent);
 
-    /** Show / focus the Program Console tab if present. */
+    /** Show the Program Console tab if present (does not apply focus policy). */
     DLLIMPORT void ShowPanel();
+
+    /** Show the tab and move keyboard focus into the console (on_launch policy). */
+    DLLIMPORT void FocusPanel();
 
     /**
      * Begin a Run session: allocate PTY (master + held slave).

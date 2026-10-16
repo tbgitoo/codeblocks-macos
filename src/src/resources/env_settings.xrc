@@ -52,6 +52,11 @@
 							<object class="wxBoxSizer">
 								<orient>wxVERTICAL</orient>
 								<object class="sizeritem">
+									<object class="wxScrolledWindow" name="scrGeneral">
+										<style>wxTAB_TRAVERSAL|wxBORDER_NONE|wxVSCROLL</style>
+										<object class="wxBoxSizer">
+											<orient>wxVERTICAL</orient>
+								<object class="sizeritem">
 									<object class="wxCheckBox" name="chkShowSplash">
 										<label>Show splash screen on start-up</label>
 										<checked>1</checked>
@@ -220,7 +225,7 @@
 								<object class="sizeritem">
 									<object class="wxFlexGridSizer">
 										<cols>2</cols>
-										<rows>4</rows>
+										<rows>6</rows>
 										<vgap>4</vgap>
 										<hgap>4</hgap>
 										<growablecols>1</growablecols>
@@ -253,6 +258,44 @@
 											<option>1</option>
 										</object>
 										<object class="sizeritem">
+											<object class="wxStaticText" name="lblProgramConsoleFocusRun">
+												<label>Program Console focus (Run):</label>
+											</object>
+											<flag>wxALIGN_CENTER_VERTICAL</flag>
+										</object>
+										<object class="sizeritem">
+											<object class="wxComboBox" name="cbProgramConsoleFocusRun">
+												<content>
+													<item>On launch (like external terminal)</item>
+													<item>Never</item>
+													<item>On silence (~250 ms; heuristic)</item>
+												</content>
+												<style>wxCB_READONLY</style>
+												<tooltip>Silence cannot distinguish cin from a quiet long calculation.</tooltip>
+											</object>
+											<flag>wxALL|wxEXPAND</flag>
+											<option>1</option>
+										</object>
+										<object class="sizeritem">
+											<object class="wxStaticText" name="lblProgramConsoleFocusDebug">
+												<label>Program Console focus (Debug):</label>
+											</object>
+											<flag>wxALIGN_CENTER_VERTICAL</flag>
+										</object>
+										<object class="sizeritem">
+											<object class="wxComboBox" name="cbProgramConsoleFocusDebug">
+												<content>
+													<item>On launch</item>
+													<item>Never (like Linux/Windows)</item>
+													<item>On silence in a running step (heuristic)</item>
+												</content>
+												<style>wxCB_READONLY</style>
+												<tooltip>Default Never matches BringCBToFront on other platforms. Step-silence may focus during quiet computation.</tooltip>
+											</object>
+											<flag>wxALL|wxEXPAND</flag>
+											<option>1</option>
+										</object>
+										<object class="sizeritem">
 											<object class="wxStaticText" name="ID_STATICTEXT9">
 												<label>Terminal to launch console programs:</label>
 											</object>
@@ -280,6 +323,11 @@
 									</object>
 									<flag>wxTOP|wxLEFT|wxEXPAND</flag>
 									<border>4</border>
+								</object>
+										</object>
+									</object>
+									<flag>wxEXPAND</flag>
+									<option>1</option>
 								</object>
 							</object>
 						</object>
