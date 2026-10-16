@@ -60,6 +60,7 @@ ALLHEADERS = annoyingdialog.h \
 				crc32.h \
 				cygwin.h \
 				debuggermanager.h \
+				debuggeedescription.h \
 				editarrayfiledlg.h \
 				editarrayorderdlg.h \
 				editarraystringdlg.h \

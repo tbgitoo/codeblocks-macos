@@ -752,7 +752,7 @@ Dividing line: default single-file semantics suffice → no project; custom buil
 
 | # | Status | Work |
 |---|--------|------|
-| **M1** | Planned | **Standalone compile + narrow hand-off.** CompOption debug-info/strip handling; define small `DebuggeeDescription` for **standalone**; save + always-rebuild; menu/UpdateUI; compile failure aborts debugger launch. **Do not** convert the project Debug path to the description as an M1 requirement. |
+| **M1** | **DONE** | **Standalone compile + narrow hand-off.** CompOption debug-info/strip handling; define small `DebuggeeDescription` for **standalone**; save + always-rebuild; menu/UpdateUI; compile failure aborts debugger launch. Project Debug path not converted to the description. |
 | **M2** | Planned | **DebuggerGDB standalone.** No-project Debug; no-project Step Into (= existing cold-start `Debug(true)` semantics); breakpoints; stepping; watches/stack; console I/O via existing selected mode; clean exit/restart. **Regression smoke:** project Debug and attach remain unchanged. Prefer early branch / overload over refactoring mature project code. |
 | **M3** | Planned | **Compatibility.** Confirm project/attach/Run and Linux/Windows paths were not intentionally changed; gdbmi not knowingly broken; contrib compile if practical; document anything not runtime-tested. Optional note if project Debug was *not* routed through `DebuggeeDescription` (expected default). |
 | **M4** | Planned | **Documentation / release.** User note: lone C/C++ source can be debugged without a project; list deliberate limitations; update this plan + ChangeLog. |

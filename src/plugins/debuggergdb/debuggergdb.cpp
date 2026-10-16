@@ -232,6 +232,7 @@ DebuggerGDB::DebuggerGDB() :
     m_NoDebugInfo(false),
     m_StoppedOnSignal(false),
     m_pProject(nullptr),
+    m_UseStandaloneDebuggee(false),
     m_bIsConsole(false),
     m_stopDebuggerConsoleClosed(false),
     m_nConsolePid(0),
@@ -736,12 +737,39 @@ bool DebuggerGDB::Debug(bool breakOnEntry)
 
     m_pProject = nullptr;
     m_NoDebugInfo = false;
+    m_UseStandaloneDebuggee = false;
+    m_StandaloneDebuggee = DebuggeeDescription();
 
-    // can only debug projects or attach to processes
     ProjectManager* prjMan = Manager::Get()->GetProjectManager();
     cbProject* project = prjMan->GetActiveProject();
+
+    // Additive branch: attach → project → standalone → fail
     if (!project && m_PidToAttach == 0)
-        return false;
+    {
+        if (!DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
+            return false;
+
+        wxString sourcePath;
+        if (!DebuggeeDescriptionUtil::SaveActiveSourceForStandaloneDebug(sourcePath))
+        {
+            Log(_("Cannot debug: source must be saved to a filesystem path first."), Logger::error);
+            return false;
+        }
+        if (!DebuggeeDescriptionUtil::MakeStandalone(sourcePath, m_StandaloneDebuggee))
+        {
+            Log(_("Cannot build standalone debuggee description for this file."), Logger::error);
+            return false;
+        }
+        m_UseStandaloneDebuggee = true;
+
+        m_Canceled = false;
+        if (!EnsureStandaloneRebuildForDebug(breakOnEntry ? StartTypeStepInto : StartTypeRun, sourcePath))
+            return false;
+
+        if (!WaitingCompilerToFinish() && !m_State.HasDriver() && !m_Canceled)
+            return DoDebug(breakOnEntry) == 0;
+        return true;
+    }
 
     m_pProject = project;
     if (m_pProject && m_ActiveBuildTarget.IsEmpty())
@@ -778,10 +806,10 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     m_programConsoleDebug = false;
     ProjectManager* prjMan = Manager::Get()->GetProjectManager();
 
-    // select the build target to debug
+    // select the build target to debug (project path only; standalone uses DebuggeeDescription)
     ProjectBuildTarget* target = nullptr;
     Compiler* actualCompiler = nullptr;
-    if ( (m_PidToAttach == 0) && m_pProject)
+    if ( (m_PidToAttach == 0) && m_pProject && !m_UseStandaloneDebuggee)
     {
         Log(_("Selecting target: "));
         if (!m_pProject->BuildTargetValid(m_ActiveBuildTarget, false))
@@ -896,20 +924,33 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
         // Note: I've done some testing and parsing 1000 strings takes 2-3ms, so this isn't really
         // a problem. The code adding the source dirs to the debugger driver is a lot slower!
         // now add all per-project user-set search dirs
-        const wxArrayString& pdirs = ParseSearchDirs(*m_pProject);
-        for (size_t i = 0; i < pdirs.GetCount(); ++i)
-            AddSourceDir(pdirs[i]);
-
-        // lastly, add THE project as source dir
         if (m_pProject)
         {
+            const wxArrayString& pdirs = ParseSearchDirs(*m_pProject);
+            for (size_t i = 0; i < pdirs.GetCount(); ++i)
+                AddSourceDir(pdirs[i]);
+
             AddSourceDir(m_pProject->GetBasePath());
             AddSourceDir(m_pProject->GetCommonTopLevelPath());
         }
 
-        // set the file to debug (depends on the target type)
+        // set the file to debug (project target, or standalone DebuggeeDescription)
         wxString debuggee, path;
-        if ( !GetDebuggee(debuggee, path, target) )
+        if (m_UseStandaloneDebuggee)
+        {
+            if (!m_StandaloneDebuggee.IsValid())
+            {
+                m_Canceled = true;
+                return -3;
+            }
+            debuggee = m_StandaloneDebuggee.executablePath;
+            path = m_StandaloneDebuggee.workingDirectory;
+            Log(_("Adding file: ") + debuggee);
+            ConvertDirectory(debuggee, wxEmptyString, true);
+            if (!m_StandaloneDebuggee.arguments.empty())
+                m_State.GetDriver()->SetArguments(m_StandaloneDebuggee.arguments);
+        }
+        else if ( !GetDebuggee(debuggee, path, target) )
         {
             m_Canceled = true;
             return -3;
@@ -925,7 +966,7 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
             }
         }
 
-        if (target && !target->GetExecutionParameters().IsEmpty())
+        if (!m_UseStandaloneDebuggee && target && !target->GetExecutionParameters().IsEmpty())
             m_State.GetDriver()->SetArguments(target->GetExecutionParameters());
 
         cmdline = m_State.GetDriver()->GetCommandLine(cmdexe, debuggee, GetActiveConfigEx().GetUserArguments());
@@ -1030,14 +1071,18 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     if (!m_State.HasDriver())
         return -1;
 
-    bool isConsole = (target && target->GetTargetType() == ttConsoleOnly);
+    bool isConsole = m_UseStandaloneDebuggee
+                     ? m_StandaloneDebuggee.isConsole
+                     : (target && target->GetTargetType() == ttConsoleOnly);
     m_State.GetDriver()->Prepare(isConsole, m_printElements, rd);
     m_State.ApplyBreakpoints();
 
    #ifndef __WXMSW__
     // Console Debug: either Program Console (CB-owned PTY, claim ON) or
     // Terminal.app / xterm + holder (macOS claim-off). Issue tty to GDB.
-    m_bIsConsole = target && target->GetUseConsoleRunner();
+    m_bIsConsole = m_UseStandaloneDebuggee
+                   ? m_StandaloneDebuggee.isConsole
+                   : (target && target->GetUseConsoleRunner());
     m_programConsoleDebug = false;
     bool deferStartForMacOSTty = false;
     if (m_bIsConsole)

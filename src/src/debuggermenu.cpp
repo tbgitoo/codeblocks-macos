@@ -28,6 +28,7 @@
 #include "cbdebugger_interfaces.h"
 #include "cbstyledtextctrl.h"
 #include "debuggermanager.h"
+#include "debuggeedescription.h"
 
 namespace
 {
@@ -466,7 +467,11 @@ void DebuggerMenuHandler::OnUpdateUI(wxUpdateUIEvent& event)
         else
         {
             cbProject* prj = Manager::Get()->GetProjectManager()->GetActiveProject();
-            en = (prj && !prj->GetCurrentlyCompilingTarget());
+            if (prj)
+                en = !prj->GetCurrentlyCompilingTarget();
+            else
+                // v2.1 M1: no-project Debug/Step when a standalone ftSource editor is active
+                en = DebuggeeDescriptionUtil::IsStandaloneDebugCandidate();
         }
         stopped = m_activeDebugger->IsStopped() && !m_activeDebugger->IsBusy();
         isRunning = m_activeDebugger->IsRunning();

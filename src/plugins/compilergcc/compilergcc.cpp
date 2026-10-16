@@ -49,6 +49,7 @@
 #include "filefilters.h"
 #include "incremental_select_helper.h"
 #include "programconsole.h"
+#include "debuggeedescription.h"
 
 #include "compilergcc.h"
 #include "compileroptionsdlg.h"
@@ -3257,6 +3258,46 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
     // get compile commands for file (always linked as console-executable)
     DirectCommands dc(this, compiler, nullptr, m_PageIndex);
     wxArrayString compile = dc.GetCompileSingleFileCommand(file);
+    AddToCommandQueue(compile);
+
+    return DoRunQueue( Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100) );
+}
+
+int CompilerGCC::CompileStandaloneFileForDebug(const wxString& file)
+{
+    // Always-rebuild single file for no-project Debug: default compiler options, but
+    // with that compiler's "Produce debugging symbols" CompOption applied and strip off.
+    Manager::Get()->GetEditorManager()->Save(file);
+
+    SwitchCompiler(CompilerFactory::GetDefaultCompilerID());
+    Manager::Get()->GetMacrosManager()->Reset();
+
+    Compiler* compiler = CompilerFactory::GetDefaultCompiler();
+    if (!compiler)
+    {
+        LogMessage(_("error: No default compiler configured."), cltError);
+        return -1;
+    }
+
+    DebuggeeDescriptionUtil::StandaloneDebugCompileOptionsGuard guard(compiler);
+    if (!guard.IsOk())
+    {
+        LogMessage(guard.ErrorMessage(), cltError);
+        return -1;
+    }
+
+    DoClearErrors();
+    DoPrepareQueue(false);
+    PrintBanner(baBuildFile, nullptr, nullptr);
+
+    // Guard must outlive DirectCommands construction: generator caches $options at Init.
+    DirectCommands dc(this, compiler, nullptr, m_PageIndex);
+    wxArrayString compile = dc.GetCompileSingleFileCommand(file);
+    if (compile.IsEmpty())
+    {
+        LogMessage(_("error: No compile commands for this file (not a compilable source?)."), cltError);
+        return -2;
+    }
     AddToCommandQueue(compile);
 
     return DoRunQueue( Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100) );

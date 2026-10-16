@@ -66,6 +66,7 @@ libcodeblocks_la_SOURCES = annoyingdialog.cpp \
 						crc32.cpp \
 						cygwin.cpp \
 						debuggermanager.cpp \
+						debuggeedescription.cpp \
 						editarrayfiledlg.cpp \
 						editarrayorderdlg.cpp \
 						editarraystringdlg.cpp \

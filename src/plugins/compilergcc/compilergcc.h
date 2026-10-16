@@ -114,6 +114,7 @@ class CompilerGCC : public cbCompilerPlugin
         int RebuildWorkspace(const wxString& target = wxEmptyString) override;
         int CompileFile(const wxString& file) override;
         virtual int CompileFileWithoutProject(const wxString& file);
+        int CompileStandaloneFileForDebug(const wxString& file) override;
         virtual int CompileFileDefault(cbProject* project, ProjectFile* pf, ProjectBuildTarget* bt);
         int KillProcess() override;
         bool IsRunning() const override;

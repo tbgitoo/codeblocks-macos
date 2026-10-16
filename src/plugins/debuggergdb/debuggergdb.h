@@ -18,6 +18,7 @@
 #include "remotedebugging.h"
 #include "debuggerstate.h"
 #include "debugger_defs.h"
+#include "debuggeedescription.h"
 
 class cbProject;
 class TiXmlElement;
@@ -207,6 +208,10 @@ class DebuggerGDB : public cbDebuggerPlugin
         // extra dialogs
         cbProject* m_pProject; // keep the currently debugged project handy
         wxString m_ActiveBuildTarget;
+
+        /** v2.1: set when debugging a standalone (no-project) source; cleared on project/attach. */
+        bool m_UseStandaloneDebuggee;
+        DebuggeeDescription m_StandaloneDebuggee;
 
         // Linux / macOS console support
         bool     m_bIsConsole;

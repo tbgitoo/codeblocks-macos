@@ -356,6 +356,14 @@ class PLUGIN_EXPORT cbCompilerPlugin: public cbPlugin
           */
         virtual int CompileFile(const wxString& file) = 0;
 
+        /** @brief Always-rebuild a single source file for no-project Debug.
+          *
+          * Uses the default compiler with its "Produce debugging symbols" CompOption
+          * applied and strip CompOption suppressed for this compile only.
+          * Default implementation returns -1 (unsupported).
+          */
+        virtual int CompileStandaloneFileForDebug(const wxString& /*file*/) { return -1; }
+
         /** @brief Abort the current build process. */
         virtual int KillProcess() = 0;
 
@@ -654,7 +662,11 @@ class PLUGIN_EXPORT cbDebuggerPlugin: public cbPlugin
 
         bool GetDebuggee(wxString& pathToDebuggee, wxString& workingDirectory, ProjectBuildTarget* target);
         bool EnsureBuildUpToDate(StartType startType);
+        /** Always-rebuild standalone source for Debug. Compile failure is a hard abort
+          * (no "Debug anyway?"). Does not launch the debugger by itself. */
+        bool EnsureStandaloneRebuildForDebug(StartType startType, const wxString& sourcePath);
         bool WaitingCompilerToFinish() const { return m_WaitingCompilerToFinish; }
+        bool IsStandaloneDebugBuild() const { return m_StandaloneDebugBuild; }
 
         int RunNixConsole(wxString& consoleTty);
         void MarkAsStopped();
@@ -668,6 +680,7 @@ class PLUGIN_EXPORT cbDebuggerPlugin: public cbPlugin
         wxString m_PreviousLayout;
         cbCompilerPlugin* m_pCompiler;
         bool m_WaitingCompilerToFinish;
+        bool m_StandaloneDebugBuild;
 
         StartType m_StartType;
 
