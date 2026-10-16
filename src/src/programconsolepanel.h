@@ -20,6 +20,8 @@ public:
     void SetActiveGeneration(std::uint64_t generation);
     void ArmInputFocusTimer();
     void CancelInputFocusTimer();
+    /** Show the tab and focus the STC (on_launch policy). */
+    void FocusConsoleNow();
 
 private:
     void OnKeyDown(wxKeyEvent& event);

@@ -154,14 +154,14 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ## v2.0 — Integrated Program Console
 
-**Status: In progress** — M1–M3 done; **M4 DONE** (Debug → Program Console; smoke in IDE); **M5** next.
+**Status: In progress** — M1–M4 done; **M5 DONE** (focus policies + docs; not committed unless requested).
 
 ```text
   M1 Darwin PTY semantics              PASS
   M2 GDB → CB-owned PTY semantics      PASS  (17/17)
   M3 Run → Program Console             DONE (committed)
-  M4 Debug → Program Console           DONE
-  M5 Preference / lifecycle / docs     NEXT
+  M4 Debug → Program Console           DONE (committed)
+  M5 Preference / polish / docs        DONE
 ```
 
 ### Goals (unchanged)
@@ -422,7 +422,7 @@ keyboard Ctrl-C
 | **2** | **PASS (17/17)** | Bundled GDB → CB-owned PTY | `make -C src/tools/PtyProof run-m2` (default GDB `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`; override `CB_GDB` / argv). No Terminal / holder. | See **M2 results** below. All prior M2 claim/lifetime questions **RESOLVED**. |
 | **3** | **DONE (committed)** | Run → Program Console tab | Production: `ProgramConsole` SDK + InfoPane panel + `CompilerGCC` macOS branch. Config `/console_output_mode` (`program_console` default / `terminal_app`). Settings: Environment → Console programs. | See **M3 results / lessons** below. Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. M1 Darwin PTY semantics for Run adapter. **No** GDB tty-claim on Run. |
 | **4** | **DONE** | Debug → Program Console tab | Production: `BeginDebugSession` / `ActivateDebugSession` / `EndDebugSession` + `DebuggerGDB` branch. | See **M4 requirements** (all met) and **M4 implementation notes** below. Terminal.app mode unchanged (claim-off + holder). |
-| **5** | **NEXT** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; **Run/Debug Program Console focus policies** (see below); Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
+| **5** | **DONE** | Preference / polish / docs | Settings UI + `README.macos.md` | `/console_output_mode` + **Run/Debug focus policies** (defaults match Win/Linux); Linux/Windows untouched; README documents Program Console; UTF-8/CR/BS noted (full ANSI still out of scope). |
 
 **Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
 
@@ -515,10 +515,10 @@ Resolved by M4 (Debug production) — **do not reopen** for Debug:
 - teardown via `NotifyDebugConsoleFinished` / `KillConsole` → `EndDebugSession()`;  
 - shared Run/Debug `PtySession` coordinator (one active generation at a time).
 
-Still open (M5 / polish):
+Still open (post-M5 polish, optional):
 
-- Implement **Focus policy (Run / Debug)** settings (specified below); wire panel/debugger to config.  
-- README / settings copy polish; UTF-8/ANSI display hardening; edge-case docs.
+- Richer ANSI/SGR colour spans in Program Console (contract remains limited; not full VT100).  
+- Further README edge-case notes as users report them.
 
 ---
 
@@ -591,4 +591,4 @@ Still open (M5 / polish):
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE (committed)**; **M4 DONE**; **M5 NEXT** (incl. configurable Run/Debug Program Console **focus** policies — macOS only; Linux/Windows external terminals unchanged); Win/Linux unchanged. |
+| **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |

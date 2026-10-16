@@ -43,6 +43,7 @@
 #include <wx/aui/aui.h>
 #include <wx/clrpicker.h>
 #include <wx/listbook.h>
+#include <wx/scrolwin.h>
 
 #include "annoyingdialog.h"
 #include "appglobals.h"
@@ -92,6 +93,7 @@ BEGIN_EVENT_TABLE(EnvironmentSettingsDlg, wxScrollingDialog)
     EVT_COLOURPICKER_CHANGED(XRCID("colourPicker"), EnvironmentSettingsDlg::OnClickAppColour)
     EVT_BUTTON(XRCID("btnDefaultColour"), EnvironmentSettingsDlg::OnClickAppColourDefault)
     EVT_BUTTON(XRCID("btnResetAll"), EnvironmentSettingsDlg::OnClickAppResetAll)
+    EVT_COMBOBOX(XRCID("cbConsoleOutputMode"), EnvironmentSettingsDlg::OnConsoleOutputMode)
 END_EVENT_TABLE()
 
 EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* art)
@@ -139,6 +141,8 @@ EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* a
 
     wxComboBox *comboMode = XRCCTRL(*this, "cbConsoleOutputMode", wxComboBox);
     wxComboBox *combo = XRCCTRL(*this, "cbConsoleTerm", wxComboBox);
+    wxComboBox *comboFocusRun = XRCCTRL(*this, "cbProgramConsoleFocusRun", wxComboBox);
+    wxComboBox *comboFocusDebug = XRCCTRL(*this, "cbProgramConsoleFocusDebug", wxComboBox);
     combo->Append(DEFAULT_CONSOLE_TERM);
 
     if (platform::windows)
@@ -148,6 +152,16 @@ EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* a
         {
             comboMode->Enable(false);
             XRCCTRL(*this, "lblConsoleOutputMode", wxStaticText)->Enable(false);
+        }
+        if (comboFocusRun)
+        {
+            comboFocusRun->Enable(false);
+            XRCCTRL(*this, "lblProgramConsoleFocusRun", wxStaticText)->Enable(false);
+        }
+        if (comboFocusDebug)
+        {
+            comboFocusDebug->Enable(false);
+            XRCCTRL(*this, "lblProgramConsoleFocusDebug", wxStaticText)->Enable(false);
         }
     }
     else
@@ -159,11 +173,42 @@ EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* a
             {
                 comboMode->Enable(false);
                 XRCCTRL(*this, "lblConsoleOutputMode", wxStaticText)->Enable(false);
+                if (comboFocusRun)
+                {
+                    comboFocusRun->Enable(false);
+                    XRCCTRL(*this, "lblProgramConsoleFocusRun", wxStaticText)->Enable(false);
+                }
+                if (comboFocusDebug)
+                {
+                    comboFocusDebug->Enable(false);
+                    XRCCTRL(*this, "lblProgramConsoleFocusDebug", wxStaticText)->Enable(false);
+                }
             }
             else
             {
                 const wxString mode = cfg->Read("/console_output_mode", "program_console");
                 comboMode->SetSelection(mode == "terminal_app" ? 1 : 0);
+                if (comboFocusRun)
+                {
+                    const wxString fr = cfg->Read("/program_console_focus_run", "on_launch");
+                    if (fr == "never")
+                        comboFocusRun->SetSelection(1);
+                    else if (fr == "on_silence")
+                        comboFocusRun->SetSelection(2);
+                    else
+                        comboFocusRun->SetSelection(0);
+                }
+                if (comboFocusDebug)
+                {
+                    const wxString fd = cfg->Read("/program_console_focus_debug", "never");
+                    if (fd == "on_launch")
+                        comboFocusDebug->SetSelection(0);
+                    else if (fd == "on_step_silence")
+                        comboFocusDebug->SetSelection(2);
+                    else
+                        comboFocusDebug->SetSelection(1);
+                }
+                UpdateProgramConsoleFocusControls();
             }
         }
         if (!platform::macosx && !platform::darwin)
@@ -374,6 +419,11 @@ EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* a
     AddPluginPanels();
 
     // make sure everything is laid out properly
+    if (wxScrolledWindow* scr = XRCCTRL(*this, "scrGeneral", wxScrolledWindow))
+    {
+        scr->SetScrollRate(5, 5);
+        scr->FitInside();
+    }
     GetSizer()->SetSizeHints(this);
     CentreOnParent();
     Layout();
@@ -531,6 +581,29 @@ void EnvironmentSettingsDlg::OnAutoHide(cb_unused wxCommandEvent& event)
     XRCCTRL(*this, "chkAutoShowMessagesOnErr",      wxCheckBox)->Enable(en);
 }
 
+void EnvironmentSettingsDlg::UpdateProgramConsoleFocusControls()
+{
+    wxComboBox* modeBox = XRCCTRL(*this, "cbConsoleOutputMode", wxComboBox);
+    wxComboBox* focusRun = XRCCTRL(*this, "cbProgramConsoleFocusRun", wxComboBox);
+    wxComboBox* focusDebug = XRCCTRL(*this, "cbProgramConsoleFocusDebug", wxComboBox);
+    wxStaticText* lblRun = XRCCTRL(*this, "lblProgramConsoleFocusRun", wxStaticText);
+    wxStaticText* lblDebug = XRCCTRL(*this, "lblProgramConsoleFocusDebug", wxStaticText);
+    if (!modeBox || !focusRun || !focusDebug)
+        return;
+    const bool enable = modeBox->IsEnabled() && modeBox->GetSelection() == 0; /* Program Console */
+    focusRun->Enable(enable);
+    focusDebug->Enable(enable);
+    if (lblRun)
+        lblRun->Enable(enable);
+    if (lblDebug)
+        lblDebug->Enable(enable);
+}
+
+void EnvironmentSettingsDlg::OnConsoleOutputMode(cb_unused wxCommandEvent& event)
+{
+    UpdateProgramConsoleFocusControls();
+}
+
 void EnvironmentSettingsDlg::OnUseIpcCheck(wxCommandEvent& event)
 {
     XRCCTRL(*this, "chkRaiseViaIPC", wxCheckBox)->Enable(event.IsChecked());
@@ -622,6 +695,28 @@ void EnvironmentSettingsDlg::EndModal(int retCode)
                 cfg->Write("/console_output_mode",
                            modeBox->GetSelection() == 1 ? wxString("terminal_app")
                                                         : wxString("program_console"));
+            }
+            wxComboBox* focusRun = XRCCTRL(*this, "cbProgramConsoleFocusRun", wxComboBox);
+            if (focusRun && focusRun->IsEnabled())
+            {
+                const int sel = focusRun->GetSelection();
+                wxString v = "on_launch";
+                if (sel == 1)
+                    v = "never";
+                else if (sel == 2)
+                    v = "on_silence";
+                cfg->Write("/program_console_focus_run", v);
+            }
+            wxComboBox* focusDebug = XRCCTRL(*this, "cbProgramConsoleFocusDebug", wxComboBox);
+            if (focusDebug && focusDebug->IsEnabled())
+            {
+                const int sel = focusDebug->GetSelection();
+                wxString v = "never";
+                if (sel == 0)
+                    v = "on_launch";
+                else if (sel == 2)
+                    v = "on_step_silence";
+                cfg->Write("/program_console_focus_debug", v);
             }
         }
         cfg->Write("/open_containing_folder", XRCCTRL(*this, "txtOpenFolder", wxTextCtrl)->GetValue());

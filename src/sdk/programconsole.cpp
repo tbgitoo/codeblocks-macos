@@ -38,6 +38,12 @@ namespace
 const wxString cfgKey = "/console_output_mode";
 const wxString cfgProgramConsole = "program_console";
 const wxString cfgTerminalApp = "terminal_app";
+const wxString cfgFocusRun = "/program_console_focus_run";
+const wxString cfgFocusDebug = "/program_console_focus_debug";
+const wxString cfgFocusOnLaunch = "on_launch";
+const wxString cfgFocusNever = "never";
+const wxString cfgFocusOnSilence = "on_silence";
+const wxString cfgFocusOnStepSilence = "on_step_silence";
 
 #if defined(__WXMAC__)
 
@@ -196,6 +202,7 @@ void (*g_showPanel)() = nullptr;
 void (*g_setActiveGen)(std::uint64_t) = nullptr;
 void (*g_armInputFocus)() = nullptr;
 void (*g_cancelInputFocus)() = nullptr;
+void (*g_focusNow)() = nullptr;
 
 void OutputThunk(std::uint64_t generation, const wxString& text)
 {
@@ -310,10 +317,44 @@ bool PreferProgramConsole()
 #endif
 }
 
+wxString GetFocusPolicyRun()
+{
+#if defined(__WXMAC__)
+    const wxString v = Manager::Get()->GetConfigManager("app")->Read(cfgFocusRun, cfgFocusOnLaunch);
+    if (v == cfgFocusNever || v == cfgFocusOnSilence)
+        return v;
+    return cfgFocusOnLaunch;
+#else
+    return wxString();
+#endif
+}
+
+wxString GetFocusPolicyDebug()
+{
+#if defined(__WXMAC__)
+    const wxString v = Manager::Get()->GetConfigManager("app")->Read(cfgFocusDebug, cfgFocusNever);
+    if (v == cfgFocusOnLaunch || v == cfgFocusOnStepSilence)
+        return v;
+    return cfgFocusNever;
+#else
+    return wxString();
+#endif
+}
+
 void ShowPanel()
 {
 #if defined(__WXMAC__)
     if (g_showPanel)
+        g_showPanel();
+#endif
+}
+
+void FocusPanel()
+{
+#if defined(__WXMAC__)
+    if (g_focusNow)
+        g_focusNow();
+    else if (g_showPanel)
         g_showPanel();
 #endif
 }
@@ -354,6 +395,10 @@ void ActivateRunSession()
         g_setActiveGen(g_coord.currentGeneration);
     if (g_showPanel)
         g_showPanel();
+    /* Match Win/Linux external-console activate: on_launch focuses the pane. */
+    const wxString policy = g_coord.isDebug ? GetFocusPolicyDebug() : GetFocusPolicyRun();
+    if (policy == cfgFocusOnLaunch && g_focusNow)
+        g_focusNow();
 #endif
 }
 
@@ -436,9 +481,14 @@ bool AllowInputFocusSteal()
 #if defined(__WXMAC__)
     if (!g_coord.active || !g_session)
         return false;
-    if (g_coord.isDebug)
+    if (g_coord.isDebug) {
+        /* on_step_silence only while inferior is running (triangle absent). */
+        if (GetFocusPolicyDebug() != cfgFocusOnStepSilence)
+            return false;
         return g_coord.debugInferiorRunning;
-    return true;
+    }
+    /* Run: silence-after-output heuristic. */
+    return GetFocusPolicyRun() == cfgFocusOnSilence;
 #else
     return false;
 #endif
@@ -450,6 +500,11 @@ void NotifyDebugInferiorState(bool running)
     if (!g_coord.isDebug || !g_coord.active)
         return;
     g_coord.debugInferiorRunning = running;
+    if (GetFocusPolicyDebug() != cfgFocusOnStepSilence) {
+        if (!running && g_cancelInputFocus)
+            g_cancelInputFocus();
+        return;
+    }
     if (running) {
         if (g_armInputFocus)
             g_armInputFocus();
@@ -540,7 +595,8 @@ void BindPanelHooks(void (*clear)(),
                     void (*show)(),
                     void (*setGen)(std::uint64_t),
                     void (*armInputFocus)(),
-                    void (*cancelInputFocus)())
+                    void (*cancelInputFocus)(),
+                    void (*focusNow)())
 {
     g_clearScrollback = clear;
     g_appendOutput = append;
@@ -548,6 +604,7 @@ void BindPanelHooks(void (*clear)(),
     g_setActiveGen = setGen;
     g_armInputFocus = armInputFocus;
     g_cancelInputFocus = cancelInputFocus;
+    g_focusNow = focusNow;
 }
 
 bool SendPanelInput(const void* data, size_t len)
