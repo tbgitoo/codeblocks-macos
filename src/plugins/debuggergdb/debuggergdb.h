@@ -205,10 +205,12 @@ class DebuggerGDB : public cbDebuggerPlugin
         cbProject* m_pProject; // keep the currently debugged project handy
         wxString m_ActiveBuildTarget;
 
-        // Linux console support
+        // Linux / macOS console support
         bool     m_bIsConsole;
         bool     m_stopDebuggerConsoleClosed;
         int      m_nConsolePid;
+        /** macOS Program Console Debug (CB-owned PTY); no Terminal / holder. */
+        bool     m_programConsoleDebug;
 
         bool m_Canceled; // flag to avoid re-entering DoDebug when we shouldn't
 

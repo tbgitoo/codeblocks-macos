@@ -48,6 +48,7 @@
 #include "editbreakpointdlg.h"
 
 #include "databreakpointdlg.h"
+#include "programconsole.h"
 #include "debuggerdriver.h"
 #include "debuggergdb.h"
 #include "debuggeroptionsdlg.h"
@@ -234,6 +235,7 @@ DebuggerGDB::DebuggerGDB() :
     m_bIsConsole(false),
     m_stopDebuggerConsoleClosed(false),
     m_nConsolePid(0),
+    m_programConsoleDebug(false),
     m_TemporaryBreak(false),
     m_printElements(200)
 {
@@ -773,6 +775,7 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     // Init these just in case.
     m_bIsConsole = false;
     m_nConsolePid = 0;
+    m_programConsoleDebug = false;
     ProjectManager* prjMan = Manager::Get()->GetProjectManager();
 
     // select the build target to debug
@@ -1032,36 +1035,64 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     m_State.ApplyBreakpoints();
 
    #ifndef __WXMSW__
-    // create xterm/Terminal and issue tty "/dev/pts/#" to GDB where
-    // # is the tty for the newly created console
+    // Console Debug: either Program Console (CB-owned PTY, claim ON) or
+    // Terminal.app / xterm + holder (macOS claim-off). Issue tty to GDB.
     m_bIsConsole = target && target->GetUseConsoleRunner();
+    m_programConsoleDebug = false;
     bool deferStartForMacOSTty = false;
     if (m_bIsConsole)
     {
         wxString consoleTty;
-        m_nConsolePid = RunNixConsole(consoleTty);
-        if (m_nConsolePid > 0)
+        if (platform::macosx && ProgramConsole::PreferProgramConsole())
         {
-            m_stopDebuggerConsoleClosed = true;
-            // On macOS the Terminal+sleep holder already owns the pty.  Probe
-            // for set inferior-tty-claim (Darwin GDB) and disable claiming so
-            // the long TIOCSCTTY warning is not printed.  Start/Attach run from
-            // the probe's ParseOutput so they stay after set/tty in the queue.
-            if (platform::macosx)
+            /* M4: no Terminal.app, no cb_debug_console_hold, claim stays ON. */
+            if (ProgramConsole::BeginDebugSession(consoleTty))
             {
+                m_programConsoleDebug = true;
+                m_nConsolePid = 0;
+                m_stopDebuggerConsoleClosed = false;
+                ProgramConsole::ActivateDebugSession();
+                wxString gdbTtyCmd;
+                gdbTtyCmd << "tty " << consoleTty;
                 m_State.GetDriver()->QueueCommand(
-                    new GdbCmd_SetupMacOSInferiorTty(m_State.GetDriver(),
-                                                     consoleTty,
-                                                     breakOnEntry,
-                                                     m_PidToAttach));
-                deferStartForMacOSTty = true;
+                    new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
+                DebugLog(wxString::Format(_("Queued:[%s] (Program Console, claim ON)"),
+                                          gdbTtyCmd.wx_str()));
+                /* Start/Attach queued below after tty — do not use claim-off path. */
             }
             else
             {
-                wxString gdbTtyCmd;
-                gdbTtyCmd << "tty " << consoleTty;
-                m_State.GetDriver()->QueueCommand(new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
-                DebugLog(wxString::Format( _("Queued:[%s]"), gdbTtyCmd.wx_str()) );
+                Log(_("Program Console: failed to allocate PTY for Debug "
+                      "(previous output kept)."));
+                m_bIsConsole = false;
+            }
+        }
+        else
+        {
+            m_nConsolePid = RunNixConsole(consoleTty);
+            if (m_nConsolePid > 0)
+            {
+                m_stopDebuggerConsoleClosed = true;
+                // On macOS the Terminal+sleep holder already owns the pty.  Probe
+                // for set inferior-tty-claim (Darwin GDB) and disable claiming so
+                // the long TIOCSCTTY warning is not printed.  Start/Attach run from
+                // the probe's ParseOutput so they stay after set/tty in the queue.
+                if (platform::macosx)
+                {
+                    m_State.GetDriver()->QueueCommand(
+                        new GdbCmd_SetupMacOSInferiorTty(m_State.GetDriver(),
+                                                         consoleTty,
+                                                         breakOnEntry,
+                                                         m_PidToAttach));
+                    deferStartForMacOSTty = true;
+                }
+                else
+                {
+                    wxString gdbTtyCmd;
+                    gdbTtyCmd << "tty " << consoleTty;
+                    m_State.GetDriver()->QueueCommand(new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
+                    DebugLog(wxString::Format( _("Queued:[%s]"), gdbTtyCmd.wx_str()) );
+                }
             }
         }
     }//if
@@ -2056,6 +2087,16 @@ void DebuggerGDB::KillConsole()
         m_bIsConsole = false;
     }
 #else
+    if (m_programConsoleDebug)
+    {
+        /* Explicit PtySession Close — do not rely on master EOF (held slave). */
+        ProgramConsole::EndDebugSession();
+        m_programConsoleDebug = false;
+        m_bIsConsole = false;
+        m_stopDebuggerConsoleClosed = false;
+        m_nConsolePid = 0;
+        return;
+    }
     // Forced cleanup: SIGTERM → cb_debug_console_hold exits immediately (no key wait).
     // wxKill does not wait for the process; it only delivers the signal.
     if ( m_bIsConsole && (m_nConsolePid > 0) )
@@ -2071,6 +2112,15 @@ void DebuggerGDB::KillConsole()
 void DebuggerGDB::NotifyDebugConsoleFinished()
 {
 #ifndef __WXMSW__
+    if (m_programConsoleDebug)
+    {
+        ProgramConsole::EndDebugSession();
+        m_programConsoleDebug = false;
+        m_bIsConsole = false;
+        m_stopDebuggerConsoleClosed = false;
+        m_nConsolePid = 0;
+        return;
+    }
     // Soft finish: SIGUSR1 → holder may show "Press any key to close...".
     // Clear PID first so OnGDBTerminated / KillConsole will not SIGTERM a
     // helper that is legitimately waiting for keyboard input.

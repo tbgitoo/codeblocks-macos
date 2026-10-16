@@ -154,14 +154,14 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ## v2.0 — Integrated Program Console
 
-**Status: In progress** — M1–M2 experimentally validated; **M3 DONE (committed)**; **M4** Debug next.
+**Status: In progress** — M1–M3 done; **M4 DONE** (Debug → Program Console; smoke in IDE); **M5** next.
 
 ```text
   M1 Darwin PTY semantics              PASS
   M2 GDB → CB-owned PTY semantics      PASS  (17/17)
   M3 Run → Program Console             DONE (committed)
-  M4 Debug → Program Console           NEXT
-  M5 Preference / lifecycle / docs     PLANNED
+  M4 Debug → Program Console           DONE
+  M5 Preference / lifecycle / docs     NEXT
 ```
 
 ### Goals (unchanged)
@@ -420,8 +420,8 @@ keyboard Ctrl-C
 | **1** | **PASS** | Standalone Darwin PTY proof | `src/tools/PtyProof/` — `make -C src/tools/PtyProof run` | Darwin/Unix PTY semantics: allocation; setsid+TIOCSCTTY required; process groups; stdio on slave; newline + prompt without newline; terminal echo; **VINTR**; **VEOF** without closing master; termios VINTR/VEOF; resize/SIGWINCH; CR progress; exit paths; exec failure; FD hygiene; reader stop; rapid recreate. Master after final slave close: `read`→0 (EOF). |
 | **2** | **PASS (17/17)** | Bundled GDB → CB-owned PTY | `make -C src/tools/PtyProof run-m2` (default GDB `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`; override `CB_GDB` / argv). No Terminal / holder. | See **M2 results** below. All prior M2 claim/lifetime questions **RESOLVED**. |
 | **3** | **DONE (committed)** | Run → Program Console tab | Production: `ProgramConsole` SDK + InfoPane panel + `CompilerGCC` macOS branch. Config `/console_output_mode` (`program_console` default / `terminal_app`). Settings: Environment → Console programs. | See **M3 results / lessons** below. Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. M1 Darwin PTY semantics for Run adapter. **No** GDB tty-claim on Run. |
-| **4** | **NEXT** | Debug → Program Console tab | Production: Program Console PtySession + `tty <path>` | See **M4 requirements** below. Terminal.app mode completely unchanged (including claim-off). |
-| **5** | **PLANNED** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
+| **4** | **DONE** | Debug → Program Console tab | Production: `BeginDebugSession` / `ActivateDebugSession` / `EndDebugSession` + `DebuggerGDB` branch. | See **M4 requirements** (all met) and **M4 implementation notes** below. Terminal.app mode unchanged (claim-off + holder). |
+| **5** | **NEXT** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
 
 **Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
 
@@ -462,7 +462,7 @@ Proof GDB: `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`. I
 | Slave FD hold | **One slave FD must remain open** until `Close()` so the PTY stays alive before GDB attaches |
 | Sync CLI `interrupt` | Not a substitute for the production GDB driver interrupt path |
 
-#### Milestone 4 production requirements (from M2)
+#### Milestone 4 production requirements (from M2) — **MET**
 
 1. Program Console mode creates a PtySession.  
 2. PtySession retains master FD and one slave FD.  
@@ -478,9 +478,19 @@ Proof GDB: `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`. I
 12. Inferior exit triggers **explicit** session teardown rather than relying solely on master EOF.  
 13. Terminal.app mode remains completely unchanged, including its existing claim-off behaviour.
 
+#### Milestone 4 implementation notes
+
+| Item | Implementation |
+|------|----------------|
+| API | `BeginDebugSession(outSlavePath)` / `ActivateDebugSession` / `AbortDebugSession` / `EndDebugSession` (share Run `PtySession` + coordinator). |
+| `DebuggerGDB::DoDebug` | If macOS + `PreferProgramConsole()` + console runner: allocate PTY → activate pane → queue **`tty <path>` only** → `Start`/`Attach` (no `GdbCmd_SetupMacOSInferiorTty`). |
+| Terminal path | Unchanged: `RunNixConsole` + claim-off probe when mode is `terminal_app` (or non-macOS). |
+| Teardown | `NotifyDebugConsoleFinished` and `KillConsole` call `EndDebugSession()` when `m_programConsoleDebug`; no holder SIGUSR1/SIGTERM. |
+| Interrupt | Pane Ctrl-C → PTY VINTR (claim ON). Debugger Interrupt → existing GDB driver (unchanged). |
+
 ---
 
-### Open questions (M4 implementation only)
+### Open questions (M5 / polish)
 
 Resolved by M1/M2 — **do not reopen** unless production evidence contradicts:
 
@@ -491,18 +501,22 @@ Resolved by M1/M2 — **do not reopen** unless production evidence contradicts:
 - whether debugger interrupt should be implemented as PTY VINTR;  
 - setsid / TIOCSCTTY / VEOF / resize / master-after-slave-close Darwin basics.
 
-Resolved by M3 (Run production) — **do not reopen** for Run; reuse patterns in M4 where applicable:
+Resolved by M3 (Run production) — **do not reopen** for Run:
 
 - Run adapter + `CompilerGCC` lifecycle (`Begin` / `LaunchOnPty` / `Activate` / tracker / `End` + `AnnounceRunFinished`);  
 - held slave FD in production `PtySession`;  
 - InfoPane panel + key→PTY + generation-safe scrollback;  
 - **must** use a `PipedProcess`-derived Run tracker (`HasInput` false) — see M3 lessons.
 
-Still open (Debug / M4 detail):
+Resolved by M4 (Debug production) — **do not reopen** for Debug:
 
-- exact Code::Blocks lifecycle event used to trigger Debug session teardown;  
-- wiring claim-**ON** `tty <path>` without Terminal / holder;  
-- sharing vs separating Run/Debug session coordinator state in the IDE.
+- claim-**ON** `tty <path>` without Terminal / holder;  
+- teardown via `NotifyDebugConsoleFinished` / `KillConsole` → `EndDebugSession()`;  
+- shared Run/Debug `PtySession` coordinator (one active generation at a time).
+
+Still open (M5 / polish):
+
+- README / settings copy polish; UTF-8/ANSI display hardening; edge-case docs.
 
 ---
 
@@ -527,4 +541,4 @@ Still open (Debug / M4 detail):
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE (committed)** (Run → Program Console; `/console_output_mode`; see M3 lessons — especially `PipedProcess` tracker / `OnIdle`); Program Console claim **ON** + held slave FD; Terminal.app claim-off + holder; **M4 NEXT**; M5 planned; Win/Linux unchanged. |
+| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE (committed)**; **M4 DONE** (Debug → Program Console; claim **ON** `tty`; no Terminal/holder); Terminal.app claim-off + holder preserved; **M5 NEXT**; Win/Linux unchanged. |
