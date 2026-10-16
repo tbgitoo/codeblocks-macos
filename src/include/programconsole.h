@@ -56,6 +56,19 @@ namespace ProgramConsole
     DLLIMPORT bool IsRunSessionActive();
 
     /**
+     * True when the Program Console may steal keyboard focus for cin.
+     * Run: whenever the session is active. Debug: only while the inferior is
+     * running (not stopped at a breakpoint) — so focus waits until cin actually blocks.
+     */
+    DLLIMPORT bool AllowInputFocusSteal();
+
+    /**
+     * Debug only: inferior continued (true) or stopped (false).
+     * Continue arms the input-focus timer; stop cancels it.
+     */
+    DLLIMPORT void NotifyDebugInferiorState(bool running);
+
+    /**
      * Begin a Debug session: allocate PTY (master + held slave).
      * Does NOT clear scrollback. On success, @a outSlavePath receives the
      * slave pathname for GDB `tty <path>` (claim ON — do not claim-off).

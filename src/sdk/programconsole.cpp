@@ -181,6 +181,8 @@ struct Coordinator
     std::uint64_t nextGeneration = 1;
     std::uint64_t currentGeneration = 0;
     bool active = false;
+    bool isDebug = false;
+    bool debugInferiorRunning = false;
 };
 
 Coordinator g_coord;
@@ -192,6 +194,8 @@ void (*g_clearScrollback)() = nullptr;
 void (*g_appendOutput)(std::uint64_t, const wxString&) = nullptr;
 void (*g_showPanel)() = nullptr;
 void (*g_setActiveGen)(std::uint64_t) = nullptr;
+void (*g_armInputFocus)() = nullptr;
+void (*g_cancelInputFocus)() = nullptr;
 
 void OutputThunk(std::uint64_t generation, const wxString& text)
 {
@@ -327,6 +331,8 @@ bool BeginRunSession()
     g_session = std::move(session);
     g_coord.currentGeneration = gen;
     g_coord.active = false;
+    g_coord.isDebug = false;
+    g_coord.debugInferiorRunning = false;
     return true;
 #else
     return false;
@@ -358,6 +364,8 @@ void AbortRunSession()
         g_session->Close();
     g_session.reset();
     g_coord.active = false;
+    g_coord.isDebug = false;
+    g_coord.debugInferiorRunning = false;
 #endif
 }
 
@@ -368,6 +376,8 @@ void EndRunSession()
         g_session->Close();
     g_session.reset();
     g_coord.active = false;
+    g_coord.isDebug = false;
+    g_coord.debugInferiorRunning = false;
 #endif
 }
 
@@ -421,12 +431,44 @@ bool IsRunSessionActive()
 #endif
 }
 
+bool AllowInputFocusSteal()
+{
+#if defined(__WXMAC__)
+    if (!g_coord.active || !g_session)
+        return false;
+    if (g_coord.isDebug)
+        return g_coord.debugInferiorRunning;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void NotifyDebugInferiorState(bool running)
+{
+#if defined(__WXMAC__)
+    if (!g_coord.isDebug || !g_coord.active)
+        return;
+    g_coord.debugInferiorRunning = running;
+    if (running) {
+        if (g_armInputFocus)
+            g_armInputFocus();
+    } else if (g_cancelInputFocus) {
+        g_cancelInputFocus();
+    }
+#else
+    wxUnusedVar(running);
+#endif
+}
+
 bool BeginDebugSession(wxString& outSlavePath)
 {
     outSlavePath.clear();
 #if defined(__WXMAC__)
     if (!BeginRunSession() || !g_session)
         return false;
+    g_coord.isDebug = true;
+    g_coord.debugInferiorRunning = false;
     outSlavePath = g_session->SlaveName();
     return !outSlavePath.empty();
 #else
@@ -496,12 +538,16 @@ wxProcess* CreateRunProcessTracker(wxProcess** pvThis, wxEvtHandler* parent,
 void BindPanelHooks(void (*clear)(),
                     void (*append)(std::uint64_t, const wxString&),
                     void (*show)(),
-                    void (*setGen)(std::uint64_t))
+                    void (*setGen)(std::uint64_t),
+                    void (*armInputFocus)(),
+                    void (*cancelInputFocus)())
 {
     g_clearScrollback = clear;
     g_appendOutput = append;
     g_showPanel = show;
     g_setActiveGen = setGen;
+    g_armInputFocus = armInputFocus;
+    g_cancelInputFocus = cancelInputFocus;
 }
 
 bool SendPanelInput(const void* data, size_t len)

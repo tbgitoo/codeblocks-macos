@@ -54,6 +54,18 @@ void HookSetGen(std::uint64_t gen)
     if (g_panel)
         g_panel->SetActiveGeneration(gen);
 }
+
+void HookArmInputFocus()
+{
+    if (g_panel)
+        g_panel->ArmInputFocusTimer();
+}
+
+void HookCancelInputFocus()
+{
+    if (g_panel)
+        g_panel->CancelInputFocusTimer();
+}
 } // namespace
 
 BEGIN_EVENT_TABLE(ProgramConsolePanel, wxPanel)
@@ -95,7 +107,8 @@ ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
 
     g_panel = this;
 #if defined(__WXMAC__)
-    ProgramConsole::BindPanelHooks(&HookClear, &HookAppend, &HookShow, &HookSetGen);
+    ProgramConsole::BindPanelHooks(&HookClear, &HookAppend, &HookShow, &HookSetGen,
+                                   &HookArmInputFocus, &HookCancelInputFocus);
 #endif
 }
 
@@ -105,7 +118,7 @@ ProgramConsolePanel::~ProgramConsolePanel()
     if (g_panel == this)
         g_panel = nullptr;
 #if defined(__WXMAC__)
-    ProgramConsole::BindPanelHooks(nullptr, nullptr, nullptr, nullptr);
+    ProgramConsole::BindPanelHooks(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 #endif
 }
 
@@ -170,7 +183,9 @@ void ProgramConsolePanel::FlushPending()
 void ProgramConsolePanel::ArmInputFocusTimer()
 {
 #if defined(__WXMAC__)
-    if (!ProgramConsole::IsRunSessionActive())
+    /* Run: after quiet output. Debug: only while inferior is running (cin blocking),
+     * not while stopped on the cin line with the debugger triangle visible. */
+    if (!ProgramConsole::AllowInputFocusSteal())
         return;
     /* One-shot: restart on each flush so continuous cout does not steal focus. */
     m_inputFocusTimer.Start(250, wxTIMER_ONE_SHOT);
@@ -188,7 +203,7 @@ void ProgramConsolePanel::CancelInputFocusTimer()
 void ProgramConsolePanel::OnInputFocusTimer(wxTimerEvent& /*event*/)
 {
 #if defined(__WXMAC__)
-    if (!ProgramConsole::IsRunSessionActive() || !m_stc)
+    if (!ProgramConsole::AllowInputFocusSteal() || !m_stc)
         return;
     wxWindow* focused = wxWindow::FindFocus();
     if (focused == m_stc)

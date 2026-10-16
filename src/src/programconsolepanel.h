@@ -18,6 +18,8 @@ public:
     void ClearScrollback();
     void AppendBytes(std::uint64_t generation, const wxString& text);
     void SetActiveGeneration(std::uint64_t generation);
+    void ArmInputFocusTimer();
+    void CancelInputFocusTimer();
 
 private:
     void OnKeyDown(wxKeyEvent& event);
@@ -27,8 +29,6 @@ private:
     void OnInputFocusTimer(wxTimerEvent& event);
     void FlushPending();
     void ApplyResize();
-    void ArmInputFocusTimer();
-    void CancelInputFocusTimer();
     bool SendKeyToPty(const wxKeyEvent& event);
 
     cbStyledTextCtrl* m_stc = nullptr;

@@ -2225,6 +2225,9 @@ void DebuggerGDB::OnShowFile(wxCommandEvent& event)
 void DebuggerGDB::DebuggeeContinued()
 {
     m_TemporaryBreak = false;
+    /* Inferior running again — Program Console may focus once cin blocks. */
+    if (m_programConsoleDebug)
+        ProgramConsole::NotifyDebugInferiorState(true);
 }
 
 void DebuggerGDB::OnCursorChanged(wxCommandEvent& WXUNUSED(event))
@@ -2239,6 +2242,10 @@ void DebuggerGDB::OnCursorChanged(wxCommandEvent& WXUNUSED(event))
         // send us this event if it was stopped anyway
         if (/*m_State.GetDriver()->IsStopped() &&*/ cursor.changed)
         {
+            /* Stopped (breakpoint / step) — do not steal focus for cin yet. */
+            if (m_programConsoleDebug)
+                ProgramConsole::NotifyDebugInferiorState(false);
+
             bool autoSwitch = cbDebuggerCommonConfig::GetFlag(cbDebuggerCommonConfig::AutoSwitchFrame);
 
             MarkAllWatchesAsUnchanged();
