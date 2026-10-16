@@ -99,6 +99,8 @@ ALLHEADERS = annoyingdialog.h \
 				newfromtemplatedlg.h \
 				personalitymanager.h \
 				pipedprocess.h \
+				programconsole.h \
+				programconsole_internal.h \
 				pluginmanager.h \
 				pluginsconfigurationdlg.h \
 				prep.h \

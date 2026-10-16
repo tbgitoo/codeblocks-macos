@@ -220,7 +220,7 @@
 								<object class="sizeritem">
 									<object class="wxFlexGridSizer">
 										<cols>2</cols>
-										<rows>3</rows>
+										<rows>4</rows>
 										<vgap>4</vgap>
 										<hgap>4</hgap>
 										<growablecols>1</growablecols>
@@ -233,6 +233,23 @@
 										<object class="sizeritem">
 											<object class="wxTextCtrl" name="txtConsoleShell" />
 											<flag>wxEXPAND</flag>
+											<option>1</option>
+										</object>
+										<object class="sizeritem">
+											<object class="wxStaticText" name="lblConsoleOutputMode">
+												<label>Console programs:</label>
+											</object>
+											<flag>wxALIGN_CENTER_VERTICAL</flag>
+										</object>
+										<object class="sizeritem">
+											<object class="wxComboBox" name="cbConsoleOutputMode">
+												<content>
+													<item>Program Console (Logs &amp; others)</item>
+													<item>Terminal.app</item>
+												</content>
+												<style>wxCB_READONLY</style>
+											</object>
+											<flag>wxALL|wxEXPAND</flag>
 											<option>1</option>
 										</object>
 										<object class="sizeritem">

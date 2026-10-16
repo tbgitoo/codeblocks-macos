@@ -41,6 +41,7 @@
 #include "globals.h"
 #include "infopane.h"
 #include "infowindow.h"
+#include "programconsole.h"
 #include "loggers.h"
 #include "logmanager.h"
 #include "notebookstyles.h"
@@ -1079,6 +1080,8 @@ void MainFrame::SetupGUILogging(int uiSize16)
         }
 
         m_findReplace.CreateSearchLog();
+
+        ProgramConsole::RegisterPanel(m_pInfoPane);
     }
     else
     {

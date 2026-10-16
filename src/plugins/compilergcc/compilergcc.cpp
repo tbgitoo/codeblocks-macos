@@ -48,6 +48,7 @@
 #include "debuggermanager.h"
 #include "filefilters.h"
 #include "incremental_select_helper.h"
+#include "programconsole.h"
 
 #include "compilergcc.h"
 #include "compileroptionsdlg.h"
@@ -1430,38 +1431,76 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
     // create a new process
     CompilerProcess &process = m_CompilerProcessList.at(procIndex);
     process.OutputFile = (cmd->isLink && cmd->target) ? cmd->target->GetOutputFilename() : wxString(wxEmptyString);
-    process.pProcess = new PipedProcess(&(process.pProcess), this, idGCCProcess, pipe, dir, procIndex);
 
     int poll_process_timer = Manager::Get()->GetConfigManager("compiler")->ReadInt("/poll_process_timer", 1000);
-    process.PID = process.pProcess->Launch(cmd->command, flags, poll_process_timer);
-    if (!process.PID)
-    {
-        wxString err = wxString::Format(_("Execution of '%s' in '%s' failed."),
-                                        cmd->command, wxGetCwd());
-        LogMessage(err, cltError);
-        LogWarningOrError(cltError, nullptr, wxEmptyString, wxEmptyString, err);
-        if (!m_CommandQueue.LastCommandWasRun())
-        {
-            if ( !IsProcessRunning() )
-            {
-                wxString msg = wxString::Format("%s (%s)", GetErrWarnStr(), GetMinSecStr());
-                LogMessage(msg, cltError, ltAll, true);
-                LogWarningOrError(cltNormal, nullptr, wxEmptyString, wxEmptyString,
-                                  wxString::Format(_("=== Build failed: %s ==="), msg));
-                if (!Manager::IsBatchBuild())
-                    m_pListLog->AutoFitColumns(2);
+    const bool runViaProgramConsole = cmd->isRun && cmd->useProgramConsole;
 
-                SaveBuildLog();
-            }
-            if (!Manager::IsBatchBuild() && m_pLog->progress)
-                m_pLog->progress->SetValue(0);
+    if (runViaProgramConsole)
+    {
+        /* macOS Program Console path: CB-owned PTY (M1/M3). No Terminal/osascript. */
+        if (!ProgramConsole::BeginRunSession())
+        {
+            wxString err = _("Program Console: failed to allocate PTY (previous output kept).");
+            LogMessage(err, cltError);
+            LogWarningOrError(cltError, nullptr, wxEmptyString, wxEmptyString, err);
+            delete cmd;
+            return DoRunQueue(timer);
         }
-        Delete(process.pProcess);
-        m_CommandQueue.Clear();
-        ResetBuildState();
+
+        const long pid = ProgramConsole::LaunchOnPty(cmd->command, dir);
+        if (!pid)
+        {
+            ProgramConsole::AbortRunSession(); /* retain prior scrollback */
+            wxString err = wxString::Format(_("Execution of '%s' in '%s' failed."),
+                                            cmd->command, dir);
+            LogMessage(err, cltError);
+            LogWarningOrError(cltError, nullptr, wxEmptyString, wxEmptyString, err);
+            m_CommandQueue.Clear();
+            ResetBuildState();
+            delete cmd;
+            return DoRunQueue(timer);
+        }
+
+        ProgramConsole::ActivateRunSession(); /* clear scrollback only after successful launch */
+        process.PID = pid;
+        process.pProcess = static_cast<PipedProcess*>(
+            ProgramConsole::CreateRunProcessTracker(
+                reinterpret_cast<wxProcess**>(&process.pProcess), this, idGCCProcess, procIndex, pid));
+        m_timerIdleWakeUp.Start(timer);
     }
     else
-        m_timerIdleWakeUp.Start(timer);
+    {
+        process.pProcess = new PipedProcess(&(process.pProcess), this, idGCCProcess, pipe, dir, procIndex);
+        process.PID = process.pProcess->Launch(cmd->command, flags, poll_process_timer);
+        if (!process.PID)
+        {
+            wxString err = wxString::Format(_("Execution of '%s' in '%s' failed."),
+                                            cmd->command, wxGetCwd());
+            LogMessage(err, cltError);
+            LogWarningOrError(cltError, nullptr, wxEmptyString, wxEmptyString, err);
+            if (!m_CommandQueue.LastCommandWasRun())
+            {
+                if ( !IsProcessRunning() )
+                {
+                    wxString msg = wxString::Format("%s (%s)", GetErrWarnStr(), GetMinSecStr());
+                    LogMessage(msg, cltError, ltAll, true);
+                    LogWarningOrError(cltNormal, nullptr, wxEmptyString, wxEmptyString,
+                                      wxString::Format(_("=== Build failed: %s ==="), msg));
+                    if (!Manager::IsBatchBuild())
+                        m_pListLog->AutoFitColumns(2);
+
+                    SaveBuildLog();
+                }
+                if (!Manager::IsBatchBuild() && m_pLog->progress)
+                    m_pLog->progress->SetValue(0);
+            }
+            Delete(process.pProcess);
+            m_CommandQueue.Clear();
+            ResetBuildState();
+        }
+        else
+            m_timerIdleWakeUp.Start(timer);
+    }
 
     // restore old dynamic linker path
     wxSetEnv(CB_LIBRARY_ENVVAR, oldLibPath);
@@ -1888,7 +1927,8 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
     wxString exe_filename = fname.GetFullPath();
     wxString command;
 
-    if (!platform::windows)
+    const bool useProgramConsole = ProgramConsole::PreferProgramConsole();
+    if (!platform::windows && !useProgramConsole)
     {
         // for non-win platforms, use m_ConsoleTerm to run the console app
         wxString term = Manager::Get()->GetConfigManager("app")->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
@@ -1898,10 +1938,12 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
 
     wxString baseDir = ConfigManager::GetExecutableFolder();
     wxString crunnStr = strQUOTE + baseDir + strSLASH + strCONSOLE_RUNNER + strQUOTE;
-    if ( wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER) )
+    if ( !useProgramConsole && wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER) )
         command << crunnStr << strSPACE;
 
-    if (!command.Replace("$SCRIPT", exe_filename))
+    if (useProgramConsole)
+        command << strQUOTE << exe_filename << strQUOTE;
+    else if (!command.Replace("$SCRIPT", exe_filename))
         command << strQUOTE << exe_filename << strQUOTE; // if they didn't specify $SCRIPT, append:
 
     Manager::Get()->GetLogManager()->Log(_("Checking for existence: ") + exe_filename, m_PageIndex);
@@ -1928,7 +1970,9 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
 
     Manager::Get()->GetMacrosManager()->ReplaceEnvVars(m_CdRun);
     Manager::Get()->GetLogManager()->Log(wxString::Format(_("Executing: '%s' (in '%s')"), command, m_CdRun), m_PageIndex);
-    m_CommandQueue.Add(new CompilerCommand(command, wxEmptyString, nullptr, nullptr, true));
+    CompilerCommand* runCmd = new CompilerCommand(command, wxEmptyString, nullptr, nullptr, true);
+    runCmd->useProgramConsole = useProgramConsole;
+    m_CommandQueue.Add(runCmd);
     return 0;
 }
 
@@ -2060,11 +2104,14 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
                      ? strQUOTE + f.GetFullPath() + strQUOTE
                      : EscapeSpaces(f.GetFullPath());
 
+    const bool useProgramConsole = ProgramConsole::PreferProgramConsole()
+        && (target->GetTargetType() == ttConsoleOnly || target->GetRunHostApplicationInTerminal());
+
     // for console projects, use helper app to wait for a key after
-    // execution ends...
+    // execution ends... (Terminal.app path). Program Console owns the PTY instead.
     if (target->GetTargetType() == ttConsoleOnly || target->GetRunHostApplicationInTerminal())
     {
-        if (!platform::windows)
+        if (!platform::windows && !useProgramConsole)
         {
             // for non-win platforms, use m_ConsoleTerm to run the console app
             wxString term = Manager::Get()->GetConfigManager("app")->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
@@ -2088,7 +2135,7 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
             }
         }
 
-        if (target->GetUseConsoleRunner())
+        if (target->GetUseConsoleRunner() && !useProgramConsole)
         {
             if (wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER))
             {
@@ -2146,7 +2193,7 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
     Manager::Get()->GetMacrosManager()->ReplaceMacros(command, target);
     wxString script = command;
 
-    if (platform::macosx)
+    if (platform::macosx && !useProgramConsole)
     {
         if (target->GetTargetType() == ttConsoleOnly &&
             script.GetChar(0) == '\'' && script.GetChar(script.length()-1) == '\'')
@@ -2157,7 +2204,9 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
         script.Replace("\'", "\"&ASCII character 39&\"", true);
     }
 
-    if (!cmd.Replace("$SCRIPT", script))
+    if (useProgramConsole)
+        cmd = command;
+    else if (!cmd.Replace("$SCRIPT", script))
         // if they didn't specify $SCRIPT, append:
         cmd << command;
 
@@ -2186,7 +2235,9 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
     }
 
     const wxString& message = wxString::Format(_("Executing: %s (in %s)"), cmd, m_CdRun);
-    m_CommandQueue.Add(new CompilerCommand(cmd, message, m_pProject, target, true));
+    CompilerCommand* runCmd = new CompilerCommand(cmd, message, m_pProject, target, true);
+    runCmd->useProgramConsole = useProgramConsole;
+    m_CommandQueue.Add(runCmd);
 
     m_pProject->SetCurrentlyCompilingTarget(nullptr);
 
@@ -3073,11 +3124,12 @@ int CompilerGCC::KillProcess()
 
         wxLogNull nullLog;
 
-        if (isRunning)
+    if (isRunning)
         {
             // We are running a target, so just kill it to prevent any SIGTERM handlers to prevent
             // the termination.
             ret = wxProcess::Kill(p.PID, wxSIGKILL, wxKILL_CHILDREN);
+            ProgramConsole::EndRunSession();
         }
         else
         {
@@ -4095,6 +4147,7 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
         else
         {
             // last command was "Run"
+            ProgramConsole::EndRunSession();
             // force exit code to zero (0) or else debugger will think build failed if last run returned non-zero...
 // TODO (mandrav##): Maybe create and use GetLastRunExitCode()? Is it needed?
             m_LastExitCode = 0; // *might* not be needed any more, see NotifyJobDone()

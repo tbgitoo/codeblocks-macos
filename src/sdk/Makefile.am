@@ -98,6 +98,7 @@ libcodeblocks_la_SOURCES = annoyingdialog.cpp \
 						newfromtemplatedlg.cpp \
 						personalitymanager.cpp \
 						pipedprocess.cpp \
+						programconsole.cpp \
 						pluginmanager.cpp \
 						pluginsconfigurationdlg.cpp \
 						printing_types.cpp \

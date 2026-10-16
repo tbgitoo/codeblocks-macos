@@ -154,13 +154,13 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ## v2.0 — Integrated Program Console
 
-**Status: In progress** — high-risk PTY/GDB handoffs experimentally validated (M1+M2 **PASS**); production UI integration starts at **M3**.
+**Status: In progress** — M1–M2 experimentally validated; **M3** Run→Program Console production path wired; **M4** Debug next.
 
 ```text
   M1 Darwin PTY semantics              PASS
   M2 GDB → CB-owned PTY semantics      PASS  (17/17)
-  M3 Run → Program Console             NEXT
-  M4 Debug → Program Console           PLANNED
+  M3 Run → Program Console             DONE (production path wired; smoke in IDE)
+  M4 Debug → Program Console           NEXT
   M5 Preference / lifecycle / docs     PLANNED
 ```
 
@@ -400,7 +400,6 @@ keyboard Ctrl-C
 - **Never** block the GUI thread on master `read`.  
 - Reader: dedicated thread or non-blocking FD + existing wake patterns (`PipedProcess` / idle timers / `wxQueueEvent` / `CallAfter`). Prefer one worker reading master, batching bytes, posting **generation-tagged** events to the GUI.  
 - Distinguish master EOF, genuine read errors, and explicit `Close`. Because PtySession retains a slave FD, process completion is determined by the Run/Debug lifecycle rather than master EOF alone.  
-- **Do not** treat master EOF alone as inferior-exit while PtySession still holds a slave FD.  
 - Shutdown: follow deterministic `Close()` (above).  
 - Rapid stop/restart: coordinator assigns new generation; clear display only when replacement becomes **active**; stale events ignored.
 
@@ -420,8 +419,8 @@ keyboard Ctrl-C
 |---|--------|-----------|-------------------|----------------------|
 | **1** | **PASS** | Standalone Darwin PTY proof | `src/tools/PtyProof/` — `make -C src/tools/PtyProof run` | Darwin/Unix PTY semantics: allocation; setsid+TIOCSCTTY required; process groups; stdio on slave; newline + prompt without newline; terminal echo; **VINTR**; **VEOF** without closing master; termios VINTR/VEOF; resize/SIGWINCH; CR progress; exit paths; exec failure; FD hygiene; reader stop; rapid recreate. Master after final slave close: `read`→0 (EOF). |
 | **2** | **PASS (17/17)** | Bundled GDB → CB-owned PTY | `make -C src/tools/PtyProof run-m2` (default GDB `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`; override `CB_GDB` / argv). No Terminal / holder. | See **M2 results** below. All prior M2 claim/lifetime questions **RESOLVED**. |
-| **3** | **NEXT** | Run → Program Console tab | Production: InfoPane tab + coordinator + transport + macOS Run adapter | Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. Use **M1** Darwin PTY semantics for the Run adapter. **No** GDB tty-claim behaviour on Run. |
-| **4** | **PLANNED** | Debug → Program Console tab | Production: Program Console PtySession + `tty <path>` | See **M4 requirements** below. Terminal.app mode completely unchanged (including claim-off). |
+| **3** | **DONE** | Run → Program Console tab | Production: `ProgramConsole` SDK + InfoPane panel + `CompilerGCC` macOS branch. Config `/console_output_mode` (`program_console` default / `terminal_app`). Settings: Environment → Console programs. | Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. M1 Darwin PTY semantics for Run adapter. **No** GDB tty-claim on Run. |
+| **4** | **NEXT** | Debug → Program Console tab | Production: Program Console PtySession + `tty <path>` | See **M4 requirements** below. Terminal.app mode completely unchanged (including claim-off). |
 | **5** | **PLANNED** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
 
 **Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
@@ -508,4 +507,4 @@ Still open (implementation detail):
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)** (`make -C src/tools/PtyProof run` / `run-m2`); Program Console keeps claim **ON** + held slave FD; Terminal.app keeps claim-off + holder; **M3 NEXT**; M4–M5 planned; Win/Linux unchanged. |
+| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE** (Run → Program Console; `/console_output_mode`); Program Console claim **ON** + held slave FD; Terminal.app claim-off + holder; **M4 NEXT**; M5 planned; Win/Linux unchanged. |
