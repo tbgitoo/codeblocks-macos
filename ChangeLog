@@ -1,3 +1,22 @@
+2026-10-16 19:22  tbgitoo
+
+v2.0 (daf6e97): unofficial Apple Silicon macOS port
+	  * Integrated Program Console: Darwin PTY pane in Logs &
+	    others for Run and Debug (openpty, setsid / TIOCSCTTY,
+	    held slave FD); default on macOS
+	  * Settings → Environment: Console programs → Program
+	    Console or Terminal.app (v1.x path unchanged)
+	  * Run → Program Console: stdin/stdout in-pane (incl. cin /
+	    Enter as CR); process-exit banner with return code
+	  * Debug → Program Console: GDB tty with claim left ON
+	    (VINTR/SIGINT); Terminal.app Debug keeps claim-off +
+	    holder
+	  * Configurable Program Console focus policies (Run /
+	    Debug): on_launch / never / on_silence / on_step_silence;
+	    defaults match Win/Linux (Run on_launch, Debug never)
+	  * PtyProof M1/M2; README.macos.md; Linux/Windows console
+	    paths unchanged
+
 2026-10-15 06:34  tbgitoo
 
 v1.2 (80d8e89): unofficial Apple Silicon macOS port
