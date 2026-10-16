@@ -39,16 +39,14 @@ void HookShow()
 {
     if (!g_panel)
         return;
+    /* Closing the tab Toggle()s it hidden; ShowNonLogger re-inserts it.
+     * Do not steal editor focus here — launch should leave the caret in the
+     * editor. Focus moves to the console only after output settles (cin). */
     wxWindow* p = g_panel->GetParent();
-    InfoPane* pane = dynamic_cast<InfoPane*>(p);
-    if (pane) {
-        const int idx = pane->GetPageIndex(g_panel);
-        if (idx != wxNOT_FOUND)
-            pane->SetSelection(idx);
-    }
+    if (InfoPane* pane = dynamic_cast<InfoPane*>(p))
+        pane->ShowNonLogger(g_panel);
     CodeBlocksLogEvent evtShow(cbEVT_SHOW_LOG_MANAGER);
     Manager::Get()->ProcessEvent(evtShow);
-    g_panel->SetFocus();
 }
 
 void HookSetGen(std::uint64_t gen)
@@ -61,10 +59,12 @@ void HookSetGen(std::uint64_t gen)
 BEGIN_EVENT_TABLE(ProgramConsolePanel, wxPanel)
     EVT_SIZE(ProgramConsolePanel::OnSize)
     EVT_IDLE(ProgramConsolePanel::OnIdle)
+    EVT_TIMER(wxID_ANY, ProgramConsolePanel::OnInputFocusTimer)
 END_EVENT_TABLE()
 
 ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
-    : wxPanel(parent, wxID_ANY)
+    : wxPanel(parent, wxID_ANY),
+      m_inputFocusTimer(this)
 {
     m_stc = new cbStyledTextCtrl(this, wxID_ANY);
     /*
@@ -101,6 +101,7 @@ ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
 
 ProgramConsolePanel::~ProgramConsolePanel()
 {
+    CancelInputFocusTimer();
     if (g_panel == this)
         g_panel = nullptr;
 #if defined(__WXMAC__)
@@ -110,6 +111,7 @@ ProgramConsolePanel::~ProgramConsolePanel()
 
 void ProgramConsolePanel::ClearScrollback()
 {
+    CancelInputFocusTimer();
     m_pending.clear();
     m_stc->SetReadOnly(false);
     m_stc->ClearAll();
@@ -161,6 +163,40 @@ void ProgramConsolePanel::FlushPending()
     }
     m_stc->SetReadOnly(true);
     m_stc->EnsureCaretVisible();
+    /* After output quiets while the child is still alive, assume cin/input. */
+    ArmInputFocusTimer();
+}
+
+void ProgramConsolePanel::ArmInputFocusTimer()
+{
+#if defined(__WXMAC__)
+    if (!ProgramConsole::IsRunSessionActive())
+        return;
+    /* One-shot: restart on each flush so continuous cout does not steal focus. */
+    m_inputFocusTimer.Start(250, wxTIMER_ONE_SHOT);
+#else
+    /* no-op off macOS */
+#endif
+}
+
+void ProgramConsolePanel::CancelInputFocusTimer()
+{
+    if (m_inputFocusTimer.IsRunning())
+        m_inputFocusTimer.Stop();
+}
+
+void ProgramConsolePanel::OnInputFocusTimer(wxTimerEvent& /*event*/)
+{
+#if defined(__WXMAC__)
+    if (!ProgramConsole::IsRunSessionActive() || !m_stc)
+        return;
+    wxWindow* focused = wxWindow::FindFocus();
+    if (focused == m_stc)
+        return;
+    if (InfoPane* pane = dynamic_cast<InfoPane*>(GetParent()))
+        pane->ShowNonLogger(this);
+    m_stc->SetFocus();
+#endif
 }
 
 void ProgramConsolePanel::OnIdle(wxIdleEvent& event)

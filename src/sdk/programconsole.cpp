@@ -20,6 +20,7 @@
 #if defined(__WXMAC__)
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -184,6 +185,7 @@ struct Coordinator
 
 Coordinator g_coord;
 std::unique_ptr<PtySession> g_session;
+double g_runStartSec = 0.0;
 
 /* Forward decl — panel lives in the app binary; set from RegisterPanel path via weak hook. */
 void (*g_clearScrollback)() = nullptr;
@@ -277,6 +279,7 @@ private:
             exitCode = -1;
         }
 
+        ProgramConsole::AnnounceRunFinished(exitCode);
         /* Reuse PipedProcess termination path (posts event + self-deletes). */
         OnTerminate(static_cast<int>(m_waitPid), exitCode);
     }
@@ -334,6 +337,11 @@ void ActivateRunSession()
 {
 #if defined(__WXMAC__)
     g_coord.active = true;
+    {
+        timeval tv{};
+        gettimeofday(&tv, nullptr);
+        g_runStartSec = static_cast<double>(tv.tv_sec) + static_cast<double>(tv.tv_usec) / 1000000.0;
+    }
     if (g_clearScrollback)
         g_clearScrollback();
     if (g_setActiveGen)
@@ -360,6 +368,40 @@ void EndRunSession()
         g_session->Close();
     g_session.reset();
     g_coord.active = false;
+#endif
+}
+
+void AnnounceRunFinished(int exitCode)
+{
+#if defined(__WXMAC__)
+    /* Same banner as cb_console_runner; skip "Press any key" — pane stays open. */
+    g_coord.active = false;
+    if (!g_appendOutput || g_coord.currentGeneration == 0)
+        return;
+    double elapsed = 0.0;
+    if (g_runStartSec > 0.0) {
+        timeval tv{};
+        gettimeofday(&tv, nullptr);
+        elapsed = (static_cast<double>(tv.tv_sec) + static_cast<double>(tv.tv_usec) / 1000000.0)
+                  - g_runStartSec;
+        if (elapsed < 0.0)
+            elapsed = 0.0;
+    }
+    const wxString line = wxString::Format(
+        "\nProcess returned %d (0x%X)   execution time : %0.3f s\n",
+        exitCode, exitCode, elapsed);
+    g_appendOutput(g_coord.currentGeneration, line);
+#else
+    wxUnusedVar(exitCode);
+#endif
+}
+
+bool IsRunSessionActive()
+{
+#if defined(__WXMAC__)
+    return g_coord.active && g_session;
+#else
+    return false;
 #endif
 }
 

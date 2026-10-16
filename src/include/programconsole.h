@@ -41,6 +41,15 @@ namespace ProgramConsole
     DLLIMPORT void EndRunSession();
 
     /**
+     * Append the cb_console_runner-style completion line to the Program Console
+     * ("Process returned N (0xN)   execution time : X.XXX s"). No "press any key".
+     */
+    DLLIMPORT void AnnounceRunFinished(int exitCode);
+
+    /** True while a Run child is active on the Program Console PTY. */
+    DLLIMPORT bool IsRunSessionActive();
+
+    /**
      * Fork/exec command on the current session slave (M1 semantics).
      * Returns child pid > 0 on success.
      */
