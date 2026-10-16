@@ -127,6 +127,7 @@ cbCompilerPlugin::cbCompilerPlugin()
 cbDebuggerPlugin::cbDebuggerPlugin(const wxString &guiName, const wxString &settingsName) :
     m_pCompiler(nullptr),
     m_WaitingCompilerToFinish(false),
+    m_StandaloneDebugBuild(false),
     m_StartType(StartTypeUnknown),
     m_ActiveConfig(0),
     m_LogPageIndex(-1),
@@ -675,6 +676,7 @@ bool cbDebuggerPlugin::EnsureBuildUpToDate(StartType startType)
 {
     m_StartType = startType;
     m_WaitingCompilerToFinish = false;
+    m_StandaloneDebugBuild = false;
 
     // compile project/target (if not attaching to a PID)
     if (!IsAttachedToProcess())
@@ -714,25 +716,87 @@ bool cbDebuggerPlugin::EnsureBuildUpToDate(StartType startType)
     return true;
 }
 
+bool cbDebuggerPlugin::EnsureStandaloneRebuildForDebug(StartType startType, const wxString& sourcePath)
+{
+    m_StartType = startType;
+    m_WaitingCompilerToFinish = false;
+    m_StandaloneDebugBuild = true;
+
+    if (sourcePath.empty())
+    {
+        m_StandaloneDebugBuild = false;
+        Log(_("No source file for standalone debug rebuild."), Logger::error);
+        return false;
+    }
+
+    const std::vector<cbCompilerPlugin*> &compilers = Manager::Get()->GetPluginManager()->GetCompilerPlugins();
+    m_pCompiler = compilers.empty() ? nullptr : compilers.front();
+    if (!m_pCompiler)
+    {
+        m_StandaloneDebugBuild = false;
+        Log(_("No compiler plugin available."), Logger::error);
+        return false;
+    }
+
+    if (m_pCompiler->IsRunning())
+    {
+        m_StandaloneDebugBuild = false;
+        Log(_("Compiler in use..."));
+        Log(_("Aborting debugging session"));
+        cbMessageBox(_("The compiler is currently in use. Aborting debugging session..."),
+                     _("Compiler running"), wxICON_WARNING);
+        return false;
+    }
+
+    Log(_("Rebuilding single file for debug (always)"));
+    m_WaitingCompilerToFinish = true;
+    const int rc = m_pCompiler->CompileStandaloneFileForDebug(sourcePath);
+    if (rc != 0)
+    {
+        // Synchronous failure before the queue ran (e.g. missing CompOption).
+        m_WaitingCompilerToFinish = false;
+        m_StandaloneDebugBuild = false;
+        Log(_("Standalone debug rebuild could not be started."), Logger::error);
+        return false;
+    }
+    // When the compile queue finishes, OnCompilerFinished → CompilerFinished.
+    // If the queue completed immediately (nothing queued), wait flag may already be cleared.
+    return true;
+}
+
 void cbDebuggerPlugin::OnCompilerFinished(cb_unused CodeBlocksEvent& event)
 {
     if (m_WaitingCompilerToFinish)
     {
         m_WaitingCompilerToFinish = false;
         bool compilerFailed = false;
-        // only proceed if build succeeded
+        const bool standaloneHardFail = m_StandaloneDebugBuild;
+        m_StandaloneDebugBuild = false;
+
         if (m_pCompiler && m_pCompiler->GetExitCode() != 0)
         {
-            AnnoyingDialog dlg(_("Debug anyway?"),
-                               _("Build failed, do you want to debug the program?"),
-                               wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtNO,
-                               _("&Debug anyway"));
-            if (dlg.ShowModal() != AnnoyingDialog::rtYES)
+            if (standaloneHardFail)
             {
+                // v2.1: compile failure is a hard boundary — no "Debug anyway", no stale exe.
+                Log(_("Standalone debug rebuild failed; debugger will not start."), Logger::error);
                 ProjectManager *manager = Manager::Get()->GetProjectManager();
                 if (manager->GetIsRunning() && manager->GetIsRunning() == this)
                     manager->SetIsRunning(nullptr);
                 compilerFailed = true;
+            }
+            else
+            {
+                AnnoyingDialog dlg(_("Debug anyway?"),
+                                   _("Build failed, do you want to debug the program?"),
+                                   wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtNO,
+                                   _("&Debug anyway"));
+                if (dlg.ShowModal() != AnnoyingDialog::rtYES)
+                {
+                    ProjectManager *manager = Manager::Get()->GetProjectManager();
+                    if (manager->GetIsRunning() && manager->GetIsRunning() == this)
+                        manager->SetIsRunning(nullptr);
+                    compilerFailed = true;
+                }
             }
         }
         ShowLog(false);
