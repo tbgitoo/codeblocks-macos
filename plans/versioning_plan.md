@@ -154,54 +154,201 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 
 ## v2.0 — Integrated Program Console (pending implementation)
 
-**Status: Planned** (decisions locked below; not yet implemented).
+**Status: Planned** (product decisions locked; repository hooks verified below; **not implemented**).
 
-### Goals
+### Goals (unchanged)
 
 - Code::Blocks owns the **PTY master**; the program / inferior uses the **slave**.  
-- Run and Debug share one **Program Console** UI and PTY service.  
-- Debugger log stays separate from inferior I/O.  
-- Pane inactive until Run/Debug needs a console; GUI targets unchanged.  
-- **Default on macOS:** integrated pane. **User option** retains the existing Terminal.app path (v1.x behaviour).  
-- **Windows and Linux:** no behaviour change — keep their current console modes; do not modify those paths in an untested open loop.
+- Run and Debug share one **Program Console** UI and one PTY/session service.  
+- Debugger command/diagnostic output stays in the existing debugger log; inferior stdio in the Program Console.  
+- Pane inactive (no PTY) until a console Run or Debug needs one; GUI targets unchanged.  
+- **Default on macOS:** Program Console. **User option:** keep v1.x Terminal.app.  
+- **Windows and Linux:** unchanged; no open-loop edits to those console paths.  
+- GDB only (bundled Darwin GDB from v1.2); no LLDB.  
+- Console contract: line-oriented I/O, prompts without trailing newline, PTY echo (no local echo of printables), Ctrl-C, Ctrl-D/EOF, CR handling, resize, scrollback, UTF-8, **limited ANSI colours/styles**. Not full VT100/curses.
 
 ### Product decisions (locked)
 
 | Topic | Decision |
 |-------|----------|
-| UI placement | New **tab inside Logs & others** (`InfoPane` / Messages notebook), **not** a separate dockable AUI pane. |
-| Platform | **macOS only** for new PTY/pane code and defaults. No Linux/Windows console-path edits without a machine to test. |
-| Milestone style | Small, realizable steps; prove PTY/GDB before full Run/Debug wiring. |
-| Feature order after PoC | **GDB → PTY first**, then **Run → pane**, then **Debug → pane**. |
-| Terminal.app | Remains a **user-selectable option**, not merely an emergency fallback. Default = integrated pane on macOS. |
-| Console contract | Line-oriented I/O plus **colours / simple ANSI** (not full VT100/curses). Ctrl-C, Ctrl-D/EOF, resize, scrollback. |
-| Scrollback | **Keep** until the next Run or Debug session starts (then clear / replace). |
-| Debuggers | **GDB only** for this version (bundled Darwin GDB from v1.2). No LLDB work. |
+| UI | New **tab in Logs & others** (`InfoPane`); not a separate AUI pane. |
+| Platform | New code / defaults **macOS-only** (`platform::macosx` / `__WXMAC__`). |
+| Order | **1** standalone PTY proof → **2** GDB→PTY proof → **3** Run→pane → **4** Debug→pane → **5** preference / lifecycle / docs. |
+| Terminal.app | Normal selectable mode; default = Program Console. |
+| Scrollback | Keep previous output while a replacement session is created/launched. **Clear only when** the replacement Run process or Debug inferior/session has **successfully launched** and the new session is **active**. Do **not** clear on PTY-create alone. On any failure (PTY, exec, GDB setup, inferior launch), **retain** previous scrollback and report the error separately. |
+| Debuggers | GDB only. |
 
-### Design constraints (summary)
+### Repository findings (verified)
 
-1. “Unclaimed slave removes Darwin claim warning” is a **hypothesis to test** (especially Milestone 2 / 4), not a given.  
-2. Explicit ownership: CB must not claim the slave for Debug; Run child may claim as needed; no Terminal/holder merely to keep the slave alive when using the pane.  
-3. Small session API (`CreateSession`, master/slave accessors, `SendInput`, `Resize`, `Close`) — not a full process manager.  
-4. Non-blocking master I/O off the GUI thread; bound buffers; simple ANSI/colour parsing in the pane.  
-5. Bundle-relative paths; use bundled macOS GDB from v1.2.  
-6. Setting (name TBD) chooses **Program Console pane** vs **Terminal.app** on macOS only; Windows/Linux settings untouched.
+#### A. Run path (macOS today)
 
-### Milestones
+1. **Trace:** `CompilerGCC::OnRun` / `Run(target)` → builds a shell command → `m_CommandQueue.Add(CompilerCommand(..., isRun=true))` → `DoRunQueue` → `PipedProcess::Launch`.  
+2. **Roles:**  
+   - `CompilerGCC` owns the run queue, working directory (`m_CdRun`), and process slot (`CompilerProcess` / PID).  
+   - Non-Windows console targets prepend `ConfigManager("app")->Read("/console_terminal", DEFAULT_CONSOLE_TERM)` (`globals.cpp`: osascript + `clear; $SCRIPT; exit`, cold-start window reuse).  
+   - Payload (optional `cb_console_runner` + exe + args) is substituted for `$SCRIPT` (macOS also rewrites quotes for AppleScript).  
+   - `PipedProcess` launches that command with `wxEXEC_ASYNC | wxEXEC_SHOW_CONSOLE` and **`pipe = false`** for runs — CB does **not** capture the program’s stdio; it tracks the launcher (osascript) PID.  
+   - Completion / stop: existing `PipedProcess` / queue / `Kill` paths; Terminal session is outside CB’s direct control.  
+3. **Narrowest Program Console branch:** macOS-only gate inside `CompilerGCC::Run` (when assembling the command) **and/or** `DoRunQueue` when `cmd->isRun`: if Program Console mode and console-like target, **do not** prepend Terminal `osascript`; hand off to a small **macOS launch adapter** that uses the PTY session. Windows/Linux keep the existing `DEFAULT_CONSOLE_TERM` / xterm path.  
+4. **Launch capability:** Current run machinery cannot attach a child to CB-owned slave FDs via osascript. A **macOS-specific adapter** (fork/exec or equivalent with slave on 0/1/2, setsid/TIOCSCTTY/pgrp as proven in Milestone 1) is required.  
+5. **Process ownership (principle):** `CompilerGCC` remains owner of Run **lifecycle semantics** (queue, cwd, env, Stop, PID/exit reporting, completion). The macOS Run launch adapter performs PTY-aware child launch and feeds PID/exit into that lifecycle. **Reuse `PipedProcess` only if** it can perform the required child-side PTY setup cleanly; do not force reuse of an unsuitable class — preserve behaviour over forcing an abstraction. `PtySession` remains terminal **transport**, not a process manager.
 
-| # | Milestone | Intent |
-|---|-----------|--------|
-| 1 | Standalone PTY proof of concept | Outside deep CB UI integration: create PTY; launch a small test program; verify output, prompt without newline, stdin, EOF, Ctrl-C, clean exit, resize. Prove Darwin semantics first. |
-| 2 | GDB → PTY | Point bundled GDB at a CB-owned slave (`tty` / `inferior-tty`); prove inferior I/O, breakpoints/continue, and whether Darwin claim warning disappears / still needs `inferior-tty-claim off`. Minimal display is enough; full Run wiring not required yet. |
-| 3 | Run → Program Console tab | Add the Logs & others tab + transport; console Run targets use the session API into the pane; honour scrollback-until-next-session; GUI targets untouched; Terminal.app remains available via option. |
-| 4 | Debug → Program Console tab | Replace Terminal+holder debug console when pane mode is selected; same tab as Run; Debugger log unchanged; full Ctrl-C / session restart behaviour. |
-| 5 | Option / lifecycle / polish | Persist pane-vs-Terminal preference; docs (`README.macos.md`); edge cases; ensure Linux/Windows paths never regressed. |
+#### B. Debug path (verified)
+
+1. **Trace:** `DebuggerGDB::DoDebug` → if console runner → `RunNixConsole(consoleTty)` (`cbplugin.cpp`) → on success queue GDB tty setup → `Start` / `Attach`.  
+2. **Roles:**  
+   - `RunNixConsole`: reads `/console_terminal`, substitutes `$SCRIPT` with `MakeDebugConsoleHoldCommand()` → bundled `cb_debug_console_hold <token>`; launches via Terminal; `ps`-discovers holder TTY path + PID.  
+   - Holder exists so the slave **stays open** and Terminal owns the session; GDB did not allocate the pty.  
+   - `m_nConsolePid` / `KillConsole` / `NotifyDebugConsoleFinished`: SIGTERM (force) vs SIGUSR1 (soft finish) to the **holder**, not a general process manager for the inferior.  
+3. **Slave name to GDB:** path string from `RunNixConsole` (e.g. `/dev/ttys…`).  
+4. **Command used (do not rename in code):** the driver queues **`tty <path>`** (literal GDB `tty` command). On macOS this is done inside `GdbCmd_SetupMacOSInferiorTty` after probing claim. Linux path queues the same `tty <path>` without the claim probe. The repository does **not** currently use `set inferior-tty` for this attach.  
+5. **Claim-off:** `GdbCmd_SetupMacOSInferiorTty` queues `show inferior-tty-claim`, then on success `set inferior-tty-claim off`, then `tty <path>`, then `Start`/`Attach`. This stays on the **Terminal.app** path unless inspection later moves it.  
+6. **Bundled GDB:** `DebuggerConfiguration::GetDebuggerExecutable` — empty config → `…/Resources/debugger/bin/gdb` via `GetDataFolder()/../../debugger/bin/gdb` (`debuggeroptionsdlg.cpp`).  
+7. **Narrowest Program Console branch:** when macOS + Program Console mode + console debug, **skip** `RunNixConsole` / holder; `CreateSession` → pass `GetSlaveName()` into the same tty-queue path (reuse or thin variant of `GdbCmd_SetupMacOSInferiorTty`); leave GDB MI/CLI **pipes and debugger log** unchanged.  
+8. **Hypothesis:** unclaimed CB-owned slave may allow omitting `set inferior-tty-claim off` — **test in Milestone 2 and re-check in Milestone 4**; do not assume.
+
+#### C. UI integration (verified)
+
+1. **Construction:** `main.cpp` creates `InfoPane` (caption “Logs & others”), registers loggers via `AddLogger`.  
+2. **Pattern:** `Logger::CreateControl` → notebook page; clear/copy via InfoPane context menu; tab order persisted.  
+3. **Least invasive:** register a dedicated **Program Console** page (custom `wxPanel`, not a classic `Logger` unless that helps lifecycle) beside existing logs; select/show when a session starts.  
+4. **Eager vs lazy:** create the tab **eagerly** (empty, no PTY); allocate PTY only on demand. Matches “tab may exist before session”.  
+5. **Widget:** do **not** use `TextCtrlLogger` as-is (`wxTextCtrl` **read-only**). Prefer a panel + **`cbStyledTextCtrl` / `wxStyledTextCtrl`** (or writable rich text) for append, styles/colours, monospace, selection/copy, and key handling. No new full terminal emulator widget.  
+6. Capabilities to require: incremental append, colour spans (ANSI subset), scrollback trim, key capture, copy, font metrics for resize, CR-in-line update, GUI-thread-only view updates.
+
+#### D. Preference and platform boundaries
+
+1. **UI:** Environment settings (`environmentsettingsdlg.cpp` / `env_settings.xrc`) already hosts `cbConsoleTerm` / `/console_terminal` (disabled on Windows). Add a **macOS-only** choice near it.  
+2. **Recommended key:** `app` config `/console_output_mode` = `program_console` | `terminal_app`. **Default:** `program_console` on macOS.  
+3. **Wording (draft):** “Console programs:” → “Program Console (Logs & others)” / “Terminal.app”. When Terminal.app is selected, keep using `/console_terminal` as today.  
+4. **Safeguard:** all new branches behind `platform::macosx` (and compile-time `__WXMAC__` where files are Darwin-only). No changes to Linux xterm or Windows `AllocConsole` / `new-console` paths. Smoke: Linux/Windows builds must not require new sources.
+
+#### E. Bundle / GDB paths
+
+- Preserve v1.2 resolution (`GetDataFolder()/../../debugger/bin/gdb`). No hard-coded home/staging paths.  
+- If bundled GDB missing: existing empty→PATH behaviour / user config; Debug must fail clearly.  
+- Entitlement / signing: document only (`code_signing.md`); v2.0 does not redesign signing.
+
+---
+
+### Architecture (implementation contract)
+
+#### Components and ownership
+
+| Component | Owns | Does not own |
+|-----------|------|----------------|
+| **Program Console session coordinator** (small; owned by Program Console integration) | **Current** monotonic generation; which Run/Debug session is active; rejecting stale events | Master FD; child/GDB processes |
+| **PtySession / transport** | Master FD; reader thread/source; events **stamped** with the assigned generation; `SendInput` / `Resize` / `Close`; slave **name** for GDB | Deciding which generation is current; child PID; UI widgets |
+| **macOS Run launch adapter** | PTY-aware child launch (setsid/claim/pgrp as proven); integrates PID/exit into `CompilerGCC` lifecycle | Master reads; Terminal.app; being a second process manager |
+| **CompilerGCC** (Run) | Queue, cwd, env, Stop, PID/exit reporting, completion semantics | PTY master; forced use of `PipedProcess` if unsuitable |
+| **DebuggerGDB** | GDB process, command queue, debugger log, breakpoints | Inferior stdio bytes (PtySession → pane) |
+| **Program Console panel** | Display, key→bytes, scrollback buffer | Master FD; process kill; generation allocation |
+
+Conceptual layering:
+
+```text
+Program Console UI
+        |
+session coordinator  — current generation; active session; drop stale events
+        |
+     PtySession      — PTY master transport; events carry assigned generation
+```
+
+**Destruction order (session end / shutdown):** coordinator marks generation inactive → stop reader → ignore further events for that generation → close master (hang-up) → join reader → clear session pointer on UI → (Run) wait/reap via CompilerGCC lifecycle / (Debug) existing GDB teardown. UI must not receive callbacks after destroy (unbind + generation check).
+
+#### Session API (refined)
+
+```text
+CreateSession(options) -> SessionHandle   // allocates PTY; coordinator assigns generation
+GetSlaveName(handle) -> path              // e.g. /dev/ttysN; for GDB tty command
+SendInput(handle, bytes)
+Resize(handle, rows, cols)                // Darwin TIOCSWINSZ; optional pixel fields if API allows
+Close(handle)                             // lifecycle close; may HUP slave
+```
+
+- Do **not** expose raw master FD on the general API.  
+- Do **not** grow this into a process manager or large framework — coordinator may be a small object beside the pane.  
+- Run adapter and GDB attach are callers, not part of the transport.
+
+#### Lifecycle state machine
+
+`Idle → Starting → Running → Closing → Closed`, plus `Failed` from Starting/Running.
+
+- **Starting:** PTY may exist; launch/GDB setup in progress; **previous scrollback still visible**.  
+- **Running (active):** replacement Run process or Debug inferior/session has **successfully launched**; coordinator advances “current” generation for display; **only then** clear old scrollback and show the new session.  
+- **Failed** (from Starting or early Running): retain previous scrollback; report failure separately; do not treat PTY-create success as license to clear.  
+
+Every PtySession is stamped with a generation; the **coordinator** owns which generation is current. Queued output/exit/error/completion events carry that id. After the new session becomes **active**, drop events whose generation ≠ current (prevents A-finished → B-started → clear → stale A output).
+
+#### Run-mode Darwin sequence (intended; Milestone 1 proves details)
+
+1. Allocate PTY; parent keeps master, obtains slave path/FD.  
+2. Fork; child: `setsid`, open slave, `TIOCSCTTY` if required, set foreground pgrp, dup slave→0/1/2, close extras, exec.  
+3. Parent: close slave FD copies; start master reader; track child PID via **CompilerGCC** lifecycle (adapter integrates notification; `PipedProcess` only if suitable).  
+4. Exit: detect child exit **and** the observed master-side final-slave-closure condition (EOF, EIO if observed, etc.); then Close session. 
+5. Exec failure: report without leaving orphan master/reader; **retain** prior scrollback.
+
+Debug-mode does **not** assume steps 2’s claim/pgrp for the inferior — GDB launches the inferior after `tty <slave>`. Milestone 2 records what Darwin GDB actually does with claim / `inferior-tty-claim`.
+
+#### Input / signals (keep separate)
+
+| Action | Mechanism |
+|--------|-----------|
+| Focus in Program Console, Ctrl-C | Send the slave’s configured **VINTR** character through the master (normally `0x03` / Ctrl-C); line discipline signals the foreground pgrp. Record termios control chars when the session is configured. **Verify VINTR delivery** in M1 (and re-check in M2). |
+| Focus in Program Console, Ctrl-D | Send the slave’s configured **VEOF** character (normally `0x04` / Ctrl-D). **Not** implemented by closing the master. **Verify VEOF** in M1. |
+| Printable / Enter / Backspace | Encode to bytes (UTF-8); write to master; **no local echo** of printables if slave ECHO is on — display only master output. |
+| Run/Debug **Stop** | Existing CB lifecycle (kill run process / stop debugger); **not** “only write VINTR”. |
+| Debugger interrupt | GDB control channel; **not** Program Console Ctrl-C / VINTR. |
+| Session **Close** | Lifecycle; may cause hang-up; distinct from VEOF. |
+
+#### Resize
+
+- Derive rows/cols from client area ÷ monospace cell size; clamp to ≥1.  
+- `ioctl(master, TIOCSWINSZ, …)`; set pixel sizes if Darwin `winsize` fields are used.  
+- Coalesce resize events (timer or “pending” flag).  
+- M1 proof: child reads winsize / receives SIGWINCH as applicable.
+
+#### Threading
+
+- **Never** block the GUI thread on master `read`.  
+- Reader: dedicated thread or non-blocking FD + existing wake patterns (`PipedProcess` / idle timers / `wxQueueEvent` / `CallAfter`). Prefer one worker reading master, batching bytes, posting **generation-tagged** events to the GUI.  
+- Distinguish: normal EOF, the observed Darwin master-side condition after final slave closure (including EIO if observed), genuine errors, hard errors, explicit `Close`.  
+- Shutdown: `Close` → interrupt read → join → no UI callbacks into freed panel (`Destroy` unregisters first).  
+- Rapid stop/restart: coordinator assigns new generation; clear display only when replacement becomes **active**; stale events ignored.
+
+#### Buffering / UTF-8 / ANSI
+
+- Bound transport queue and visible scrollback (constants in one header; initial suggestion: ~1–4 MiB scrollback, smaller pending queue).  
+- Over limit: drop **oldest** scrollback; single marker `[Earlier console output discarded]` (no spam).  
+- Incremental UTF-8 and stateful ANSI across reads — required for production (M3+); **not** the focus of Milestone 1.  
+- **Supported ANSI (deliberately small):** SGR reset; standard + bright foreground; optional background; optional bold if STC supports it cleanly. Ignore unsupported CSI — **no** cursor addressing / screen buffers.  
+- LF, CR, CRLF, repeated CR (progress), BS, TAB: prove CR progress and basic line behaviour in M1; full display policy in pane milestones.
+
+---
+
+### Milestones and acceptance
+
+| # | Milestone | Form | Must prove / deliver |
+|---|-----------|------|----------------------|
+| **1** | Standalone Darwin PTY proof | Small **repo test utility** (e.g. `src/tools/` or `tests/`); Darwin-only; **not** production UI | Focus on **Darwin/Unix PTY semantics:** allocation; session / controlling-terminal setup; process groups; stdin/stdout/stderr on slave; output with newline; **prompt without newline**; terminal echo (no harness double-echo); **VINTR** (Ctrl-C) to expected pgrp; **VEOF** (Ctrl-D) EOF **without** closing master; record termios VINTR/VEOF; resize / SIGWINCH as applicable; CR progress; child exit / immediate exit; exec failure; close unused FDs; clean reader stop; rapid create/close/recreate without leaks. Defer rich UTF-8/ANSI split-display proofs to later pane work. |
+| **2** | Bundled GDB → CB-owned PTY | Minimal harness using v1.2 bundled `gdb` + PtySession; optional tiny console dump | GDB accepts slave via **`tty <path>`** (as in tree); inferior stdio through PTY; break / continue; input when appropriate; Console VINTR vs debugger interrupt distinguishable; document **`inferior-tty-claim`** still needed or not; **no** Terminal/holder unless proof shows Darwin requires it |
+| **3** | Run → Program Console tab | Production: InfoPane tab + coordinator + transport + macOS Run adapter | Console Run uses pane when mode=program_console; Terminal path when mode=terminal_app; GUI targets unchanged; **scrollback cleared only after successful Run launch / active session**; failures keep prior output; generation safety via coordinator |
+| **4** | Debug → Program Console tab | Production: skip `RunNixConsole` in pane mode; same tab | Inferior I/O in pane; debugger log unchanged; Stop/shutdown safe; **scrollback cleared only after successful Debug inferior/session activation**; failures keep prior output; re-validate claim-off hypothesis; holder unused in pane mode |
+| **5** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases |
+
+**Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
+
+---
+
+### Explicit non-goals (v2.0)
+
+- LLDB; full VT100/curses; Tools-menu in-pane console; multiple concurrent Program Console sessions; redesign of Windows/Linux consoles; changing GDB signing model.
 
 ### Hooks (reference)
 
-- Debug (today): `RunNixConsole` → `tty …` (`cbplugin.cpp`, `debuggergdb.cpp`).  
-- Run (today): `CompilerGCC` + `DEFAULT_CONSOLE_TERM` / `$SCRIPT`.  
-- After v1.1: Darwin may queue `set inferior-tty-claim off` on the Terminal path; pane mode may drop that if Milestone 2/4 shows claim succeeds on an unclaimed slave.
+- Debug (Terminal mode): `RunNixConsole` → `tty <path>` (+ macOS claim probe).  
+- Run (Terminal mode): `CompilerGCC` + `/console_terminal` + `$SCRIPT`.  
+- GDB binary: `GetDebuggerExecutable` → bundled path when empty.
 
 ---
 
@@ -212,4 +359,4 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **Planned** — Program Console tab in Logs & others; macOS-only PTY; GDB→PTY then Run→pane then Debug→pane; Terminal.app as user option; Windows/Linux unchanged. |
+| **v2.0** | **Planned (refined)** — InfoPane Program Console; macOS PTY; findings-backed Run/Debug branches; M1→M2→M3→M4→M5; Terminal option; Win/Linux unchanged. |
