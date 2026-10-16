@@ -1,2 +1,5 @@
 pty_proof
+gdb_pty_proof
+inferior
+*.o
 *.dSYM/
