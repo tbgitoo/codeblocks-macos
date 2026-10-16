@@ -67,7 +67,12 @@ ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
     : wxPanel(parent, wxID_ANY)
 {
     m_stc = new cbStyledTextCtrl(this, wxID_ANY);
-    m_stc->SetReadOnly(false);
+    /*
+     * Display-only: all keystrokes are forwarded to the PTY. If the STC is
+     * writable, Scintilla consumes Return/typing on KEY_DOWN before CHAR, so
+     * input appears locally and never reaches cin.
+     */
+    m_stc->SetReadOnly(true);
     m_stc->SetCaretLineVisible(false);
     m_stc->SetMarginWidth(0, 0);
     m_stc->SetMarginWidth(1, 0);
@@ -85,6 +90,7 @@ ProgramConsolePanel::ProgramConsolePanel(wxWindow* parent)
     sizer->Add(m_stc, 1, wxEXPAND);
     SetSizer(sizer);
 
+    m_stc->Bind(wxEVT_KEY_DOWN, &ProgramConsolePanel::OnKeyDown, this);
     m_stc->Bind(wxEVT_CHAR, &ProgramConsolePanel::OnChar, this);
 
     g_panel = this;
@@ -107,6 +113,7 @@ void ProgramConsolePanel::ClearScrollback()
     m_pending.clear();
     m_stc->SetReadOnly(false);
     m_stc->ClearAll();
+    m_stc->SetReadOnly(true);
 }
 
 void ProgramConsolePanel::SetActiveGeneration(std::uint64_t generation)
@@ -129,13 +136,12 @@ void ProgramConsolePanel::FlushPending()
     wxString chunk;
     chunk.swap(m_pending);
 
-    /* Basic CR handling: treat lone CR as return-to-line-start for progress. */
     m_stc->SetReadOnly(false);
     for (size_t i = 0; i < chunk.size(); ++i) {
         const wxChar ch = chunk[i];
         if (ch == '\r') {
             if (i + 1 < chunk.size() && chunk[i + 1] == '\n')
-                continue; /* CRLF → LF handled next */
+                continue;
             const int line = m_stc->GetCurrentLine();
             const int start = m_stc->PositionFromLine(line);
             m_stc->GotoPos(start);
@@ -153,6 +159,7 @@ void ProgramConsolePanel::FlushPending()
         m_stc->AppendText(wxString(ch));
         m_stc->GotoPos(m_stc->GetLength());
     }
+    m_stc->SetReadOnly(true);
     m_stc->EnsureCaretVisible();
 }
 
@@ -190,42 +197,77 @@ void ProgramConsolePanel::ApplyResize()
 #endif
 }
 
-void ProgramConsolePanel::OnChar(wxKeyEvent& event)
+bool ProgramConsolePanel::SendKeyToPty(const wxKeyEvent& event)
 {
 #if defined(__WXMAC__)
     const int key = event.GetKeyCode();
-    if (event.GetModifiers() == wxMOD_CONTROL || event.GetModifiers() == wxMOD_RAW_CONTROL) {
+    const int mods = event.GetModifiers();
+
+    if (mods == wxMOD_CONTROL || mods == wxMOD_RAW_CONTROL) {
         if (key == 'C' || key == 'c') {
             const unsigned char vintr = ProgramConsole::GetVIntrByte();
-            ProgramConsole::SendPanelInput(&vintr, 1);
-            return;
+            return ProgramConsole::SendPanelInput(&vintr, 1);
         }
         if (key == 'D' || key == 'd') {
             const unsigned char veof = ProgramConsole::GetVEofByte();
-            ProgramConsole::SendPanelInput(&veof, 1);
-            return;
+            return ProgramConsole::SendPanelInput(&veof, 1);
         }
     }
+
+    /* Terminals send CR for Enter; ICRNL maps it to NL for the reader. */
     if (key == WXK_RETURN || key == WXK_NUMPAD_ENTER) {
-        const char nl = '\n';
-        ProgramConsole::SendPanelInput(&nl, 1);
-        return;
+        const char cr = '\r';
+        return ProgramConsole::SendPanelInput(&cr, 1);
     }
-    if (key == WXK_BACK) {
+    if (key == WXK_BACK || key == WXK_DELETE) {
         const char bs = '\b';
-        ProgramConsole::SendPanelInput(&bs, 1);
-        return;
+        return ProgramConsole::SendPanelInput(&bs, 1);
     }
+    if (key == WXK_TAB) {
+        const char tab = '\t';
+        return ProgramConsole::SendPanelInput(&tab, 1);
+    }
+
     const wxChar uc = event.GetUnicodeKey();
     if (uc >= 32) {
         const wxCharBuffer utf8 = wxString(uc).ToUTF8();
         if (utf8.length())
-            ProgramConsole::SendPanelInput(utf8.data(), utf8.length());
-        return;
+            return ProgramConsole::SendPanelInput(utf8.data(), utf8.length());
     }
 #else
-    event.Skip();
+    wxUnusedVar(event);
 #endif
+    return false;
+}
+
+void ProgramConsolePanel::OnKeyDown(wxKeyEvent& event)
+{
+#if defined(__WXMAC__)
+    const int key = event.GetKeyCode();
+    /* Intercept keys Scintilla would otherwise handle before CHAR. */
+    if (key == WXK_RETURN || key == WXK_NUMPAD_ENTER || key == WXK_BACK
+        || key == WXK_DELETE || key == WXK_TAB
+        || event.GetModifiers() == wxMOD_CONTROL
+        || event.GetModifiers() == wxMOD_RAW_CONTROL) {
+        if (SendKeyToPty(event))
+            return; /* do not Skip — prevent STC editing */
+    }
+#endif
+    event.Skip();
+}
+
+void ProgramConsolePanel::OnChar(wxKeyEvent& event)
+{
+#if defined(__WXMAC__)
+    /* Printable characters: CHAR is the portable place for Unicode text. */
+    const int key = event.GetKeyCode();
+    if (key == WXK_RETURN || key == WXK_NUMPAD_ENTER || key == WXK_BACK
+        || key == WXK_DELETE || key == WXK_TAB)
+        return; /* already handled in KEY_DOWN */
+    if (SendKeyToPty(event))
+        return;
+#endif
+    event.Skip();
 }
 
 namespace ProgramConsole

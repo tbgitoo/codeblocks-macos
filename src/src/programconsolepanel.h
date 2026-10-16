@@ -19,11 +19,13 @@ public:
     void SetActiveGeneration(std::uint64_t generation);
 
 private:
+    void OnKeyDown(wxKeyEvent& event);
     void OnChar(wxKeyEvent& event);
     void OnSize(wxSizeEvent& event);
     void OnIdle(wxIdleEvent& event);
     void FlushPending();
     void ApplyResize();
+    bool SendKeyToPty(const wxKeyEvent& event);
 
     cbStyledTextCtrl* m_stc = nullptr;
     std::uint64_t m_activeGeneration = 0;

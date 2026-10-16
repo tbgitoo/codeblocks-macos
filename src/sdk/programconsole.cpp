@@ -219,6 +219,9 @@ bool ChildClaimAndExec(int slaveFd, const wxString& command, const wxString& wor
         chdir(workingDir.mb_str(wxConvUTF8));
 
     setpgid(0, 0);
+    /* Avoid SIGTTOU stopping us before we become the foreground pgrp. */
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
     tcsetpgrp(STDIN_FILENO, getpid());
 
     const wxCharBuffer cmd = command.mb_str(wxConvUTF8);
