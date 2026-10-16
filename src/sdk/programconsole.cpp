@@ -12,6 +12,7 @@
 
 #include "programconsole.h"
 #include "programconsole_internal.h"
+#include "pipedprocess.h"
 
 #include <wx/process.h>
 #include <wx/timer.h>
@@ -225,39 +226,46 @@ bool ChildClaimAndExec(int slaveFd, const wxString& command, const wxString& wor
     return false;
 }
 
-class PtyRunProcessTracker : public wxProcess
+/*
+ * Must be a PipedProcess: CompilerGCC::OnIdle casts pProcess to PipedProcess*
+ * and calls HasInput(). A bare wxProcess crashes there.
+ */
+class PtyRunProcessTracker : public PipedProcess
 {
 public:
-    PtyRunProcessTracker(wxProcess** pvThis, wxEvtHandler* parent, int id, int index, long pid)
-        : wxProcess(parent, id),
-          m_pvThis(pvThis),
-          m_parent(parent),
-          m_id(id),
-          m_index(index),
-          m_pid(pid)
+    PtyRunProcessTracker(PipedProcess** pvThis, wxEvtHandler* parent, int id, int index, long pid)
+        : PipedProcess(pvThis, parent, id, /*pipe=*/false, wxEmptyString, index),
+          m_waitPid(pid)
     {
-        m_timer.SetOwner(this);
-        Bind(wxEVT_TIMER, &PtyRunProcessTracker::OnTimer, this);
-        m_timer.Start(100);
+        m_Pid = static_cast<int>(pid);
+        m_waitTimer.SetOwner(this);
+        Bind(wxEVT_TIMER, &PtyRunProcessTracker::OnWaitTimer, this);
+        m_waitTimer.Start(100);
     }
 
     ~PtyRunProcessTracker() override
     {
-        m_timer.Stop();
+        m_waitTimer.Stop();
+    }
+
+    bool HasInput() override
+    {
+        /* Stdio is on the Program Console PTY, not wxProcess pipes. */
+        return false;
     }
 
 private:
-    void OnTimer(wxTimerEvent&)
+    void OnWaitTimer(wxTimerEvent&)
     {
-        if (m_pid <= 0)
+        if (m_waitPid <= 0)
             return;
         int status = 0;
-        const pid_t r = waitpid(static_cast<pid_t>(m_pid), &status, WNOHANG);
+        const pid_t r = waitpid(static_cast<pid_t>(m_waitPid), &status, WNOHANG);
         if (r == 0)
             return;
-        m_timer.Stop();
+        m_waitTimer.Stop();
         int exitCode = 0;
-        if (r == m_pid) {
+        if (r == m_waitPid) {
             if (WIFEXITED(status))
                 exitCode = WEXITSTATUS(status);
             else if (WIFSIGNALED(status))
@@ -266,22 +274,12 @@ private:
             exitCode = -1;
         }
 
-        CodeBlocksEvent event(cbEVT_PIPEDPROCESS_TERMINATED, m_id);
-        event.SetInt(exitCode);
-        event.SetX(m_index);
-        wxPostEvent(m_parent, event);
-
-        if (m_pvThis)
-            *m_pvThis = nullptr;
-        delete this;
+        /* Reuse PipedProcess termination path (posts event + self-deletes). */
+        OnTerminate(static_cast<int>(m_waitPid), exitCode);
     }
 
-    wxProcess** m_pvThis;
-    wxEvtHandler* m_parent;
-    int m_id;
-    int m_index;
-    long m_pid;
-    wxTimer m_timer;
+    long m_waitPid = 0;
+    wxTimer m_waitTimer;
 };
 
 #endif // __WXMAC__
@@ -393,7 +391,8 @@ wxProcess* CreateRunProcessTracker(wxProcess** pvThis, wxEvtHandler* parent,
                                    int id, int index, long pid)
 {
 #if defined(__WXMAC__)
-    return new PtyRunProcessTracker(pvThis, parent, id, index, pid);
+    return new PtyRunProcessTracker(reinterpret_cast<PipedProcess**>(pvThis),
+                                    parent, id, index, pid);
 #else
     wxUnusedVar(pvThis);
     wxUnusedVar(parent);
