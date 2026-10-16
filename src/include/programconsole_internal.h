@@ -12,7 +12,9 @@ namespace ProgramConsole
 void BindPanelHooks(void (*clear)(),
                     void (*append)(std::uint64_t, const wxString&),
                     void (*show)(),
-                    void (*setGen)(std::uint64_t));
+                    void (*setGen)(std::uint64_t),
+                    void (*armInputFocus)() = nullptr,
+                    void (*cancelInputFocus)() = nullptr);
 bool SendPanelInput(const void* data, size_t len);
 bool ResizeSession(unsigned rows, unsigned cols);
 unsigned char GetVIntrByte();

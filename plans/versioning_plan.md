@@ -232,7 +232,8 @@ A fresh macOS install includes the matching GDB under `Resources/debugger/` and 
 1. **UI:** Environment settings (`environmentsettingsdlg.cpp` / `env_settings.xrc`) already hosts `cbConsoleTerm` / `/console_terminal` (disabled on Windows). Add a **macOS-only** choice near it.  
 2. **Recommended key:** `app` config `/console_output_mode` = `program_console` | `terminal_app`. **Default:** `program_console` on macOS.  
 3. **Wording (draft):** “Console programs:” → “Program Console (Logs & others)” / “Terminal.app”. When Terminal.app is selected, keep using `/console_terminal` as today.  
-4. **Safeguard:** all new branches behind `platform::macosx` (and compile-time `__WXMAC__` where files are Darwin-only). No changes to Linux xterm or Windows `AllocConsole` / `new-console` paths. Smoke: Linux/Windows builds must not require new sources.
+4. **Safeguard:** all new branches behind `platform::macosx` (and compile-time `__WXMAC__` where files are Darwin-only). No changes to Linux xterm or Windows `AllocConsole` / `new-console` paths. Smoke: Linux/Windows builds must not require new sources.  
+5. **Program Console keyboard-focus policy (M5 — configurable):** see **Focus policy (Run / Debug)** below. macOS Program Console only; not applicable to Linux/Windows external-terminal paths.
 
 #### E. Bundle / GDB paths
 
@@ -421,7 +422,7 @@ keyboard Ctrl-C
 | **2** | **PASS (17/17)** | Bundled GDB → CB-owned PTY | `make -C src/tools/PtyProof run-m2` (default GDB `/Applications/CodeBlocks.app/Contents/Resources/debugger/bin/gdb`; override `CB_GDB` / argv). No Terminal / holder. | See **M2 results** below. All prior M2 claim/lifetime questions **RESOLVED**. |
 | **3** | **DONE (committed)** | Run → Program Console tab | Production: `ProgramConsole` SDK + InfoPane panel + `CompilerGCC` macOS branch. Config `/console_output_mode` (`program_console` default / `terminal_app`). Settings: Environment → Console programs. | See **M3 results / lessons** below. Console Run uses pane when mode=`program_console`; Terminal when `terminal_app`; GUI targets unchanged; scrollback cleared only after successful Run launch / active session; failures keep prior output; generation safety. M1 Darwin PTY semantics for Run adapter. **No** GDB tty-claim on Run. |
 | **4** | **DONE** | Debug → Program Console tab | Production: `BeginDebugSession` / `ActivateDebugSession` / `EndDebugSession` + `DebuggerGDB` branch. | See **M4 requirements** (all met) and **M4 implementation notes** below. Terminal.app mode unchanged (claim-off + holder). |
-| **5** | **NEXT** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
+| **5** | **NEXT** | Preference / polish / docs | Settings UI + `README.macos.md` | Persist `/console_output_mode`; **Run/Debug Program Console focus policies** (see below); Linux/Windows untouched; UTF-8/ANSI display hardening; edge cases. |
 
 **Terminal.app mode** continues to use v1.x osascript + helpers + existing claim-off placement for Debug.
 
@@ -434,7 +435,7 @@ Production Run→Program Console path is in-tree and smoke-tested in the IDE (ci
 | **`OnIdle` / `PipedProcess` crash (critical)** | `CompilerGCC::OnIdle` casts `CompilerProcess::pProcess` to `PipedProcess*` and calls `HasInput()`. Tracking the Run child with a bare `wxProcess` **crashes on first idle** after launch. **Fix:** `PtyRunProcessTracker` **must derive from `PipedProcess`**; override `HasInput()` to return `false` (stdio is on the PTY, not wx pipes). Do not “simplify” to `wxProcess` alone. |
 | Bundle refresh | Hand-copying binaries into `CodeBlocks.app` and/or crude `codesign --deep` can leave an **unlaunchable** app. Refresh via `./make_cb_app_bundle.sh` after SDK/app installs. |
 | STC eats Enter | A writable `cbStyledTextCtrl` consumes Return on `KEY_DOWN` before `CHAR`, so digits may PTY-echo while **cin never completes**. **Fix:** keep STC **read-only**; handle Return / Backspace / Ctrl-C / Ctrl-D on `KEY_DOWN`; send **`\\r`** for Enter (ICRNL → NL for the reader). |
-| Focus policy | Do **not** steal editor focus on session activate. After PTY output settles (~250 ms quiet) while the child is still active, focus the Program Console (cin-ready heuristic; no OS “blocked on read” signal). |
+| Focus policy (interim M3/M4) | Hard-coded heuristics until M5: Run ≈ silence-after-output; Debug ≈ silence only while inferior running. **Superseded by configurable policies below** — silence cannot distinguish `cin` from a long quiet calculation. |
 | Exit banner | Match `cb_console_runner`: `Process returned N (0xN)   execution time : X.XXX s`. Skip “Press any key to continue” — the pane stays open. |
 | Closed tab | InfoPane close **Toggle**s the page hidden; restore via tab context **Toggle…** or `ShowNonLogger` on activate/show (not `SetSelection` alone). |
 | Child `tcsetpgrp` | Ignore `SIGTTOU` / `SIGTTIN` before becoming foreground pgrp on the slave. |
@@ -516,7 +517,56 @@ Resolved by M4 (Debug production) — **do not reopen** for Debug:
 
 Still open (M5 / polish):
 
+- Implement **Focus policy (Run / Debug)** settings (specified below); wire panel/debugger to config.  
 - README / settings copy polish; UTF-8/ANSI display hardening; edge-case docs.
+
+---
+
+### Focus policy (Run / Debug) — M5 product decision
+
+**Problem:** There is no OS signal for “blocked on `cin`”. Auto-focus after “quiet output” or “quiet while running” can help teaching demos and can steal focus during long silent calculations. Preference must be **user-visible and configurable**.
+
+**Platform compatibility (verified — not a conflict):**
+
+| Platform | Run / Debug console today | Focus behaviour in Code::Blocks |
+|----------|---------------------------|----------------------------------|
+| **Linux** | External terminal (`DEFAULT_CONSOLE_TERM` = `xterm -T $TITLE -e`, or user `/console_terminal`) + optional `cb_console_runner` / `cb_debug_console_hold` | CB does **not** move IDE focus into an in-pane console (there is none). The WM typically activates the new xterm. On Debug **stop**, `BringCBToFront()` **raises Code::Blocks** so the editor/debugger UI comes forward — the opposite of focusing the console. |
+| **Windows** | Separate console window (`AllocConsole` / `wxEXEC_SHOW_CONSOLE` paths) | Same idea: OS owns the console window; CB has no Program Console focus policy. |
+| **macOS Terminal.app mode** | External Terminal via osascript / holder | Same external-window model as Linux; Program Console focus settings **do not apply**. |
+| **macOS Program Console** | In-IDE InfoPane tab + CB-owned PTY | Focus *can* be moved between editor and pane — **only here** do the options below apply. |
+
+**Conclusion:** Configurable Program Console focus policies are **macOS + `program_console` only**. They do not change Linux/Windows pathways and are not incompatible with them. Do not invent parallel focus knobs for xterm/Windows consoles in v2.0.
+
+**A) Run mode** — config key (draft): `app` `/program_console_focus_run`  
+
+| Value | Behaviour |
+|-------|-----------|
+| `on_launch` | Transfer keyboard focus to Program Console when the Run session becomes **active** (successful launch / clear scrollback). |
+| `never` | Never auto-transfer focus; user clicks the pane (or uses existing focus shortcuts). |
+| `on_silence` | After PTY output settles (~250 ms quiet) while the Run child is still alive, transfer focus (current M3-style heuristic). |
+
+**B) Debug mode** — config key (draft): `app` `/program_console_focus_debug`  
+
+| Value | Behaviour |
+|-------|-----------|
+| `on_launch` | Transfer focus when the Debug Program Console session becomes **active** (PTY ready / pane shown). |
+| `never` | Never auto-transfer focus during Debug. |
+| `on_step_silence` | Transfer focus only after quiet output **within a running step** (inferior not stopped — debugger triangle absent): i.e. after Continue/Step, while running, when output goes quiet ~250 ms. Do **not** steal focus while stopped on a line (including a `cin` line with prompt already printed). Cancel pending transfer on stop. |
+
+**Defaults (locked for M5 — match Windows/Linux external-console behaviour):**
+
+| Mode | Default | Rationale (Win/Linux today) |
+|------|---------|------------------------------|
+| **Run** | `on_launch` | External `xterm` / Windows console / Terminal.app is activated by the OS/WM when the console process starts — focus leaves the editor for the console at launch. |
+| **Debug** | `never` | Debug stop path calls `BringCBToFront()` so the **IDE** stays (or returns) frontmost; users click the external console when they need to type. No CB heuristic focuses the console on silence/`cin`. |
+
+`on_silence` / `on_step_silence` remain **opt-in** for teaching or cin-heavy workflows. Document defaults + alternatives in settings + `README.macos.md`.
+
+**UI (draft):** macOS-only controls under Environment near “Console programs:” — e.g. “Program Console focus (Run):” and “Program Console focus (Debug):” combo boxes. Hidden or disabled when Console programs = Terminal.app.
+
+**Honesty constraint:** Even `on_silence` / `on_step_silence` cannot distinguish `cin` from a silent long calculation; settings text should say so briefly (“heuristic; may focus during quiet computation”).
+
+**Non-goals for this preference:** controlling WM focus of external xterm/Terminal.app; changing `BringCBToFront` on Linux/Windows Debug stop.
 
 ---
 
@@ -541,4 +591,4 @@ Still open (M5 / polish):
 | **v1.0** | **Released** — tag `v1.0` @ `e5bc580`. Import r14050 → Terminal `$SCRIPT` fixes → app bundle + DMG + macOS docs/bootstrap. GDB external. |
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
-| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE (committed)**; **M4 DONE** (Debug → Program Console; claim **ON** `tty`; no Terminal/holder); Terminal.app claim-off + holder preserved; **M5 NEXT**; Win/Linux unchanged. |
+| **v2.0** | **In progress** — M1 **PASS**; M2 **PASS (17/17)**; **M3 DONE (committed)**; **M4 DONE**; **M5 NEXT** (incl. configurable Run/Debug Program Console **focus** policies — macOS only; Linux/Windows external terminals unchanged); Win/Linux unchanged. |
