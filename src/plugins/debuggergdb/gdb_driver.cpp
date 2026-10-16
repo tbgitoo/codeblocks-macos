@@ -74,6 +74,7 @@ static wxRegEx reChildPid2("\\[New [tT]hread[[:blank:]]+[0-9]+\\.[xA-Fa-f0-9-]+\
 
 static wxRegEx reInferiorExited("^\\[Inferior[[:blank:]].+[[:blank:]]exited normally\\]$", wxRE_EXTENDED);
 static wxRegEx reInferiorExitedWithCode("^\\[[Ii]nferior[[:blank:]].+[[:blank:]]exited[[:blank:]]with[[:blank:]]code[[:blank:]]([0-9]+)\\]$", wxRE_EXTENDED);
+static wxRegEx reProgramExitedWithCode("^Program exited with code ([0-9]+)\\.?$", wxRE_EXTENDED);
 
 GDB_driver::GDB_driver(DebuggerGDB* plugin) :
     DebuggerDriver(plugin),
@@ -772,9 +773,36 @@ void GDB_driver::ParseOutput(const wxString& output)
         {
             m_pDBG->Log(lines[i]);
             m_ProgramIsStopped = true;
-            // Soft-finish the Terminal holder (may prompt for a key). Does not
-            // block; later KillConsole will not SIGTERM that waiting helper.
-            m_pDBG->NotifyDebugConsoleFinished();
+            /* Parse a clean exit code for Program Console banner (no timing). */
+            bool announceExit = false;
+            int exitCode = 0;
+            if (reInferiorExited.Matches(lines[i])
+                || lines[i].StartsWith("Program exited normally"))
+            {
+                announceExit = true;
+                exitCode = 0;
+            }
+            else if (reInferiorExitedWithCode.Matches(lines[i]))
+            {
+                long code = 0;
+                if (reInferiorExitedWithCode.GetMatch(lines[i], 1).ToLong(&code))
+                {
+                    announceExit = true;
+                    exitCode = static_cast<int>(code);
+                }
+            }
+            else if (reProgramExitedWithCode.Matches(lines[i]))
+            {
+                long code = 0;
+                if (reProgramExitedWithCode.GetMatch(lines[i], 1).ToLong(&code))
+                {
+                    announceExit = true;
+                    exitCode = static_cast<int>(code);
+                }
+            }
+            // Soft-finish: Program Console banner (if known) + EndDebugSession;
+            // Terminal holder SIGUSR1. Later KillConsole will not SIGTERM the helper.
+            m_pDBG->NotifyDebugConsoleFinished(announceExit, exitCode);
             QueueCommand(new DebuggerCmd(this, "quit"));
             m_IsStarted = false;
         }
