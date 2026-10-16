@@ -137,13 +137,35 @@ EnvironmentSettingsDlg::EnvironmentSettingsDlg(wxWindow* parent, wxAuiDockArt* a
     txt->Enable(false);
 #endif
 
+    wxComboBox *comboMode = XRCCTRL(*this, "cbConsoleOutputMode", wxComboBox);
     wxComboBox *combo = XRCCTRL(*this, "cbConsoleTerm", wxComboBox);
     combo->Append(DEFAULT_CONSOLE_TERM);
 
     if (platform::windows)
+    {
         combo->Enable(false);
+        if (comboMode)
+        {
+            comboMode->Enable(false);
+            XRCCTRL(*this, "lblConsoleOutputMode", wxStaticText)->Enable(false);
+        }
+    }
     else
     {
+        if (comboMode)
+        {
+            /* macOS-only preference; hide on Linux. */
+            if (!platform::macosx && !platform::darwin)
+            {
+                comboMode->Enable(false);
+                XRCCTRL(*this, "lblConsoleOutputMode", wxStaticText)->Enable(false);
+            }
+            else
+            {
+                const wxString mode = cfg->Read("/console_output_mode", "program_console");
+                comboMode->SetSelection(mode == "terminal_app" ? 1 : 0);
+            }
+        }
         if (!platform::macosx && !platform::darwin)
         {
             combo->Append("gnome-terminal --wait -t $TITLE -x ");
@@ -593,6 +615,15 @@ void EnvironmentSettingsDlg::EndModal(int retCode)
         cfg->Write("/environment/robust_save",                 (bool) XRCCTRL(*this, "chkRobustSave",         wxCheckBox)->GetValue());
         cfg->Write("/console_shell",                                  XRCCTRL(*this, "txtConsoleShell",       wxTextCtrl)->GetValue());
         cfg->Write("/console_terminal",                               XRCCTRL(*this, "cbConsoleTerm",         wxComboBox)->GetValue());
+        {
+            wxComboBox* modeBox = XRCCTRL(*this, "cbConsoleOutputMode", wxComboBox);
+            if (modeBox && modeBox->IsEnabled())
+            {
+                cfg->Write("/console_output_mode",
+                           modeBox->GetSelection() == 1 ? wxString("terminal_app")
+                                                        : wxString("program_console"));
+            }
+        }
         cfg->Write("/open_containing_folder", XRCCTRL(*this, "txtOpenFolder", wxTextCtrl)->GetValue());
 
         // tab "View"

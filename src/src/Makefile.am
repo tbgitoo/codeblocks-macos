@@ -56,6 +56,7 @@ codeblocks_SOURCES = app.cpp \
 			manageglobsdlg.cpp \
 			notebookstyles.cpp \
 			printdlg.cpp \
+			programconsolepanel.cpp \
 			projectmanagerui.cpp \
 			projectdepsdlg.cpp \
 			projectoptionsdlg.cpp \
@@ -106,6 +107,7 @@ noinst_HEADERS = app.h \
 			manageglobsdlg.h \
 			notebookstyles.h \
 			printdlg.h \
+			programconsolepanel.h \
 			projectmanagerui.h \
 			projectdepsdlg.h \
 			projectoptionsdlg.h \
