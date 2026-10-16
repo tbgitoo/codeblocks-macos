@@ -3283,6 +3283,8 @@ int CompilerGCC::CompileStandaloneFileForDebug(const wxString& file)
     if (!guard.IsOk())
     {
         LogMessage(guard.ErrorMessage(), cltError);
+        // Also surface on the general log — Debugger tab callers may not show Build log.
+        Manager::Get()->GetLogManager()->LogError(guard.ErrorMessage());
         return -1;
     }
 

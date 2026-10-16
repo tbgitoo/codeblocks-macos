@@ -1,3 +1,22 @@
+2026-10-16 23:10  tbgitoo
+
+v2.1: unofficial Apple Silicon macOS port
+	  * Debug / cold-start Step Into a single open C/C++ source
+	    file with no project (same class as single-file Run)
+	  * Always rebuild before no-project Debug: compiler’s debug-
+	    information CompOption on, strip off (Clang: Tune Debugging
+	    for GDB / Produce minimal as needed); hard stop on compile
+	    failure (no stale exe, no “Debug anyway”)
+	  * Narrow DebuggeeDescription hand-off for standalone only;
+	    project Debug and attach unchanged
+	  * Menu enables Debug when an ftSource editor is active and
+	    there is no project; cwd = source dir; no program args;
+	    existing Program Console / Terminal.app preference
+	  * DebuggerGDB primary path (macOS smoke-tested); gdbmi still
+	    project-only (compile-checked, not runtime-tested);
+	    Linux/Windows share the code path (not smoke-tested here)
+	  * README.macos.md: user note and deliberate limitations
+
 2026-10-16 19:22  tbgitoo
 
 v2.0 (daf6e97): unofficial Apple Silicon macOS port
