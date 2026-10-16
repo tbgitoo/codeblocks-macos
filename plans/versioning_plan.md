@@ -587,8 +587,7 @@ Still open (post-M5 polish, optional):
 
 ## v2.1 — Debug a single open file (no project)
 
-**Status: Planned** (after v2.0 is finished / released). Do not start until Program Console Run/Debug (v2.0) is settled. **Do not implement until this section is accepted.**
-
+**Status: DONE** — M1–M4 complete (standalone Debug + compatibility + docs).
 **Goal:** Allow **Debug** and cold-start **Step Into** when there is **no active project**, for the same class of files single-file **Run** already supports: one open source file, built as a console executable next to the source. Reuse existing single-file compile/run machinery. **No** fake or temporary `cbProject` / `.cbp`.
 
 ### Product decisions (locked)
@@ -646,8 +645,8 @@ These are findings from the tree; they refine the plan and must not be ignored a
 - Each compiler’s options XML defines a **named** option **`"Produce debugging symbols"`** whose `option=` string is compiler-specific (`-g` in `options_gcc.xml` / Clang; `/Zi` in `options_msvc*.xml`; etc.).  
 - Strip is typically a separate option **`"Strip all symbols from binary (minimizes size)"`** (often `additionalLibs="-s"` for GCC-family, not always a compile `-s`). GCC’s debug option lists `supersedes="-s"` in the catalogue.  
 - Lookup exists: `CompilerOptions::GetOptionByName` / `GetOptionByOption`.  
-- **Plan requirement:** for the no-project Debug compile path, resolve and apply the selected/default compiler’s **Produce debugging symbols** option string (and any `additionalLibs` it carries), and ensure the **strip** CompOption is **not** applied — without hardcoding `"-g"` / `"-s"` in shared single-file debug code. Only a compiler-specific backend may mention literal flags if that matches how that compiler class already works.  
-- If an exotic compiler lacks the named option, fail clearly (or skip that compiler) rather than inventing flags.
+- **Plan requirement:** for the no-project Debug compile path, resolve and apply a debug-information CompOption from the selected/default compiler’s catalogue, and ensure the **strip** CompOption is **not** applied — without hardcoding `"-g"` / `"-s"` in shared single-file debug code. Preferred name order: **Produce debugging symbols** (GCC/MSVC) → **Tune Debugging for GDB** (Clang) → **Produce minimal debugging symbols** (Clang fallback) → match common option strings (`-g`, `-ggdb`, `/Zi`, …) in the catalogue.  
+- If an exotic compiler lacks any such option, fail clearly rather than inventing flags.
 
 #### Save-before-compile
 
@@ -753,11 +752,24 @@ Dividing line: default single-file semantics suffice → no project; custom buil
 | # | Status | Work |
 |---|--------|------|
 | **M1** | **DONE** | **Standalone compile + narrow hand-off.** CompOption debug-info/strip handling; define small `DebuggeeDescription` for **standalone**; save + always-rebuild; menu/UpdateUI; compile failure aborts debugger launch. Project Debug path not converted to the description. |
-| **M2** | Planned | **DebuggerGDB standalone.** No-project Debug; no-project Step Into (= existing cold-start `Debug(true)` semantics); breakpoints; stepping; watches/stack; console I/O via existing selected mode; clean exit/restart. **Regression smoke:** project Debug and attach remain unchanged. Prefer early branch / overload over refactoring mature project code. |
-| **M3** | Planned | **Compatibility.** Confirm project/attach/Run and Linux/Windows paths were not intentionally changed; gdbmi not knowingly broken; contrib compile if practical; document anything not runtime-tested. Optional note if project Debug was *not* routed through `DebuggeeDescription` (expected default). |
-| **M4** | Planned | **Documentation / release.** User note: lone C/C++ source can be debugged without a project; list deliberate limitations; update this plan + ChangeLog. |
+| **M2** | **DONE** | **DebuggerGDB standalone.** No-project Debug / Step Into (existing `Debug(true)` / `start` semantics after always-rebuild); source dir for breakpoints; exe existence check; console via existing Program Console / Terminal path; clean exit clears standalone state for restart. Project Debug and attach left on existing paths. |
+| **M3** | **DONE** | **Compatibility.** See **M3 results** below. |
+| **M4** | **DONE** | **Documentation / release.** User note + limitations in `README.macos.md`; ChangeLog v2.1 entry; this plan marked complete. |
 
 Order: **M1 → M2 → M3 → M4**. M3 must not block M2 on this fork (`--disable-contrib-plugins`).
+
+#### Milestone 3 results (DONE)
+
+| Check | Result |
+|-------|--------|
+| **Project Debug** | Still on the mature path: `EnsureBuildUpToDate` → `Build()` → optional “Debug anyway”. **Not** routed through `DebuggeeDescription` (expected default). |
+| **Attach** | Unchanged early branch (`m_PidToAttach != 0`); standalone only when no project and not attaching. |
+| **Single-file Run** | `RunSingleFile` / `CompileFileWithoutProject` untouched; always-rebuild + CompOption guard only on `CompileStandaloneFileForDebug`. |
+| **Shared helpers** | `GetDebuggee(target*)` signature unchanged. `EnsureBuildUpToDate` clears `m_StandaloneDebugBuild`. Project build-fail still offers “Debug anyway”; standalone hard-fails only when that flag was set. |
+| **Linux / Windows** | Standalone entry is shared C++ (menu + CompilerGCC + DebuggerGDB); no `#ifdef` narrowing the feature to macOS. **Not runtime-tested** on Linux/Windows on this fork. |
+| **gdbmi** | No references to `DebuggeeDescription` / `CompileStandaloneFileForDebug`. Still requires an active project (`Debug` logs “no active project”). **Compile OK** against post-M1/M2 SDK: `make -C src/plugins/contrib/debugger_gdbmi` produced `libdebugger_gdbmi.dylib` (tree configured with `--disable-contrib-plugins`; plugin not installed into the app bundle). **Runtime not tested.** |
+| **Menu vs gdbmi** | `DebuggerMenuHandler::OnUpdateUI` enables no-project Debug for any active debugger when an `ftSource` candidate is open. If **gdbmi** is the active debugger, the menu can enable while `Debugger_GDB_MI::Debug` still refuses — leftover UX gap, not an API break. Standalone support remains DebuggerGDB-only by design. |
+| **Runtime smoke (this fork)** | Case **A** (standalone `.cpp` Debug) confirmed working after DoRunQueue `-2` / CompOption fixes. Cases **F–H** (project / attach / Run) verified by code review only in M3. |
 
 ### Acceptance cases (minimum)
 
@@ -780,7 +792,7 @@ Order: **M1 → M2 → M3 → M4**. M3 must not block M2 on this fork (`--disabl
 |-------------|--------------------------------------|--------|
 | macOS + DebuggerGDB + Program Console / Terminal.app | **Yes** | Cases A–J as applicable. |
 | Linux / Windows + DebuggerGDB | Designed for; smoke if available | No Linux laptop assumed. |
-| gdbmi (contrib) | Compile if practical; runtime optional | Not shipped in default macOS configure. |
+| gdbmi (contrib) | Compile if practical; runtime optional | **Compiled OK** in M3 (`make -C src/plugins/contrib/debugger_gdbmi`); not in default `--disable-contrib-plugins` app; runtime not tested; still project-only. |
 
 ### Explicit non-goals (v2.1)
 
@@ -795,9 +807,11 @@ Order: **M1 → M2 → M3 → M4**. M3 must not block M2 on this fork (`--disabl
 - Propagating `DebuggeeDescription` through unrelated debugger layers without a concrete need.  
 - Making “everything goes through `DebuggeeDescription`” a success criterion.
 
-### Outcome (when done)
+### Outcome (DONE)
 
 With no project open, an active console-language source file can be Debugged / cold Step-Into’d after an always-rebuild with that compiler’s debug information: GDB runs the freshly linked exe with existing console handling, cwd next to the source, no program args. Project Debug and attach-to-process remain the mature, largely untouched paths; `DebuggeeDescription` is only the narrow bridge that made the standalone case possible.
+
+User-facing note and limitations: `README.macos.md` → **Debugging a single source file (no project)**. ChangeLog: **v2.1** entry.
 
 ---
 
@@ -809,4 +823,4 @@ With no project open, an active console-language source file can be Debugged / c
 | **v1.1** | **Released** — tag `v1.1` @ `cf3e4f0`. Claim-off handshake; `cb_debug_console_hold`; cold-start single Terminal window; README. GDB still external. |
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
-| **v2.1** | **Planned (final)** — additive single-file Debug/Step Into; narrow `DebuggeeDescription` hand-off (not a debugger rewrite); always-rebuild + CompOption debug-info; DebuggerGDB primary; project/attach unchanged. After v2.0. |
+| **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |

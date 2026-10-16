@@ -847,7 +847,12 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     if (!actualCompiler)
     {
         wxString msg;
-        msg.Printf(_("This %s is configured to use an invalid debugger.\nThe operation failed..."), target ? _("target") : _("project"));
+        const wxChar* what = _("project");
+        if (target)
+            what = _("target");
+        else if (m_UseStandaloneDebuggee)
+            what = _("file");
+        msg.Printf(_("This %s is configured to use an invalid debugger.\nThe operation failed..."), what);
         cbMessageBox(msg, _("Error"), wxICON_ERROR);
         m_Canceled = true;
         return 9;
@@ -945,6 +950,16 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
             }
             debuggee = m_StandaloneDebuggee.executablePath;
             path = m_StandaloneDebuggee.workingDirectory;
+            if (!wxFileExists(debuggee))
+            {
+                Log(wxString::Format(_("Standalone debuggee not found after rebuild: '%s'"),
+                                     debuggee), Logger::error);
+                m_Canceled = true;
+                return -3;
+            }
+            // So GDB can resolve sources next to the single file (breakpoints / SyncEditor).
+            AddSourceDir(path);
+            Log(_("Standalone debug (no project)"));
             Log(_("Adding file: ") + debuggee);
             ConvertDirectory(debuggee, wxEmptyString, true);
             if (!m_StandaloneDebuggee.arguments.empty())
@@ -1037,7 +1052,14 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     // start the gdb process
     wxString wdir = m_State.GetDriver()->GetDebuggersWorkingDirectory();
     if (wdir.empty())
-        wdir = m_pProject ? m_pProject->GetBasePath() : ".";
+    {
+        if (m_UseStandaloneDebuggee && !m_StandaloneDebuggee.workingDirectory.empty())
+            wdir = m_StandaloneDebuggee.workingDirectory;
+        else if (m_pProject)
+            wdir = m_pProject->GetBasePath();
+        else
+            wdir = ".";
+    }
     DebugLog(_("Command-line: ") + cmdline);
     DebugLog(_("Working dir : ") + wdir);
     int ret = LaunchProcess(cmdline, wdir);
@@ -2101,9 +2123,20 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
 
         if (m_NoDebugInfo)
         {
-            cbMessageBox(_("This project/target has no debugging info."
-                           "Please change this in the project's build options, re-compile and retry..."),
-                         _("Error"), wxICON_STOP);
+            if (m_UseStandaloneDebuggee)
+            {
+                cbMessageBox(_("This program appears to have no debugging information.\n"
+                               "Standalone Debug rebuilds with the compiler's "
+                               "'Produce debugging symbols' option; check the default "
+                               "compiler settings, re-compile and retry..."),
+                             _("Error"), wxICON_STOP);
+            }
+            else
+            {
+                cbMessageBox(_("This project/target has no debugging info."
+                               "Please change this in the project's build options, re-compile and retry..."),
+                             _("Error"), wxICON_STOP);
+            }
         }
     }
 
@@ -2117,6 +2150,10 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
         SwitchToPreviousLayout();
     KillConsole();
     MarkAsStopped();
+
+    // Allow a clean Debug/Step Into restart of the same standalone file.
+    m_UseStandaloneDebuggee = false;
+    m_StandaloneDebuggee = DebuggeeDescription();
 
     ///killerbot : run there the post shell commands ?
 }

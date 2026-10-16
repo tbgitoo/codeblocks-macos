@@ -42,6 +42,42 @@ CompOption* FindCompOptionByBaseName(Compiler* compiler, const wxString& baseNam
     return nullptr;
 }
 
+/** Resolve a CompOption that enables debug information for the selected compiler.
+  * GCC/MSVC use "Produce debugging symbols"; Clang's catalogue uses different names
+  * ("Tune Debugging for GDB" / minimal symbols) — do not hard-code "-g".
+  */
+CompOption* FindDebugInfoCompOption(Compiler* compiler)
+{
+    if (!compiler)
+        return nullptr;
+
+    static const wxChar* kPreferredNames[] = {
+        wxT("Produce debugging symbols"),      // GCC, MSVC, most ports
+        wxT("Tune Debugging for GDB"),         // Clang (preferred for GDB)
+        wxT("Produce minimal debugging symbols"), // Clang fallback
+        nullptr
+    };
+
+    for (const wxChar** p = kPreferredNames; *p; ++p)
+    {
+        CompOption* copt = FindCompOptionByBaseName(compiler, *p);
+        if (copt && (!copt->option.empty() || !copt->additionalLibs.empty()))
+            return copt;
+    }
+
+    // Last resort: match common debug-info flags in the catalogue by option string.
+    static const wxChar* kPreferredFlags[] = {
+        wxT("-g"), wxT("-ggdb"), wxT("/Zi"), wxT("/ZI"), nullptr
+    };
+    for (const wxChar** p = kPreferredFlags; *p; ++p)
+    {
+        CompOption* copt = const_cast<CompilerOptions&>(compiler->GetOptions()).GetOptionByOption(*p);
+        if (copt)
+            return copt;
+    }
+    return nullptr;
+}
+
 void EnsureFlagPresent(wxArrayString& arr, const wxString& flag)
 {
     if (flag.empty())
@@ -142,11 +178,12 @@ DebuggeeDescriptionUtil::StandaloneDebugCompileOptionsGuard::StandaloneDebugComp
     m_savedLinkerOptions = m_compiler->GetLinkerOptions();
     m_savedModified = m_compiler->GetModified();
 
-    CompOption* debugOpt = FindCompOptionByBaseName(m_compiler, wxT("Produce debugging symbols"));
+    CompOption* debugOpt = FindDebugInfoCompOption(m_compiler);
     if (!debugOpt || (debugOpt->option.empty() && debugOpt->additionalLibs.empty()))
     {
         m_error = wxString::Format(
-            _("Compiler '%s' has no 'Produce debugging symbols' option in its catalogue."),
+            _("Compiler '%s' has no debug-information option in its catalogue "
+              "(expected e.g. 'Produce debugging symbols' or 'Tune Debugging for GDB')."),
             m_compiler->GetName());
         return;
     }

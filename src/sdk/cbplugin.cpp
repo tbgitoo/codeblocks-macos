@@ -751,16 +751,19 @@ bool cbDebuggerPlugin::EnsureStandaloneRebuildForDebug(StartType startType, cons
     Log(_("Rebuilding single file for debug (always)"));
     m_WaitingCompilerToFinish = true;
     const int rc = m_pCompiler->CompileStandaloneFileForDebug(sourcePath);
-    if (rc != 0)
+    // DoRunQueue commonly returns -2 once the first compile process occupies the
+    // only parallel slot — that means the rebuild *did* start (same as project Build()).
+    // Only treat it as failure if the compiler is not actually running.
+    if (rc != 0 && !m_pCompiler->IsRunning())
     {
         // Synchronous failure before the queue ran (e.g. missing CompOption).
         m_WaitingCompilerToFinish = false;
         m_StandaloneDebugBuild = false;
-        Log(_("Standalone debug rebuild could not be started."), Logger::error);
+        Log(_("Standalone debug rebuild could not be started "
+              "(see Build log / Code::Blocks log for details)."), Logger::error);
         return false;
     }
     // When the compile queue finishes, OnCompilerFinished → CompilerFinished.
-    // If the queue completed immediately (nothing queued), wait flag may already be cleared.
     return true;
 }
 

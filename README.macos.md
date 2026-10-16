@@ -57,6 +57,21 @@ If an older Code::Blocks configuration already contains a custom debugger path, 
 Settings > Debugger
 ```
 
+### Debugging a single source file (no project)
+
+Starting with v2.1, you can **Debug** or cold-start **Step Into** a lone C or C++ source file without creating a project — the same class of files that single-file **Run** already supports.
+
+With no project open, open a saved `.c` / `.cpp` (or similar) source file, set breakpoints as usual, and choose **Debug** / **Continue** or **Step Into**. Code::Blocks always recompiles that file first with the default compiler’s debug-information option enabled (and stripping disabled), then starts the debugger on the freshly linked executable next to the source.
+
+**Deliberate limitations** (create a project when you need more):
+
+- One source file only; default compiler settings; no program arguments; working directory is the source file’s directory.
+- Console program only; console I/O uses your existing preference (Program Console or Terminal.app).
+- Always rebuilds before Debug (unlike Run, which may reuse an existing executable).
+- A failed compile never starts the debugger and never falls back to an older executable.
+- Unsaved or never-saved buffers must be saved (Save As for a new file) before Debug.
+- Implemented for the built-in **GDB/CDB debugger** plugin. Project Debug and attach-to-process are unchanged.
+
 ## Build the application yourself
 
 ### Prerequisites
