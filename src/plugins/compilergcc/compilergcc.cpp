@@ -1465,7 +1465,8 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
         process.PID = pid;
         process.pProcess = static_cast<PipedProcess*>(
             ProgramConsole::CreateRunProcessTracker(
-                reinterpret_cast<wxProcess**>(&process.pProcess), this, idGCCProcess, procIndex, pid));
+                reinterpret_cast<wxProcess**>(&process.pProcess), this, idGCCProcess,
+                procIndex, pid));
         m_timerIdleWakeUp.Start(timer);
     }
     else
