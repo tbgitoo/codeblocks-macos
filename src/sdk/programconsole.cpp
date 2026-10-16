@@ -405,6 +405,34 @@ bool IsRunSessionActive()
 #endif
 }
 
+bool BeginDebugSession(wxString& outSlavePath)
+{
+    outSlavePath.clear();
+#if defined(__WXMAC__)
+    if (!BeginRunSession() || !g_session)
+        return false;
+    outSlavePath = g_session->SlaveName();
+    return !outSlavePath.empty();
+#else
+    return false;
+#endif
+}
+
+void ActivateDebugSession()
+{
+    ActivateRunSession();
+}
+
+void AbortDebugSession()
+{
+    AbortRunSession();
+}
+
+void EndDebugSession()
+{
+    EndRunSession();
+}
+
 long LaunchOnPty(const wxString& command, const wxString& workingDir)
 {
 #if defined(__WXMAC__)

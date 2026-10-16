@@ -46,8 +46,27 @@ namespace ProgramConsole
      */
     DLLIMPORT void AnnounceRunFinished(int exitCode);
 
-    /** True while a Run child is active on the Program Console PTY. */
+    /** True while a Run or Debug session is active on the Program Console PTY. */
     DLLIMPORT bool IsRunSessionActive();
+
+    /**
+     * Begin a Debug session: allocate PTY (master + held slave).
+     * Does NOT clear scrollback. On success, @a outSlavePath receives the
+     * slave pathname for GDB `tty <path>` (claim ON — do not claim-off).
+     */
+    DLLIMPORT bool BeginDebugSession(wxString& outSlavePath);
+
+    /**
+     * Mark the Debug session active after PTY allocation succeeded:
+     * clear scrollback and switch to the Program Console tab.
+     */
+    DLLIMPORT void ActivateDebugSession();
+
+    /** Tear down a Debug session that never became active. */
+    DLLIMPORT void AbortDebugSession();
+
+    /** Explicit Close when the debug session / inferior console ends. */
+    DLLIMPORT void EndDebugSession();
 
     /**
      * Fork/exec command on the current session slave (M1 semantics).
