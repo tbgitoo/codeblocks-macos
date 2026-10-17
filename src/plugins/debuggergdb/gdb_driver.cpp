@@ -941,15 +941,51 @@ void GDB_driver::ParseOutput(const wxString& output)
             }
         }
 
-        else if (lines[i].StartsWith("Temporary breakpoint"))
+        else if (lines[i].Contains("Temporary breakpoint"))
         {
+            // GDB may print "Temporary breakpoint N, ..." or a modern
+            // "Thread ... hit Temporary breakpoint N, ..." form. Match either.
+            // Prefer lookup by GDB number; fall back to the sole already-set
+            // temporary (index never assigned) so Run to Cursor always consumes.
+            long index = -1;
+            bool matched = false;
             if (reTempBreakFound.Matches(lines[i]))
             {
-                long index;
-                reTempBreakFound.GetMatch(lines[i],1).ToLong(&index);
+                reTempBreakFound.GetMatch(lines[i], 1).ToLong(&index);
+                matched = true;
+            }
+            else
+            {
+                // Unanchored number after "Temporary breakpoint" for Thread-hit lines.
+                static wxRegEx reTempBreakAnywhere(
+                    "[Tt]emporary[[:blank:]]breakpoint[[:blank:]]([0-9]+),");
+                if (reTempBreakAnywhere.Matches(lines[i]))
+                {
+                    reTempBreakAnywhere.GetMatch(lines[i], 1).ToLong(&index);
+                    matched = true;
+                }
+            }
+            if (matched)
+            {
                 DebuggerState& state = m_pDBG->GetState();
                 cb::shared_ptr<DebuggerBreakpoint> bp = state.GetBreakpointByNumber(index);
-                state.RemoveBreakpoint(bp, false);
+                if (!bp)
+                {
+                    // tbreak create failed to assign index → still remove the
+                    // temporary one-shot that Run to Cursor just armed.
+                    const BreakpointsList& bps = state.GetBreakpoints();
+                    for (BreakpointsList::const_iterator it = bps.begin(); it != bps.end(); ++it)
+                    {
+                        if ((*it) && (*it)->temporary && (*it)->alreadySet)
+                        {
+                            bp = *it;
+                            break;
+                        }
+                    }
+                }
+                if (bp)
+                    state.RemoveBreakpoint(bp, false);
+                // Reload refreshes the dialog and editor markers from the model.
                 Manager::Get()->GetDebuggerManager()->GetBreakpointDialog()->Reload();
             }
         }

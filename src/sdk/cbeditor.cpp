@@ -2521,15 +2521,6 @@ void cbEditor::ToggleBreakpoint(int line, bool notifyDebugger)
     {
         if (dialog->RemoveBreakpoint(plugin, m_Filename, line + 1))
             toggle = true;
-        else
-        {
-            // Orphan gutter marker: list entry already gone (e.g. temporary BP
-            // consumed by GDB `start` / session end). Clear the marker so the
-            // user is not stuck with an unremovable pseudo-breakpoint.
-            BreakpointMarkerToggle(line);
-            dialog->Reload();
-            return;
-        }
     }
     else
     {
