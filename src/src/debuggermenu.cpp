@@ -466,17 +466,18 @@ void DebuggerMenuHandler::OnUpdateUI(wxUpdateUIEvent& event)
             en = true;
         else
         {
+            // Route by active-source ownership (not mere project existence).
+            // Empty project gates the PROJECT route only; a valid standalone
+            // candidate remains eligible (Launch Identity / V3).
             cbProject* prj = Manager::Get()->GetProjectManager()->GetActiveProject();
-            if (prj)
-            {
-                // Empty project (no sources) must not offer Debug / Step Into —
-                // that would launch a leftover binary from a previous build.
-                en = !prj->GetCurrentlyCompilingTarget()
+            const bool projectBusy = prj && prj->GetCurrentlyCompilingTarget();
+            if (DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
+                en = !projectBusy;
+            else if (prj)
+                en = !projectBusy
                      && DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(prj);
-            }
             else
-                // v2.1 M1: no-project Debug/Step when a standalone ftSource editor is active
-                en = DebuggeeDescriptionUtil::IsStandaloneDebugCandidate();
+                en = false;
         }
         stopped = m_activeDebugger->IsStopped() && !m_activeDebugger->IsBusy();
         isRunning = m_activeDebugger->IsRunning();

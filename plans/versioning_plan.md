@@ -1135,7 +1135,7 @@ Demonstrated by `PrepareCompileFile` and v2.1 `SaveActiveSourceForStandaloneDebu
 | Project-owned active file | Project build | Unchanged project build |
 | Modified saved standalone | Save-by-path (often OK) | Same invariant; honour failures |
 | Non-`ftSource` after save | Empty / odd | Abort clearly |
-| Debug, project open | `IsStandaloneDebugCandidate` **false** if any active project | Same ownership rule as Build (gate change only) |
+| Debug, project open | Ownership gate: standalone when active `ftSource` is not a project member (empty project does not suppress) | Same ownership rule as Build |
 
 Primary bug surface: **`CompilerGCC`** (`DoBuild` / `Run` / `CompileFileWithoutProject`) and **v2.1 gates** in `DebuggeeDescriptionUtil` / `DebuggerGDB::Debug` / menu UpdateUI — not a DebuggeeDescription redesign.
 
@@ -1264,10 +1264,13 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **U2** | Immediately repeat **U1** cancellation **10** times | Save As every time; identical behaviour; no state / BP / exe accumulates; no request becomes a no-op because an earlier one was cancelled |
 | **U3** | After **U2**, Step Into once more → successfully Save As standalone `.cpp` | Newly saved path authoritative; correct standalone exe built; **exactly this** file enters debugger; previous exe/session irrelevant |
 | **U4** | Project open → New Untitled → Step Into → Cancel Save As **repeatedly** | Unrelated project never built/launched/debugged; no fallback project exe; no phantom BP |
-| **V1** | Valid project Build/Run/Debug OK → remove all sources + save project → leave prior exe on disk → **Run** | Refuse/disable; stale binary **not** launched (Launch Identity — do not delete exe to pass) |
-| **V2** | Same setup → **Debug** / Step Into | Refuse/disable; stale binary not debugged; no prior-inferior Continue |
+| **V1** | Empty project + **no** valid active standalone source + stale project exe on disk → **Run** | Refuse/disable; stale binary **not** launched (Launch Identity — do not delete exe to pass) |
+| **V2** | Same as **V1** → **Debug** / Step Into | Refuse/disable; stale binary not debugged; no prior-inferior Continue |
+| **V3** | Empty project `new_test` (no sources; stale exe may remain) + active saved standalone `Untitled2.cpp` (not a project member) | **UI:** Debug / Step Into / Build / Build and Run enabled for standalone. **Build and Run:** prepares `Untitled2.cpp`, standalone build+run; `new_test` not built; stale project exe not run. **Debug / Step Into:** prepares `Untitled2.cpp`, v2.1 `DebuggeeDescription` path; standalone rebuild as required; `new_test` not built/debugged; stale project exe unused; prior inferior not Continued |
 
 **U** / **V** above are architectural acceptance tests for Transaction + Launch Identity + retry — not cases to special-case in isolation. Retain **A–T** as before.
+
+**V1 / V2 / V3 distinction (REQUIRED):** empty project + no valid standalone → refuse; empty project + valid active standalone → standalone operation. Empty-project protection gates the **project route only**.
 
 ### Milestones
 
@@ -1302,7 +1305,7 @@ M3 applies the same PREPARE / COMMIT invariants to:
 - previous inferior / Continue behaviour
 - debugger session reservation
 
-Do **not** mark M3 DONE based merely on successful normal standalone Debug. M3 requires clean cancellation and retry (**U1–U4**, **V2**, E, **Q**) + docs / ChangeLog. Preserve `DebuggeeDescription`.
+Do **not** mark M3 DONE based merely on successful normal standalone Debug or on **V3** passing. M3 requires clean cancellation and retry (**U1–U4**, **V2**, **V3**, E, **Q**) + docs / ChangeLog. Preserve `DebuggeeDescription`.
 
 #### Milestone 4 — Editor-tab Rename (planned complement)
 
