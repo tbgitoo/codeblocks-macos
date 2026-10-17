@@ -8,6 +8,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v1.2 (bundled Darwin GDB in the .app)
   → v2.0 (integrated Program Console / PTY pane)
   → v2.1 (Debug single open file, no project)
+  → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -815,6 +816,308 @@ User-facing note and limitations: `README.macos.md` → **Debugging a single sou
 
 ---
 
+## v2.2 — Standalone New → Save as C|C++ → Build / Run / Debug
+
+**Status: Planned.** Do not implement until this section is accepted.  
+**Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that today key off “any active project”).
+
+**Goal:** Make the standalone-source workflow coherent:
+
+```text
+New → choose/save as C or C++ → edit → Build / Build and Run / Debug
+```
+
+while project-owned sources keep the existing project workflow. A project may be open without forcing every Build/Run/Debug onto that project.
+
+Two defects to fix: (1) Build / Build and Run (and today also Debug gates) can follow **project existence** or a **stale Untitled path** instead of the active source; (2) Save As exposes a combined **C/C++ files** filter whose first mask is `*.c`, without a first-class C++ choice.
+
+### Product decisions (locked)
+
+| Topic | Decision |
+|-------|----------|
+| **Routing** | **Active-source ownership**, not mere project existence. See rule below. |
+| Project-owned source | Existing project Build / Run / Debug **unchanged**. |
+| Standalone source (incl. with a project open) | Standalone Build / Build and Run / Debug on **that** file — never the unrelated project. |
+| Unsaved new buffer | Save As first; cancel → **abort**; then classify **post-save** path and route. |
+| C vs C++ Save As | Separate **C files** / **C++ files** / **C/C++ header files**; one shared `C/C++` lexer. |
+| Legacy filter preference | Stored `"C/C++ files"` → migrate to **`"C files"`** (preserves legacy `.c`-first default). |
+| Fresh / empty config default | **Independent** of migration: initial filter **`"C++ files"`** (`.cpp` first). Not a reason to force all new files to C. |
+| v2.1 Debug | Preserve `DebuggeeDescription` / DebuggerGDB hand-off; update **candidate / branch gates** to the ownership rule. |
+| Scope | Minimal; reuse `cbEditor::Save` / Save As; no beginner mode, fake projects, or parallel build system. |
+
+#### Routing rule (REQUIRED)
+
+```text
+active source editor
+      |
+      +-- source belongs to the active project
+      |       -> existing project Build / Run / Debug
+      |
+      +-- source does not belong to the active project
+              -> standalone Build / Build and Run / Debug
+```
+
+Examples:
+
+| | Situation | Route |
+|---|-----------|-------|
+| A | Project open + active project-owned `foo.cpp` | Project workflow |
+| B | Project open + active standalone `foo.cpp` | Standalone on `foo.cpp` |
+| C | Project open + Untitled → Save As → `.cpp` not in project | Standalone on saved file; cancel aborts |
+| D | No project + standalone source | Standalone |
+
+### Repository findings (grounded)
+
+#### 1. New / Untitled editor (`File → New → Empty file`)
+
+| Fact | Evidence |
+|------|----------|
+| Entry | `MainFrame::OnFileNewWhat` (`src/src/main.cpp`) → `EditorManager::New()` → `cbEditor` empty filename. |
+| Identity | `cbEditor::DoInitializations`: `_("Untitled")` + counter; optional project base path prefix. |
+| `m_IsOK` | Never-saved ⇒ `!IsOK()`. |
+| Language | No ext ⇒ not `ftSource`; no C/C++ identity until Save As + `SetLanguage(HL_AUTO)`. |
+
+#### 2. Save As filters and `Untitled1.c`
+
+| Fact | Evidence |
+|------|----------|
+| Combined name | `EditorColourSet::SetFileMasks` → `FileFilters::Add("%s files", lang)`; lexer `C/C++` → **`C/C++ files`**. |
+| Masks | `lexer_cpp.xml`: `*.c,*.cpp,*.cc,*.cxx,…` — **first source mask `*.c`**. |
+| Remembered filter | `cbEditor::SaveAs` reads `/file_dialogs/save_file_as/filter`, default `"C/C++ files"`. |
+| Why `.c` | First mask of that filter steers default extension where the platform appends one; CB comments document wxGTK first-filter behaviour. |
+| Platform | wx save-extension append is **not** uniform (MSW vs OSX/GTK). |
+
+#### 3. Project membership API (targeted finding)
+
+**Do not invent a parallel ownership model.** Existing mechanisms:
+
+| Mechanism | Location | Role |
+|-----------|----------|------|
+| **`cbEditor::GetProjectFile()`** | `cbeditor.h` / `cbeditor.cpp` | Non-null ⇒ editor is bound to a `ProjectFile`. Header: editors belonging to a project file have this set; others return `nullptr`. |
+| **`ProjectFile::GetParentProject()`** | `projectfile.h` | Owning `cbProject*`. |
+| **`cbProject::GetFileByFilename(filename, isRelative, isUnixFilename)`** | `cbproject.h` | Path membership lookup. |
+| **Prior art** | `CompilerGCC::PrepareCompileFile` | Uses `ed->GetProjectFile()` then `pf->GetParentProject()` (and may `SetProject`). `CompileFile` uses `m_pProject->GetFileByFilename(...)`. |
+| **Save As clears binding** | `cbEditor::SaveAs` | Calls `SetProjectFile(nullptr)` — after Save As, **path** membership must be re-checked; do not trust a stale `GetProjectFile()`. |
+
+**v2.2 ownership predicate (active project):**
+
+```text
+BelongsToActiveProject(ed, path):
+  active = ProjectManager::GetActiveProject()
+  if !active -> false
+  pf = ed->GetProjectFile()
+  if pf && pf->GetParentProject() == active -> true
+  if active->GetFileByFilename(path, /*isRelative=*/false, /*isUnixFilename=*/false) -> true
+  else false
+```
+
+(Exact `GetFileByFilename` flags: use absolute path as `PrepareCompileFile` / open-file call sites do with `false` for relative when the editor path is absolute — **confirm at implement time** against the overload used for absolute editor paths.)
+
+**Multi-project note:** If `GetProjectFile()` names a **non-active** open project, that is “does not belong to the **active** project” under the locked rule → **standalone** route. Do not silently build the inactive project. (Verify in tests if this edge appears in normal UI.)
+
+#### 4. Separating C and C++ (Save As / filters only)
+
+Keep **one** lexer `C/C++`. Split filter registration (e.g. special-case in `SetFileMasks`):
+
+| Filter name | Mask |
+|-------------|------|
+| **C files** | `*.c` |
+| **C++ files** | `*.cpp;*.cc;*.cxx;*.c++` (**.cpp` first**) |
+| **C/C++ header files** | `*.h;*.hpp;*.hh;*.hxx;*.inl;*.ipp;*.tcc;*.tpp` |
+
+**Do not** keep a live `"C/C++ files"` filter entry after the split (avoids a dead remembered name that no longer resolves). Migration handles old configs (below).
+
+Standalone compile already selects C vs C++ by extension (`CompilerCommandGenerator`: ext `"c"` → C program; else CPP).
+
+#### 5. Extensions
+
+| Role | Extensions |
+|------|------------|
+| C | `.c` → C driver |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.c++` → C++ driver; Save As default **`.cpp`** |
+| Headers / templates | as today (`ftHeader` / `ftTemplateSource`) |
+
+#### 6. Save → reacquire path → operate (invariant)
+
+**Confirmed correct pattern** (reuse, do not reinvent):
+
+```text
+ed->Save()                    // SaveAs if !IsOK
+if false / cancel -> abort
+path = ed->GetFilename()      // post-save only
+classify FileTypeOf(path)
+BelongsToActiveProject(ed, path) -> route
+Build / Run / Debug that path
+```
+
+Demonstrated by `PrepareCompileFile` and v2.1 `SaveActiveSourceForStandaloneDebug`.
+
+**Never:** capture `Untitled…` → Save As → continue with the captured Untitled path.
+
+#### 7. Build / Run / Debug today vs required
+
+| Case | Today (confirmed) | v2.2 required |
+|------|-------------------|---------------|
+| Untitled, no project | `CompileFileWithoutProject`: Save return ignored; compile **pre-SaveAs** path → often empty cmds | Save → post-save path → standalone |
+| Untitled / standalone, **project open** | `CheckProject()` true → **project** build (unrelated) | Save if needed → ownership → **standalone** if not in project |
+| Project-owned active file | Project build | Unchanged project build |
+| Modified saved standalone | Save-by-path (often OK) | Same invariant; honour failures |
+| Non-`ftSource` after save | Empty / odd | Abort clearly |
+| Debug, project open | `IsStandaloneDebugCandidate` **false** if any active project | Same ownership rule as Build (gate change only) |
+
+Primary bug surface: **`CompilerGCC`** (`DoBuild` / `Run` / `CompileFileWithoutProject`) and **v2.1 gates** in `DebuggeeDescriptionUtil` / `DebuggerGDB::Debug` / menu UpdateUI — not a DebuggeeDescription redesign.
+
+#### 8. Filter preference: legacy migration vs fresh default
+
+Config key: `/file_dialogs/save_file_as/filter` (app).
+
+| Situation | Behaviour |
+|-----------|-----------|
+| **Legacy migration** | Stored value **`"C/C++ files"`** → resolve as **`"C files"`**. Rationale: old combined mask was `*.c`-first; preserve that user’s historical default. On successful Save As (or when resolving the filter for display), **rewrite** the stored value to `"C files"` so the dead name does not linger. |
+| **Fresh / empty config** | If the key is missing / empty, initial selection is **`"C++ files"`** (`.cpp` default). Independent of migration — does **not** force all new files to C. |
+| **Valid modern values** | `"C files"`, `"C++ files"`, header filter, other languages, All files — existing last-used behaviour. |
+
+Implementation locus: `cbEditor::SaveAs` when reading/resolving filter name + index (and when writing back after OK).
+
+### Architecture (implementation contract)
+
+#### A. Save As filters + migration
+
+| Piece | Responsibility |
+|-------|----------------|
+| `EditorColourSet::SetFileMasks` (C/C++ special-case) | Register C / C++ / header filters; **omit** combined `"C/C++ files"`. |
+| `cbEditor::SaveAs` | Resolve remembered filter: migrate `"C/C++ files"` → `"C files"`; fresh default `"C++ files"`; after OK persist the **new** valid name. |
+
+#### B. Shared save / classify / route (illustrative)
+
+```text
+PrepareActiveSourceOperation(pathOut, routeOut) -> bool
+  ed = builtin active editor (fail if none)
+  if !ed->Save() -> false                    // cancel / fail
+  pathOut = ed->GetFilename()
+  if !IsOK or path empty -> false
+  if FileTypeOf(pathOut) != ftSource -> false // clear message
+  if BelongsToActiveProject(ed, pathOut)
+       routeOut = Project
+  else
+       routeOut = Standalone
+  return true
+```
+
+#### C. Wire Build / Build and Run / Run
+
+| Call site | Change |
+|-----------|--------|
+| `CompilerGCC::DoBuild` / `Build` entry | **Not** `if (CheckProject()) project else untitled`. After prepare: **Project** → existing project `DoBuild`; **Standalone** → `CompileFileWithoutProject(pathOut)` (post-save path only). |
+| `CompileFileWithoutProject` | Never compile a path captured before Save; honour Save failure. |
+| `Run` / Build and Run | Same routing; Run after compile uses **active editor’s post-save** filename / standalone exe. |
+| Project-owned path | Existing project machinery only — no standalone ensure beyond normal project saves. |
+
+#### D. Wire Debug (v2.1-compatible)
+
+| Call site | Change |
+|-----------|--------|
+| `IsStandaloneDebugCandidate` | Replace `if (GetActiveProject()) return false` with: never-saved OK **or** (`ftSource` **and** not `BelongsToActiveProject`). |
+| `DebuggerGDB::Debug` | Keep additive branches; standalone when candidate under **ownership** rule; project path when active source belongs to active project. |
+| `SaveActiveSourceForStandaloneDebug` | Keep save → `GetFilename()` invariant; may share prepare helper (**optional** dedup). |
+| `DebuggeeDescription` | **Unchanged** type / MakeStandalone. |
+
+Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fixes enablement for project-open + standalone.
+
+### Proposed change table
+
+| # | File(s) | Class / function | Current | Proposed | Why narrowest | v2.1 | Risk |
+|---|---------|------------------|---------|----------|---------------|------|------|
+| 1 | `editorcolourset.cpp` (± filefilters) | `SetFileMasks` | One `"C/C++ files"` | **C** / **C++** / **header** filters; drop combined | Filter birthplace; one lexer | None | Med |
+| 2 | `cbeditor.cpp` | `SaveAs` | Default / remember `"C/C++ files"` | Fresh default **`C++ files`**; migrate **`C/C++ files` → `C files`**; persist new name | Only preference I/O | None | Low–med |
+| 3 | `compilergcc.cpp` (+ small helper) | `DoBuild`, `Run`, `CompileFileWithoutProject` | Project-if-exists; stale Untitled path | Prepare → ownership route; post-save path; abort on cancel | Bug locus | Align Build with Debug | Med |
+| 4 | `debuggeedescription.cpp`, `debuggergdb.cpp`, `debuggermenu.cpp` | Candidate / `Debug` branch / UpdateUI | No-project-only standalone | Ownership rule; same DebuggeeDescription | Gate only | Soft touch | Med |
+| 5 | README / ChangeLog / this plan | docs | — | C\|C++ Save, migration, ownership routing | Release | Mentions Debug | Low |
+
+**Abstain:** redesigning `DebuggeeDescription`; fake projects; lexer split; global `.c`→`.cpp`; parallel build system.
+
+### Regression analysis
+
+| Area | Risk | Mitigation |
+|------|------|------------|
+| Project-owned `.c`/`.cpp` | Med (routing change) | Tests **M**; `BelongsToActiveProject` true → untouched project path |
+| Standalone with project open | Med (new REQUIRED) | Tests **N–Q** |
+| Standalone no project | Low–med | Save invariant; post-save path |
+| Cancel Save As | Must abort | Tests **F**, **P** |
+| Legacy `"C/C++ files"` | Med | Migrate → **C files**; rewrite store; test **R** |
+| Fresh config | Low | Default **C++ files**; test **T** — not driven by migration |
+| Explicit C++ then remember | Low | Test **S** |
+| Headers | Med | Dedicated header filter |
+| Multi-project + wrong active | Low–med | Per locked rule → standalone; document |
+| v2.1 Debug architecture | Low | Gates only |
+| macOS no auto-ext | Med | Non-`ftSource` abort; filter still steers where platform appends |
+
+### Manual test matrix (REQUIRED)
+
+| ID | Steps | Expected |
+|----|-------|----------|
+| **A** | New → Save As → **C files** | `.c`; C driver; Run OK |
+| **B** | New → Save As → **C++ files** | `.cpp`; C++ driver; Run OK |
+| **C** | New unsaved → **Build** | Save As; compile that buffer; cancel → nothing |
+| **D** | New unsaved → **Build and Run** | Save As; compile+run that file |
+| **E** | New unsaved → **Debug** | Save As; v2.1 standalone debug |
+| **F** | Build and Run → cancel Save As | Nothing built/run |
+| **G** | Modified saved `.cpp` → Build and Run | In-place save; updated program |
+| **H** | Modified saved `.c` → Build and Run | C driver |
+| **I** | C project, project-owned active → Build | Project build unchanged |
+| **J** | C++ project, project-owned active → Build | Unchanged |
+| **K** | Save As → All files → no ext | Not standalone source; abort / no wrong compile |
+| **L** | Plain text / Start here | No pretend compile |
+| **M** | Project open + **project-owned** `.cpp` → Build and Run | **Project** path unchanged |
+| **N** | Project open + **standalone** `.cpp` → Build and Run | **Standalone** only; project **not** built |
+| **O** | Project open + Untitled → Build and Run → Save As **C++ files** | `.cpp`; standalone compile/run; project **not** built |
+| **P** | As **O**, cancel Save As | Nothing built/run |
+| **Q** | Project open + standalone `.cpp` → **Debug** | v2.1 standalone debug; project **not** debugged |
+| **R** | Config remembers `"C/C++ files"` → Save As | Resolves to **C files**; `.c` default behaviour; store becomes valid `"C files"` |
+| **S** | User selects **C++ files** → later Save As | Remembers **C++ files** normally |
+| **T** | Fresh/empty filter config → Save As | Initial selection **C++ files** (independent of **R**) |
+
+### Milestones
+
+| # | Work |
+|---|------|
+| **M1** | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
+| **M2** | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
+| **M3** | Debug gates / menu under ownership rule; preserve DebuggeeDescription; tests E, **Q**; docs + ChangeLog |
+
+### Scope summary
+
+**REQUIRED**
+
+1. C / C++ / header Save As filter separation (one `C/C++` lexer).  
+2. Legacy stored `"C/C++ files"` → **`"C files"`** (rewrite so the name is not left dead); fresh default **`"C++ files"`** separately.  
+3. Save / cancel / **post-save path** for standalone Build / Build and Run.  
+4. **Active-source ↔ active-project membership** routing (even when a project is open).  
+5. Preserve v2.1 standalone Debug (**gates** follow the same ownership rule; no architecture rewrite).  
+6. Manual matrix **A–T** (project + standalone + migration + fresh default).
+
+**OPTIONAL**
+
+- Deduplicate prepare/save helper with `SaveActiveSourceForStandaloneDebug`.  
+- macOS-only post-OK extension nudge if native dialog omits ext despite filter.  
+- Grep leftover UI strings expecting `"C/C++ files"` beyond Save As config.
+
+**EXPLICITLY OUT OF SCOPE**
+
+- Redesign of `DebuggeeDescription` / DebuggerGDB core.  
+- Beginner mode; ephemeral `.cbp`; parallel build system.  
+- Splitting the `C/C++` lexer into two languages.  
+- Globally forcing `.cpp` (or using migration to force C on fresh configs).  
+- gdbmi standalone Debug; LLDB.  
+- Changing project target language rules.  
+- Standalone args/cwd/includes UI.
+
+### Outcome (when done)
+
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful save, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`.
+
+---
+
 ## Status
 
 | Version | Status |
@@ -824,3 +1127,4 @@ User-facing note and limitations: `README.macos.md` → **Debugging a single sou
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
+| **v2.2** | **Planned** — Save As C\|C++; legacy filter → C files; ownership-based Build/Run/Debug routing; preserve v2.1 Debug. |
