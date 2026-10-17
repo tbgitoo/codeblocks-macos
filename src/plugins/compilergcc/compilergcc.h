@@ -198,6 +198,9 @@ class CompilerGCC : public cbCompilerPlugin
         void PrepareCompileFilePM(wxFileName& file);
         bool CheckProject();
         void AskForActiveProject();
+        /** v2.2 M2: save active source if needed; route Project vs Standalone by ownership. */
+        enum ActiveSourceRoute { asrProject, asrStandalone };
+        bool PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString& pathOut);
         void StartCompileFile(wxFileName file);
         void DoGotoNextError();
         void DoGotoPreviousError();

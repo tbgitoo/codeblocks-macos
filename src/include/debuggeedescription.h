@@ -12,6 +12,7 @@
 class cbProject;
 class ProjectBuildTarget;
 class Compiler;
+class cbEditor;
 
 /** Narrow description of what is being debugged.
   *
@@ -33,6 +34,9 @@ struct DLLIMPORT DebuggeeDescription
 
 namespace DebuggeeDescriptionUtil
 {
+    /** True if @a path / @a ed is a file of the active project (GetProjectFile or GetFileByFilename). */
+    DLLIMPORT bool BelongsToActiveProject(cbEditor* ed, const wxString& path);
+
     /** Active builtin editor is a saved/saveable ftSource file and there is no active project. */
     DLLIMPORT bool IsStandaloneDebugCandidate();
 

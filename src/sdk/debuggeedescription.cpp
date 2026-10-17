@@ -9,8 +9,10 @@
     #include <wx/filename.h>
     #include <wx/intl.h>
     #include "cbeditor.h"
+    #include "cbproject.h"
     #include "editormanager.h"
     #include "manager.h"
+    #include "projectfile.h"
     #include "projectmanager.h"
     #include "compiler.h"
     #include "compileroptions.h"
@@ -98,6 +100,29 @@ void EnsureFlagAbsent(wxArrayString& arr, const wxString& flag)
     }
 }
 } // namespace
+
+bool DebuggeeDescriptionUtil::BelongsToActiveProject(cbEditor* ed, const wxString& path)
+{
+    cbProject* active = Manager::Get()->GetProjectManager()->GetActiveProject();
+    if (!active)
+        return false;
+
+    if (ed)
+    {
+        ProjectFile* pf = ed->GetProjectFile();
+        if (pf && pf->GetParentProject() == active)
+            return true;
+    }
+
+    if (path.empty())
+        return false;
+
+    // Absolute editor path → make relative inside GetFileByFilename.
+    if (active->GetFileByFilename(path, /*isRelative=*/false, /*isUnixFilename=*/false))
+        return true;
+
+    return false;
+}
 
 bool DebuggeeDescriptionUtil::IsStandaloneDebugCandidate()
 {
