@@ -468,7 +468,12 @@ void DebuggerMenuHandler::OnUpdateUI(wxUpdateUIEvent& event)
         {
             cbProject* prj = Manager::Get()->GetProjectManager()->GetActiveProject();
             if (prj)
-                en = !prj->GetCurrentlyCompilingTarget();
+            {
+                // Empty project (no sources) must not offer Debug / Step Into —
+                // that would launch a leftover binary from a previous build.
+                en = !prj->GetCurrentlyCompilingTarget()
+                     && DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(prj);
+            }
             else
                 // v2.1 M1: no-project Debug/Step when a standalone ftSource editor is active
                 en = DebuggeeDescriptionUtil::IsStandaloneDebugCandidate();

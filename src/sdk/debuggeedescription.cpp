@@ -22,6 +22,7 @@
 
 #include "debuggeedescription.h"
 #include "filefilters.h"
+#include "projectbuildtarget.h"
 
 namespace
 {
@@ -121,6 +122,39 @@ bool DebuggeeDescriptionUtil::BelongsToActiveProject(cbEditor* ed, const wxStrin
     if (active->GetFileByFilename(path, /*isRelative=*/false, /*isUnixFilename=*/false))
         return true;
 
+    return false;
+}
+
+bool DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(cbProject* project)
+{
+    if (!project || project->GetFilesCount() <= 0)
+        return false;
+
+    auto fileIsSource = [](ProjectFile* pf) -> bool
+    {
+        if (!pf)
+            return false;
+        const wxString& name = !pf->relativeFilename.empty() ? pf->relativeFilename
+                                                             : pf->file.GetFullPath();
+        return FileTypeOf(name) == ftSource;
+    };
+
+    ProjectBuildTarget* tgt = project->GetBuildTarget(project->GetActiveBuildTarget());
+    if (tgt && tgt->GetFilesCount() > 0)
+    {
+        for (int i = 0; i < tgt->GetFilesCount(); ++i)
+        {
+            if (fileIsSource(tgt->GetFile(i)))
+                return true;
+        }
+        return false;
+    }
+
+    for (int i = 0; i < project->GetFilesCount(); ++i)
+    {
+        if (fileIsSource(project->GetFile(i)))
+            return true;
+    }
     return false;
 }
 

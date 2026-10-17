@@ -37,6 +37,10 @@ namespace DebuggeeDescriptionUtil
     /** True if @a path / @a ed is a file of the active project (GetProjectFile or GetFileByFilename). */
     DLLIMPORT bool BelongsToActiveProject(cbEditor* ed, const wxString& path);
 
+    /** True if @a project has at least one ftSource file (active target if it lists files,
+      * otherwise the project file list). Empty projects must not Debug a leftover binary. */
+    DLLIMPORT bool ProjectHasDebuggeeSources(cbProject* project);
+
     /** Active builtin editor is a saved/saveable ftSource file and there is no active project. */
     DLLIMPORT bool IsStandaloneDebugCandidate();
 
