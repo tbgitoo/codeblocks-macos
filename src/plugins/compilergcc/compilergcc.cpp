@@ -1105,6 +1105,66 @@ void CompilerGCC::AskForActiveProject()
                 : Manager::Get()->GetProjectManager()->GetActiveProject();
 }
 
+bool CompilerGCC::PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString& pathOut)
+{
+    // v2.2 M2: route by active-source ownership, not mere project existence.
+    // Save → reacquire path → classify; cancel / non-source aborts standalone.
+    pathOut.clear();
+    AskForActiveProject();
+
+    cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor();
+
+    auto finishStandalone = [&]() -> bool
+    {
+        if (!ed->Save())
+            return false;
+        if (!ed->IsOK())
+            return false;
+        pathOut = ed->GetFilename();
+        if (pathOut.empty() || FileTypeOf(pathOut) != ftSource)
+        {
+            LogMessage(_("Active file is not a compilable source file."), cltError);
+            return false;
+        }
+        if (m_pProject && DebuggeeDescriptionUtil::BelongsToActiveProject(ed, pathOut))
+            routeOut = asrProject;
+        else
+            routeOut = asrStandalone;
+        return true;
+    };
+
+    if (!m_pProject)
+    {
+        if (!ed)
+            return false;
+        return finishStandalone();
+    }
+
+    // Active project exists.
+    if (!ed)
+    {
+        routeOut = asrProject;
+        return true;
+    }
+
+    if (!ed->IsOK())
+    {
+        // Untitled / never-saved: Save As, then route by post-save membership.
+        return finishStandalone();
+    }
+
+    pathOut = ed->GetFilename();
+    if (FileTypeOf(pathOut) == ftSource &&
+        !DebuggeeDescriptionUtil::BelongsToActiveProject(ed, pathOut))
+    {
+        // Standalone source while a project is open — still flush modifications.
+        return finishStandalone();
+    }
+
+    routeOut = asrProject;
+    return true;
+}
+
 void CompilerGCC::StartCompileFile(wxFileName file)
 {
     if (m_pProject)
@@ -2016,7 +2076,13 @@ bool CompilerGCC::ExecutableExists(cbProject* prj)
 
 int CompilerGCC::Run(const wxString& target)
 {
-    if (!CheckProject())
+    ActiveSourceRoute route = asrProject;
+    wxString standalonePath;
+    if (!PrepareBuildOrRunRouting(route, standalonePath))
+        return -1;
+    if (route == asrStandalone)
+        return RunSingleFile(standalonePath);
+    if (!m_pProject)
         return -1;
     return Run(m_pProject->GetBuildTarget(target.IsEmpty() ? m_LastTargetName : target));
 }
@@ -2024,16 +2090,17 @@ int CompilerGCC::Run(const wxString& target)
 int CompilerGCC::Run(ProjectBuildTarget* target)
 {
     bool commandIsQuoted = false; // remember if we quoted the command, avoid unneeded quotes, because they break execution with "konsole" under KDE
-    if (!CheckProject())
-    {
-        if (Manager::Get()->GetEditorManager()->GetActiveEditor())
-            return RunSingleFile(Manager::Get()->GetEditorManager()->GetActiveEditor()->GetFilename());
+    ActiveSourceRoute route = asrProject;
+    wxString standalonePath;
+    if (!PrepareBuildOrRunRouting(route, standalonePath))
         return -1;
-    }
-    else
-    {
-        target = m_pProject->GetBuildTarget(m_pProject->GetActiveBuildTarget());
-    }
+    if (route == asrStandalone)
+        return RunSingleFile(standalonePath);
+
+    CheckProject();
+    if (!m_pProject)
+        return -1;
+    target = m_pProject->GetBuildTarget(m_pProject->GetActiveBuildTarget());
     PrintBanner(baRun, m_pProject, target);
 
     DoPrepareQueue(false);
@@ -2969,13 +3036,20 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
     if (!StopRunningDebugger())
         return -1;
 
-    if (!CheckProject())
+    // Ownership routing is for interactive Build/Run only — not workspace batch builds.
+    if (!m_IsWorkspaceOperation)
     {
-        // no active project
-        if (Manager::Get()->GetEditorManager()->GetActiveEditor())
-            return CompileFile(Manager::Get()->GetEditorManager()->GetActiveEditor()->GetFilename());
-        return -1;
+        ActiveSourceRoute route = asrProject;
+        wxString standalonePath;
+        if (!PrepareBuildOrRunRouting(route, standalonePath))
+            return -1;
+        if (route == asrStandalone)
+            return CompileFile(standalonePath);
     }
+
+    CheckProject();
+    if (!m_pProject)
+        return -1;
 
     if (realTarget.IsEmpty())
         return -1;
@@ -3246,8 +3320,22 @@ int CompilerGCC::CompileFile(const wxString& file)
 
 int CompilerGCC::CompileFileWithoutProject(const wxString& file)
 {
-    // compile single file not belonging to a project
-    Manager::Get()->GetEditorManager()->Save(file);
+    // compile single file not belonging to a project.
+    // Caller should pass the post-Save path (v2.2 M2). If an editor is still open
+    // under that path, flush it and re-read the filename after Save (never keep Untitled).
+    wxString path = file;
+    EditorBase* eb = Manager::Get()->GetEditorManager()->IsOpen(path);
+    if (eb)
+    {
+        if (!eb->Save())
+            return -1;
+        path = eb->GetFilename();
+    }
+    if (path.empty() || FileTypeOf(path) != ftSource)
+    {
+        LogMessage(_("Active file is not a compilable source file."), cltError);
+        return -1;
+    }
 
     // switch to the default compiler
     SwitchCompiler(CompilerFactory::GetDefaultCompilerID());
@@ -3257,7 +3345,12 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
 
     // get compile commands for file (always linked as console-executable)
     DirectCommands dc(this, compiler, nullptr, m_PageIndex);
-    wxArrayString compile = dc.GetCompileSingleFileCommand(file);
+    wxArrayString compile = dc.GetCompileSingleFileCommand(path);
+    if (compile.IsEmpty())
+    {
+        LogMessage(_("No compile commands for file: ") + path, cltError);
+        return -1;
+    }
     AddToCommandQueue(compile);
 
     return DoRunQueue( Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100) );

@@ -1082,7 +1082,7 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | # | Status | Work |
 |---|--------|------|
 | **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
-| **M2** | Planned | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
+| **M2** | **DONE** (tree) | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
 | **M3** | Planned | Debug gates / menu under ownership rule; preserve DebuggeeDescription; tests E, **Q**; docs + ChangeLog |
 | **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
 
