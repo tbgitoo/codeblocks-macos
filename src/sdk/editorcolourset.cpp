@@ -874,8 +874,20 @@ void EditorColourSet::SetFileMasks(HighlightLanguage lang, const wxString& masks
 
     m_Sets[lang].m_FileMasks = GetArrayFromString(masks.Lower(), separator);
 
-    // let's add these filemasks in the file filters master list ;)
-    FileFilters::Add(wxString::Format(_("%s files"), m_Sets[lang].m_Langs.c_str()), masks);
+    // Register Save As / file-dialog filters. The C/C++ lexer stays a single
+    // language for highlighting; only the dialog filters are split (v2.2 M1).
+    if (m_Sets[lang].m_Langs == wxT("C/C++"))
+    {
+        FileFilters::Add(_("C files"), wxT("*.c"));
+        FileFilters::Add(_("C++ files"), wxT("*.cpp;*.cc;*.cxx;*.c++"));
+        FileFilters::Add(_("C/C++ header files"),
+                         wxT("*.h;*.hpp;*.hh;*.hxx;*.inl;*.ipp;*.tcc;*.tpp"));
+    }
+    else
+    {
+        // let's add these filemasks in the file filters master list ;)
+        FileFilters::Add(wxString::Format(_("%s files"), m_Sets[lang].m_Langs.c_str()), masks);
+    }
 }
 
 wxString EditorColourSet::GetSampleCode(HighlightLanguage lang, int* breakLine, int* debugLine, int* errorLine)

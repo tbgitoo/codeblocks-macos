@@ -2074,8 +2074,18 @@ bool cbEditor::SaveAs()
     }
     else if (mgr)
     {
-        // File type is unknown. Select the last used filter:
-        Filter = mgr->Read("/file_dialogs/save_file_as/filter", "C/C++ files");
+        // File type is unknown. Select the last used filter (v2.2 M1):
+        // - missing/empty -> fresh default "C++ files" (.cpp first)
+        // - legacy "C/C++ files" -> "C files" (old mask was *.c-first); persist migration
+        Filter = mgr->Read("/file_dialogs/save_file_as/filter", wxEmptyString);
+        if (Filter.IsEmpty())
+            Filter = _("C++ files");
+        else if (Filter == wxT("C/C++ files") ||
+                 Filter == wxString::Format(_("%s files"), wxT("C/C++")))
+        {
+            Filter = _("C files");
+            mgr->Write("/file_dialogs/save_file_as/filter", Filter);
+        }
     }
     if (!Filter.IsEmpty())
     {

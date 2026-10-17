@@ -8,7 +8,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v1.2 (bundled Darwin GDB in the .app)
   → v2.0 (integrated Program Console / PTY pane)
   → v2.1 (Debug single open file, no project)
-  → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug)
+  → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug; tab Rename)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -1079,11 +1079,28 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 
 ### Milestones
 
-| # | Work |
-|---|------|
-| **M1** | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
-| **M2** | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
-| **M3** | Debug gates / menu under ownership rule; preserve DebuggeeDescription; tests E, **Q**; docs + ChangeLog |
+| # | Status | Work |
+|---|--------|------|
+| **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
+| **M2** | Planned | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
+| **M3** | Planned | Debug gates / menu under ownership rule; preserve DebuggeeDescription; tests E, **Q**; docs + ChangeLog |
+| **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
+
+#### Milestone 4 — Editor-tab Rename (planned complement)
+
+Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks has no inline tab-title edit. Project tree already has **Rename file…** (`ProjectManagerUI::OnRenameFile`); the editor-tab context menu (`EditorManager` tab popup: Close / Save / Open containing folder / …) has no Rename.
+
+**Goal:** Add **Rename…** to the editor-tab context menu so a wrongly saved extension (e.g. `.c` → `.cpp`) can be fixed without Finder + reopen and without leaving a duplicate from Save As.
+
+| Topic | Plan |
+|-------|------|
+| UI | Tab right-click → **Rename…** (near Open containing folder / Copy full path). |
+| Standalone | Prompt for new name (same directory); `wxRenameFile` on disk; update open `cbEditor` path / tab title / language (`SetLanguage(HL_AUTO)`); **no** second copy. Never-saved (`!IsOK`) → disable or fall through to Save As. |
+| Project-owned | Prefer reusing / aligning with existing project-tree rename (`ProjectFile::Rename` + tree rebuild), or delegate to that path — do not invent a second ownership model. |
+| Prior art | `ProjectManagerUI::OnRenameFile`; tab menu built in `EditorManager` (~`OnNotebookContextMenu` / tab popup). |
+| Non-goals for M4 | Inline editable tab caption; mass rename; moving across directories (unless trivial same-dir rename only). |
+
+**Acceptance (sketch):** Rename standalone `.c` → `.cpp` via tab menu → one file on disk, tab and highlighting updated, Build/Run/Debug still see the new path; project-owned rename still consistent with project tree.
 
 ### Scope summary
 
@@ -1096,8 +1113,9 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 5. Preserve v2.1 standalone Debug (**gates** follow the same ownership rule; no architecture rewrite).  
 6. Manual matrix **A–T** (project + standalone + migration + fresh default).
 
-**OPTIONAL**
+**OPTIONAL / complement**
 
+- **M4:** Editor-tab **Rename…** (standalone true rename on disk + editor rebind; project-owned aligned with existing rename).  
 - Deduplicate prepare/save helper with `SaveActiveSourceForStandaloneDebug`.  
 - macOS-only post-OK extension nudge if native dialog omits ext despite filter.  
 - Grep leftover UI strings expecting `"C/C++ files"` beyond Save As config.
@@ -1110,12 +1128,12 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 - Globally forcing `.cpp` (or using migration to force C on fresh configs).  
 - gdbmi standalone Debug; LLDB.  
 - Changing project target language rules.  
-- Standalone args/cwd/includes UI.
+- Standalone args/cwd/includes UI.  
+- Inline editable tab titles (M4 is menu Rename, not caption editing).
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful save, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`.
-
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful save, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk.
 ---
 
 ## Status
@@ -1127,4 +1145,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **Planned** — Save As C\|C++; legacy filter → C files; ownership-based Build/Run/Debug routing; preserve v2.1 Debug. |
+| **v2.2** | **Planned** — M1–M3: Save As C\|C++, ownership routing, Debug gates; **M4** (complement): editor-tab Rename. |
