@@ -836,14 +836,186 @@ Two defects to fix: (1) Build / Build and Run (and today also Debug gates) can f
 | Topic | Decision |
 |-------|----------|
 | **Routing** | **Active-source ownership**, not mere project existence. See rule below. |
-| Project-owned source | Existing project Build / Run / Debug **unchanged**. |
+| Project-owned source | Existing project Build / Run / Debug **unchanged** (except empty-project / save gates below). |
 | Standalone source (incl. with a project open) | Standalone Build / Build and Run / Debug on **that** file — never the unrelated project. |
-| Unsaved new buffer | Save As first; cancel → **abort**; then classify **post-save** path and route. |
+| Unsaved new buffer | Save As first (PREPARE); cancel → **pre-COMMIT** (≡ never requested); on success classify **post-save** path and route. |
 | C vs C++ Save As | Separate **C files** / **C++ files** / **C/C++ header files**; one shared `C/C++` lexer. |
 | Legacy filter preference | Stored `"C/C++ files"` → migrate to **`"C files"`** (preserves legacy `.c`-first default). |
 | Fresh / empty config default | **Independent** of migration: initial filter **`"C++ files"`** (`.cpp` first). Not a reason to force all new files to C. |
 | v2.1 Debug | Preserve `DebuggeeDescription` / DebuggerGDB hand-off; update **candidate / branch gates** to the ownership rule. |
-| Scope | Minimal; reuse `cbEditor::Save` / Save As; no beginner mode, fake projects, or parallel build system. |
+| **Operation lifecycle** | **PREPARE → COMMIT**; **Transaction** + **Launch Identity** (+ Retry) below. REQUIRED — M2/M3 cannot be DONE on symptom-level fixes alone. |
+| Scope | Minimal; reuse `cbEditor::Save` / Save As; no beginner mode, fake projects, parallel build system, or new transaction framework unless existing CB code cannot satisfy the invariants. |
+
+Notes on operation lifecycle:
+
+- PREPARE need not prove that an output executable already exists when a build is required; it must establish the intended output identity and the operation that will produce it. After asynchronous build success, the continuation may launch only that prepared output identity.
+
+- Before COMMIT, know exactly what is to be built/launched and why. After a required build succeeds, launch only the resulting artefact belonging to that prepared operation.
+
+#### Operation lifecycle (PREPARE / COMMIT) — REQUIRED
+
+Locked after empty-project leftover-binary bugs and lone-file “cancel Save As still debugs the previous exe” observations. These are **architectural** acceptance criteria, not reproductions to special-case.
+
+Applies to **Build and Run**, **Run**, **Debug**, and **Step Into** (and any path that arms build-then-launch / build-then-debug).
+
+##### Two phases
+
+```text
+PREPARE  — establish the exact operation the user requested
+COMMIT   — only after successful preparation may Build/Run/Debug execution state be mutated
+```
+
+**PREPARE** includes, as applicable:
+
+- identify active editor / buffer
+- Save / Save As (normal persistence to establish identity)
+- honour cancellation
+- reacquire the post-save filename
+- validate that filename / path
+- classify `FileTypeOf(path)`
+- determine project membership from the **post-save** identity
+- select **exactly one** route: Project or Standalone
+- validate that the selected route has something valid to build / run / debug
+- determine required build / rebuild
+- determine launch identity / output executable / debuggee
+- ensure that identity belongs to the **operation currently being requested**
+
+Preparation may perform Save / Save As. Preparation must **not** yet mutate execution / session state associated with starting Build and Run, Run, Debug, or Step Into.
+
+**COMMIT** occurs only when PREPARE has succeeded.
+
+Immediately before COMMIT, the implementation must know enough to state:
+
+> This exact requested operation will act on this exact current source/project identity through this exact Project or Standalone route.
+
+Only after that statement is true may execution / session state be reserved.
+
+Examples of state that belongs **after** COMMIT (not an exhaustive checklist of “do all at once”):
+
+- `GetIsRunning` / debugger running reservation
+- debugger log / session clearing performed specifically for the new launch
+- automatic Step Into / bootstrap breakpoint creation
+- `WaitingCompilerToFinish`
+- pending build-complete-to-debug continuation
+- pending Build-and-Run continuation
+- GDB `start` / `run`
+- Program Console process launch
+
+None of these may be **caused** by an operation whose preparation later returns Cancelled. They need not all happen at the COMMIT instant; the invariant is ownership of causality.
+
+Preferred architecture:
+
+```text
+PREPARE → success → COMMIT → mutate execution state
+```
+
+Not:
+
+```text
+mutate execution state → attempt PREPARE → roll back on cancel
+```
+
+Do **not** define correctness as “we set state and clean it up on cancel.” Rollback after COMMIT may still be needed for asynchronous build failures; ordinary Save / Save As cancellation must occur **before** COMMIT.
+
+##### A. Operation Transaction Invariant (REQUIRED)
+
+> Cancellation before COMMIT is observationally equivalent to the user never having requested the operation.
+
+For Debug / Step Into / Run / Build and Run, a cancelled (or otherwise pre-COMMIT failed) preparation must **not** cause:
+
+- compiler launch
+- program launch
+- debugger launch
+- Continue of an existing / prior inferior
+- creation of automatic / temporary breakpoints
+- creation of orphan editor breakpoint markers
+- `WaitingCompilerToFinish`
+- pending rebuild-finish-to-launch continuation
+- pending run-after-build continuation
+- pending Debug / Step Into continuation
+- selection of a fallback project executable
+- launch of a leftover executable on disk
+- changed behaviour of the next invocation
+
+##### B. Launch Identity Invariant (REQUIRED)
+
+> Every Build / Run / Debug operation acts only on an identity successfully established for the **current** request.
+
+Never derive the operation target from:
+
+- a previous Debug session
+- a previous inferior
+- a previous standalone executable
+- a leftover project executable on disk
+- the pre-SaveAs Untitled path
+- “whatever GDB last had”
+- project existence when the active source is unrelated
+- any stale launch / debug description from a previous request
+
+Conceptually:
+
+```text
+current request
+  → successful PREPARE
+  → current post-save identity
+  → explicit route (Project | Standalone)
+  → current build / launch identity
+```
+
+If that chain cannot be established, the operation does **not** start (no COMMIT).
+
+##### Empty project is an identity test (not a special case)
+
+An executable existing on disk is **not** sufficient proof that it is a valid target for the current request. Therefore:
+
+```text
+project has no valid sources / current build identity
+  + leftover executable exists
+```
+
+must **not** imply Run / Debug of that leftover. Correctness is refusing an invalid current identity — **not** deleting old executables to make the test pass. **V1** / **V2** exercise the Launch Identity Invariant.
+
+##### Pre-COMMIT cancel vs post-COMMIT failure
+
+These are different lifecycle outcomes — do not blur them under one vague “failure.”
+
+| Outcome | When | Result |
+|---------|------|--------|
+| **Pre-COMMIT** | Cancelled; invalid target; unable to establish routing / identity | No operation was started; no launch / debug continuation exists; no previous target is substituted |
+| **Post-COMMIT** | Compiler accepted then compile fails; process / debugger launch fails after acceptance; inferior terminates / fails | Operation genuinely started; normal async completion / failure cleanup; continuation consumed / cancelled **exactly once**; return to a valid idle state when appropriate |
+
+##### Retry Invariant (REQUIRED)
+
+> A cancelled pre-COMMIT request is **indefinitely repeatable**.
+
+For any \(N \ge 1\): request Step Into (or Run / Build and Run / Debug) → Save As appears → cancel — repeated \(N\) times — must produce the **same** observable result. Request \(N+1\) must behave like request 1.
+
+Automatically a failed invariant:
+
+- first cancel → apparently OK; second request → different route
+- second request → phantom breakpoint
+- second request → previous executable
+- second request → no Save As
+- second request → no-op
+- second request → Continue prior inferior
+
+No implementation may contain second-attempt-specific repair logic.
+
+##### Asynchronous continuation ownership (REQUIRED)
+
+If an operation COMMITs and then starts an asynchronous compiler operation: **exactly one** pending continuation owns the result.
+
+| Compiler outcome | Required |
+|------------------|----------|
+| Success | Consume continuation **exactly once** → launch the **prepared** Run / Debug / Step Into |
+| Failure (after accept) | Consume / cancel continuation **exactly once** → do not launch → valid idle state |
+| Never accepted / never started | Do **not** leave `WaitingCompilerToFinish` or a launch continuation |
+
+A continuation must retain / identify the **prepared** operation. It must never silently resolve later against whichever project / editor / executable happens to be current. Prefer existing Code::Blocks mechanisms; do not require a new framework or state machine if they can satisfy this.
+
+##### Known violation today (lone-file)
+
+Menu sets `GetIsRunning` / clears log **before** Save As (mutate-before-PREPARE). Cancel can leave the user observationally in a prior debuggee (Continue of a live session, async finish, stale artifact, or bootstrap breakpoint). Fix under M2 (Run side) / M3 (Debug side). **Do not** mark those milestones DONE until Transaction + Launch Identity + retry tests pass.
 
 #### Routing rule (REQUIRED)
 
@@ -863,7 +1035,7 @@ Examples:
 |---|-----------|-------|
 | A | Project open + active project-owned `foo.cpp` | Project workflow |
 | B | Project open + active standalone `foo.cpp` | Standalone on `foo.cpp` |
-| C | Project open + Untitled → Save As → `.cpp` not in project | Standalone on saved file; cancel aborts |
+| C | Project open + Untitled → Save As → `.cpp` not in project | Standalone on saved file; cancel = pre-COMMIT (≡ never requested) |
 | D | No project + standalone source | Standalone |
 
 ### Repository findings (grounded)
@@ -988,12 +1160,13 @@ Implementation locus: `cbEditor::SaveAs` when reading/resolving filter name + in
 | `EditorColourSet::SetFileMasks` (C/C++ special-case) | Register C / C++ / header filters; **omit** combined `"C/C++ files"`. |
 | `cbEditor::SaveAs` | Resolve remembered filter: migrate `"C/C++ files"` → `"C files"`; fresh default `"C++ files"`; after OK persist the **new** valid name. |
 
-#### B. Shared save / classify / route (illustrative)
+#### B. Shared save / classify / route (illustrative — PREPARE only)
 
 ```text
 PrepareActiveSourceOperation(pathOut, routeOut) -> bool
+  // PREPARE only: no GetIsRunning, no WaitingCompilerToFinish, no launch continuation
   ed = builtin active editor (fail if none)
-  if !ed->Save() -> false                    // cancel / fail
+  if !ed->Save() -> false                    // cancel / fail → pre-COMMIT
   pathOut = ed->GetFilename()
   if !IsOK or path empty -> false
   if FileTypeOf(pathOut) != ftSource -> false // clear message
@@ -1001,6 +1174,7 @@ PrepareActiveSourceOperation(pathOut, routeOut) -> bool
        routeOut = Project
   else
        routeOut = Standalone
+  // caller COMMITs only after this returns true and launch identity is known
   return true
 ```
 
@@ -1008,9 +1182,11 @@ PrepareActiveSourceOperation(pathOut, routeOut) -> bool
 
 | Call site | Change |
 |-----------|--------|
-| `CompilerGCC::DoBuild` / `Build` entry | **Not** `if (CheckProject()) project else untitled`. After prepare: **Project** → existing project `DoBuild`; **Standalone** → `CompileFileWithoutProject(pathOut)` (post-save path only). |
-| `CompileFileWithoutProject` | Never compile a path captured before Save; honour Save failure. |
-| `Run` / Build and Run | Same routing; Run after compile uses **active editor’s post-save** filename / standalone exe. |
+| `CompilerGCC::DoBuild` / `Build` entry | **Not** `if (CheckProject()) project else untitled`. PREPARE then COMMIT: **Project** → existing project `DoBuild`; **Standalone** → `CompileFileWithoutProject(pathOut)` (post-save path only). |
+| `CompileFileWithoutProject` | Never compile a path captured before Save; honour Save failure (pre-COMMIT cancel). |
+| `Run` / Build and Run | Same routing; Run after compile uses **active editor’s post-save** filename / standalone exe. Honour **Transaction** + **Launch Identity**: PREPARE → COMMIT → only then arm run-after-build / launch. Cancelled Save As → no Run, no leftover exe, no pending continuation. |
+| Async Build-and-Run | Exactly one continuation owns the prepared identity; consume once on success or failure; never resolve against a later current editor/project. |
+| Empty project / no sources | Refuse / disable Run (Launch Identity — leftover `bin/…` is not a valid current target). Do not delete old exes to pass the test. |
 | Project-owned path | Existing project machinery only — no standalone ensure beyond normal project saves. |
 
 #### D. Wire Debug (v2.1-compatible)
@@ -1018,9 +1194,13 @@ PrepareActiveSourceOperation(pathOut, routeOut) -> bool
 | Call site | Change |
 |-----------|--------|
 | `IsStandaloneDebugCandidate` | Replace `if (GetActiveProject()) return false` with: never-saved OK **or** (`ftSource` **and** not `BelongsToActiveProject`). |
-| `DebuggerGDB::Debug` | Keep additive branches; standalone when candidate under **ownership** rule; project path when active source belongs to active project. |
-| `SaveActiveSourceForStandaloneDebug` | Keep save → `GetFilename()` invariant; may share prepare helper (**optional** dedup). |
-| `DebuggeeDescription` | **Unchanged** type / MakeStandalone. |
+| `DebuggerGDB::Debug` | Keep additive branches; ownership routing. PREPARE (save → route → rebuild identity) **before** COMMIT (`SetIsRunning` / log clear / `DoDebug` / `Continue`). Launch Identity: debuggee only from successful current preparation. |
+| `DebuggerMenuHandler::OnStart` / `OnStep` | No running-slot reservation, log clear, or session mutate until PREPARE succeeds. Cold Start must not `Continue` a prior inferior when the user intended a new prepare. |
+| Step Into / bootstrap BP | An automatically created Step Into / bootstrap breakpoint is **committed debugger-session state**. It must **not** exist before PREPARE succeeds. Untitled → Step Into → Save As → Cancel → **zero** automatic BP objects and **zero** automatic markers. Prevent premature creation — do not “create then delete on cancel.” |
+| `SaveActiveSourceForStandaloneDebug` | Keep save → `GetFilename()` invariant; may share prepare helper (**optional** dedup). Cancel → false all the way up (pre-COMMIT). |
+| Empty project / no sources | Disable Debug/Step UI; refuse launch (Launch Identity). Same gate for Run. |
+| Build-before-debug continuation | Same async ownership as Build-and-Run: prepared operation retained; consume exactly once. |
+| `DebuggeeDescription` | **Unchanged** type / MakeStandalone; identity only from successful current post-save path. |
 
 Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fixes enablement for project-open + standalone.
 
@@ -1030,11 +1210,11 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 |---|---------|------------------|---------|----------|---------------|------|------|
 | 1 | `editorcolourset.cpp` (± filefilters) | `SetFileMasks` | One `"C/C++ files"` | **C** / **C++** / **header** filters; drop combined | Filter birthplace; one lexer | None | Med |
 | 2 | `cbeditor.cpp` | `SaveAs` | Default / remember `"C/C++ files"` | Fresh default **`C++ files`**; migrate **`C/C++ files` → `C files`**; persist new name | Only preference I/O | None | Low–med |
-| 3 | `compilergcc.cpp` (+ small helper) | `DoBuild`, `Run`, `CompileFileWithoutProject` | Project-if-exists; stale Untitled path | Prepare → ownership route; post-save path; abort on cancel | Bug locus | Align Build with Debug | Med |
-| 4 | `debuggeedescription.cpp`, `debuggergdb.cpp`, `debuggermenu.cpp` | Candidate / `Debug` branch / UpdateUI | No-project-only standalone | Ownership rule; same DebuggeeDescription | Gate only | Soft touch | Med |
+| 3 | `compilergcc.cpp` (+ small helper) | `DoBuild`, `Run`, `CompileFileWithoutProject` | Project-if-exists; stale Untitled path | PREPARE → COMMIT; ownership route; post-save identity; Transaction + Launch Identity on Run | Bug locus | Align Build with Debug | Med |
+| 4 | `debuggeedescription.cpp`, `debuggergdb.cpp`, `debuggermenu.cpp` | Candidate / `Debug` / OnStart / OnStep / UpdateUI | No-project-only standalone; mutate-before-save | Ownership + PREPARE→COMMIT; no BP/session before COMMIT; same DebuggeeDescription | Gate / ordering only | Soft touch | Med |
 | 5 | README / ChangeLog / this plan | docs | — | C\|C++ Save, migration, ownership routing | Release | Mentions Debug | Low |
 
-**Abstain:** redesigning `DebuggeeDescription`; fake projects; lexer split; global `.c`→`.cpp`; parallel build system.
+**Abstain:** redesigning `DebuggeeDescription`; new debugger architecture; breakpoint subsystem redesign; fake projects; lexer split; global `.c`→`.cpp`; parallel build system; new generic transaction framework unless existing CB mechanisms cannot satisfy the invariants.
 
 ### Regression analysis
 
@@ -1043,7 +1223,11 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | Project-owned `.c`/`.cpp` | Med (routing change) | Tests **M**; `BelongsToActiveProject` true → untouched project path |
 | Standalone with project open | Med (new REQUIRED) | Tests **N–Q** |
 | Standalone no project | Low–med | Save invariant; post-save path |
-| Cancel Save As | Must abort | Tests **F**, **P** |
+| Cancel Save As (pre-COMMIT) | Must ≡ never requested | Transaction invariant; tests **F**, **P**, **U1–U4**, **V1–V2** |
+| Lone-file after prior Debug | Med (stale session / exe / BP) | PREPARE→COMMIT; Launch Identity; retry; **U1–U3** |
+| Empty project leftover exe | Med | Launch Identity (not “delete bin”); **V1–V2** |
+| Repeated cancel | Med (state accumulates) | Retry invariant; **U2**, **U4** |
+| Async build→launch continuation | Med (wrong identity later) | Exactly-once consume of prepared op; M2/M3 criteria |
 | Legacy `"C/C++ files"` | Med | Migrate → **C files**; rewrite store; test **R** |
 | Fresh config | Low | Default **C++ files**; test **T** — not driven by migration |
 | Explicit C++ then remember | Low | Test **S** |
@@ -1076,15 +1260,55 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **R** | Config remembers `"C/C++ files"` → Save As | Resolves to **C files**; `.c` default behaviour; store becomes valid `"C files"` |
 | **S** | User selects **C++ files** → later Save As | Remembers **C++ files** normally |
 | **T** | Fresh/empty filter config → Save As | Initial selection **C++ files** (independent of **R**) |
+| **U1** | No project: Debug saved file A OK → end/close A → New Untitled → **Step Into** → **Cancel** Save As | Nothing launches or continues; A’s exe not reused; prior inferior not Continued; **no** automatic BP object/marker; ≡ never pressed Step Into |
+| **U2** | Immediately repeat **U1** cancellation **10** times | Save As every time; identical behaviour; no state / BP / exe accumulates; no request becomes a no-op because an earlier one was cancelled |
+| **U3** | After **U2**, Step Into once more → successfully Save As standalone `.cpp` | Newly saved path authoritative; correct standalone exe built; **exactly this** file enters debugger; previous exe/session irrelevant |
+| **U4** | Project open → New Untitled → Step Into → Cancel Save As **repeatedly** | Unrelated project never built/launched/debugged; no fallback project exe; no phantom BP |
+| **V1** | Valid project Build/Run/Debug OK → remove all sources + save project → leave prior exe on disk → **Run** | Refuse/disable; stale binary **not** launched (Launch Identity — do not delete exe to pass) |
+| **V2** | Same setup → **Debug** / Step Into | Refuse/disable; stale binary not debugged; no prior-inferior Continue |
+
+**U** / **V** above are architectural acceptance tests for Transaction + Launch Identity + retry — not cases to special-case in isolation. Retain **A–T** as before.
 
 ### Milestones
 
 | # | Status | Work |
 |---|--------|------|
 | **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
-| **M2** | **DONE** (tree) | Save invariant + **ownership routing** for Build / Build and Run / Run; tests C–H, F, L, **M–P** |
-| **M3** | Planned | Debug gates / menu under ownership rule; preserve DebuggeeDescription; tests E, **Q**; docs + ChangeLog |
+| **M2** | **In progress** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. |
+| **M3** | Planned | Debug-side same invariants (separate milestone). See **M3 completion** below. |
 | **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
+
+#### M2 completion (Run-side — keep **IN PROGRESS**)
+
+M2 is **not** DONE merely because normal standalone Build / Build and Run works.
+
+M2 requires all of:
+
+- successful standalone Build
+- successful standalone Build and Run
+- correct project-vs-standalone routing
+- post-save identity
+- cancelled Save As produces **no** Run
+- cancelled operation cannot launch previous / leftover executable
+- empty project cannot Run leftover binary (**V1**)
+- repeated cancelled operation behaves identically (Retry Invariant)
+- asynchronous Build-and-Run continuation is consumed **exactly once**
+
+Mark M2 DONE **only** when the Run-side **Operation Transaction** and **Launch Identity** invariants pass (matrix C–H, F, L, **M–P**, **V1**, plus Run-side cancel/retry coverage analogous to **U** where applicable).
+
+#### M3 completion (Debug-side — keep separate)
+
+M3 applies the same PREPARE / COMMIT invariants to:
+
+- Debug
+- Step Into
+- debugger menu start handling
+- automatic / bootstrap breakpoints (committed session state — must not exist before PREPARE succeeds)
+- build-before-debug continuation (exactly-once ownership of the prepared operation)
+- previous inferior / Continue behaviour
+- debugger session reservation
+
+Do **not** mark M3 DONE based merely on successful normal standalone Debug. M3 requires clean cancellation and retry (**U1–U4**, **V2**, E, **Q**) + docs / ChangeLog. Preserve `DebuggeeDescription`.
 
 #### Milestone 4 — Editor-tab Rename (planned complement)
 
@@ -1111,7 +1335,9 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 3. Save / cancel / **post-save path** for standalone Build / Build and Run.  
 4. **Active-source ↔ active-project membership** routing (even when a project is open).  
 5. Preserve v2.1 standalone Debug (**gates** follow the same ownership rule; no architecture rewrite).  
-6. Manual matrix **A–T** (project + standalone + migration + fresh default).
+6. **Operation Transaction Invariant** + **Launch Identity Invariant** (PREPARE → COMMIT; pre-COMMIT cancel ≡ never requested; no identity not established for the current request).  
+7. Retry Invariant; pre-COMMIT vs post-COMMIT outcomes; async continuation exactly-once ownership.  
+8. Manual matrix **A–T** plus invariant tests **U1–U4**, **V1–V2**.
 
 **OPTIONAL / complement**
 
@@ -1122,18 +1348,21 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 
 **EXPLICITLY OUT OF SCOPE**
 
-- Redesign of `DebuggeeDescription` / DebuggerGDB core.  
-- Beginner mode; ephemeral `.cbp`; parallel build system.  
+- Redesign of `DebuggeeDescription` / DebuggerGDB core; new debugger architecture; breakpoint subsystem redesign.  
+- New generic transaction framework unless existing CB mechanisms cannot satisfy the invariants.  
+- Beginner mode; ephemeral `.cbp`; parallel build system; broad compiler redesign.  
 - Splitting the `C/C++` lexer into two languages.  
 - Globally forcing `.cpp` (or using migration to force C on fresh configs).  
-- gdbmi standalone Debug; LLDB.  
+- gdbmi standalone Debug; LLDB / DAP.  
 - Changing project target language rules.  
 - Standalone args/cwd/includes UI.  
-- Inline editable tab titles (M4 is menu Rename, not caption editing).
+- Deleting leftover executables merely to pass empty-project tests.  
+- Inline editable tab titles (M4 is menu Rename, not caption editing).  
+- Unrelated cleanup.
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful save, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk.
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk.
 ---
 
 ## Status
@@ -1145,4 +1374,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **Planned** — M1–M3: Save As C\|C++, ownership routing, Debug gates; **M4** (complement): editor-tab Rename. |
+| **v2.2** | **In progress** — M1 filters partially in tree; **M2 In progress** (Run-side Transaction + Launch Identity; not DONE on symptom routing alone); **M3** Planned (same invariants for Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename. |
