@@ -1274,27 +1274,21 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | # | Status | Work |
 |---|--------|------|
 | **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
-| **M2** | **In progress** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. |
+| **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. Manual matrix C–H, F, L, **M–P**, **V1** still recommended before release. |
 | **M3** | Planned | Debug-side same invariants (separate milestone). See **M3 completion** below. |
 | **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
 
-#### M2 completion (Run-side — keep **IN PROGRESS**)
+#### M2 completion (Run-side — **DONE** in tree)
 
-M2 is **not** DONE merely because normal standalone Build / Build and Run works.
+Implementation (CompilerGCC) now satisfies the Run-side criteria:
 
-M2 requires all of:
+- ownership routing + post-save identity (`PrepareBuildOrRunRouting`)
+- **PREPARE → COMMIT**: `OnCompileAndRun` arms `m_RunAfterCompile` only after prepare succeeds; cancel Save As never arms a continuation
+- continuation retains prepared route/path (`ArmRunAfterCompile` / `RunPrepared`); consumed **exactly once** on success or cleared on failure / kill / pre-COMMIT abort
+- empty project cannot Run leftover binary (**V1**); UpdateUI allows standalone editor when project has no sources
+- repeated cancel leaves no armed continuation (Retry Invariant for Run / Build and Run)
 
-- successful standalone Build
-- successful standalone Build and Run
-- correct project-vs-standalone routing
-- post-save identity
-- cancelled Save As produces **no** Run
-- cancelled operation cannot launch previous / leftover executable
-- empty project cannot Run leftover binary (**V1**)
-- repeated cancelled operation behaves identically (Retry Invariant)
-- asynchronous Build-and-Run continuation is consumed **exactly once**
-
-Mark M2 DONE **only** when the Run-side **Operation Transaction** and **Launch Identity** invariants pass (matrix C–H, F, L, **M–P**, **V1**, plus Run-side cancel/retry coverage analogous to **U** where applicable).
+**Not** in M2: Debug / Step Into / bootstrap BP / Continue (**M3**).
 
 #### M3 completion (Debug-side — keep separate)
 
@@ -1374,4 +1368,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **In progress** — M1 filters partially in tree; **M2 In progress** (Run-side Transaction + Launch Identity; not DONE on symptom routing alone); **M3** Planned (same invariants for Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename. |
+| **v2.2** | **In progress** — M1 filters partially in tree; **M2 DONE** (tree: Run-side PREPARE→COMMIT + Transaction/Launch Identity); **M3** Planned (Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename. |
