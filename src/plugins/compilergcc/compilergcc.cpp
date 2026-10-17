@@ -303,6 +303,7 @@ CompilerGCC::CompilerGCC() :
     m_pListLog(nullptr),
     m_pToolTarget(nullptr),
     m_RunAfterCompile(false),
+    m_RunAfterCompileRoute(asrProject),
     m_LastExitCode(0),
     m_NotifiedMaxErrors(false),
     m_NotifiedSilenceCompilerLog(false),
@@ -346,7 +347,7 @@ void CompilerGCC::OnAttach()
     m_pLog = nullptr;
     m_pListLog = nullptr;
     m_pToolTarget = nullptr;
-    m_RunAfterCompile = false;
+    ClearRunAfterCompileContinuation();
     m_LastExitCode = 0;
     m_NotifiedMaxErrors = false;
     m_NotifiedSilenceCompilerLog = false;
@@ -1143,6 +1144,9 @@ bool CompilerGCC::PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString
     // Active project exists.
     if (!ed)
     {
+        // No editor: project route only if the project itself has a valid build identity.
+        if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+            return false;
         routeOut = asrProject;
         return true;
     }
@@ -1163,6 +1167,27 @@ bool CompilerGCC::PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString
 
     routeOut = asrProject;
     return true;
+}
+
+void CompilerGCC::ClearRunAfterCompileContinuation()
+{
+    m_RunAfterCompile = false;
+    m_RunAfterCompileRoute = asrProject;
+    m_RunAfterCompilePath.clear();
+}
+
+void CompilerGCC::ArmRunAfterCompile(ActiveSourceRoute route, const wxString& standalonePath)
+{
+    m_RunAfterCompile = true;
+    m_RunAfterCompileRoute = route;
+    m_RunAfterCompilePath = (route == asrStandalone) ? standalonePath : wxString();
+}
+
+int CompilerGCC::RunPrepared(ActiveSourceRoute route, const wxString& standalonePath)
+{
+    if (route == asrStandalone)
+        return RunSingleFile(standalonePath);
+    return RunActiveProjectAfterPrepare(nullptr);
 }
 
 void CompilerGCC::StartCompileFile(wxFileName file)
@@ -1381,8 +1406,10 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
                 ResetBuildState();
                 if (m_RunAfterCompile)
                 {
-                    m_RunAfterCompile = false;
-                    if (Run() == 0)
+                    const ActiveSourceRoute route = m_RunAfterCompileRoute;
+                    const wxString path = m_RunAfterCompilePath;
+                    ClearRunAfterCompileContinuation();
+                    if (RunPrepared(route, path) == 0)
                         DoRunQueue(timer); // Recursion
                 }
                 return 0;
@@ -2019,8 +2046,10 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
         {
             case wxID_YES:
             {
-                m_RunAfterCompile = true;
-                Build(wxEmptyString);
+                // COMMIT only after this Run already prepared `filename` as identity.
+                ArmRunAfterCompile(asrStandalone, filename);
+                if (CompileFile(filename) < 0)
+                    ClearRunAfterCompileContinuation();
                 return -1;
             }
             case wxID_NO:
@@ -2042,19 +2071,21 @@ bool CompilerGCC::ExecutableExists(cbProject* prj)
 {
     // A project is not mandatory to execute the file in the editor, but
     // then at least one editor (not the "Start here" one) must be active
-    if (!prj)
+    auto editorRunCandidate = []() -> bool
     {
         EditorManager* edmgr = Manager::Get()->GetEditorManager();
         EditorBase* currentEditor = edmgr->GetActiveEditor();
         if (!currentEditor)
             return false;
-
         return (currentEditor != edmgr->GetEditor(_("Start here")));
-    }
+    };
 
-    // Empty project (no sources) must not offer Run against a leftover binary.
+    if (!prj)
+        return editorRunCandidate();
+
+    // Empty project: leftover bin/… is not a valid identity — only a standalone editor may Run.
     if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(prj))
-        return false;
+        return editorRunCandidate();
 
     // Get target name
     const wxString activeTarget(prj->GetActiveBuildTarget());
@@ -2088,24 +2119,30 @@ int CompilerGCC::Run(const wxString& target)
         return RunSingleFile(standalonePath);
     if (!m_pProject)
         return -1;
-    return Run(m_pProject->GetBuildTarget(target.IsEmpty() ? m_LastTargetName : target));
+    return RunActiveProjectAfterPrepare(
+        m_pProject->GetBuildTarget(target.IsEmpty() ? m_LastTargetName : target));
 }
 
 int CompilerGCC::Run(ProjectBuildTarget* target)
 {
-    bool commandIsQuoted = false; // remember if we quoted the command, avoid unneeded quotes, because they break execution with "konsole" under KDE
     ActiveSourceRoute route = asrProject;
     wxString standalonePath;
     if (!PrepareBuildOrRunRouting(route, standalonePath))
         return -1;
     if (route == asrStandalone)
         return RunSingleFile(standalonePath);
+    return RunActiveProjectAfterPrepare(target);
+}
+
+int CompilerGCC::RunActiveProjectAfterPrepare(ProjectBuildTarget* target)
+{
+    bool commandIsQuoted = false; // remember if we quoted the command, avoid unneeded quotes, because they break execution with "konsole" under KDE
 
     CheckProject();
     if (!m_pProject)
         return -1;
 
-    // Match Debug: no sources → do not launch a leftover binary; save first or abort.
+    // Launch Identity: no sources → do not launch a leftover binary.
     if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
     {
         LogMessage(_("Cannot run: the active project has no source files."), cltError);
@@ -2317,8 +2354,10 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
             case wxID_YES:
             {
                 m_pProject->SetCurrentlyCompilingTarget(nullptr);
-                m_RunAfterCompile = true;
-                Build(target);
+                // Project route already prepared for this Run; retain that identity.
+                ArmRunAfterCompile(asrProject, wxEmptyString);
+                if (Build(target) < 0)
+                    ClearRunAfterCompileContinuation();
                 return -1;
             }
             case wxID_NO:
@@ -3059,26 +3098,60 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
     if (realTarget.IsEmpty())
         realTarget = GetTargetString();
 
-    if (!StopRunningDebugger())
-        return -1;
-
-    // Ownership routing is for interactive Build/Run only — not workspace batch builds.
+    // PREPARE (route / identity) before StopRunningDebugger or queue COMMIT.
+    ActiveSourceRoute route = asrProject;
+    wxString standalonePath;
     if (!m_IsWorkspaceOperation)
     {
-        ActiveSourceRoute route = asrProject;
-        wxString standalonePath;
-        if (!PrepareBuildOrRunRouting(route, standalonePath))
+        if (m_RunAfterCompile)
+        {
+            // Already PREPARE'd + COMMIT'd (OnCompileAndRun / Run "build now"): keep that identity.
+            route = m_RunAfterCompileRoute;
+            standalonePath = m_RunAfterCompilePath;
+        }
+        else if (!PrepareBuildOrRunRouting(route, standalonePath))
+        {
+            ClearRunAfterCompileContinuation();
             return -1;
-        if (route == asrStandalone)
-            return CompileFile(standalonePath);
+        }
+        if (route == asrProject)
+        {
+            AskForActiveProject();
+            if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+            {
+                ClearRunAfterCompileContinuation();
+                LogMessage(_("Cannot build: the active project has no source files."), cltError);
+                return -1;
+            }
+        }
+    }
+
+    if (!StopRunningDebugger())
+    {
+        ClearRunAfterCompileContinuation();
+        return -1;
+    }
+
+    if (!m_IsWorkspaceOperation && route == asrStandalone)
+    {
+        const int r = CompileFile(standalonePath);
+        if (r < 0)
+            ClearRunAfterCompileContinuation();
+        return r;
     }
 
     CheckProject();
     if (!m_pProject)
+    {
+        ClearRunAfterCompileContinuation();
         return -1;
+    }
 
     if (realTarget.IsEmpty())
+    {
+        ClearRunAfterCompileContinuation();
         return -1;
+    }
 
     if (!m_IsWorkspaceOperation)
     {
@@ -3091,11 +3164,17 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
 
     PreprocessJob(m_pProject, realTarget);
     if (m_BuildJobTargetsList.empty())
+    {
+        ClearRunAfterCompileContinuation();
         return -1;
+    }
 
     InitBuildState(bjProject, realTarget);
     if (DoBuild(clean, build))
+    {
+        ClearRunAfterCompileContinuation();
         return -2;
+    }
 
     return DoRunQueue( Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100) );
 }
@@ -3199,7 +3278,7 @@ int CompilerGCC::CleanWorkspace(const wxString& target)
 int CompilerGCC::KillProcess()
 {
     ResetBuildState();
-    m_RunAfterCompile = false;
+    ClearRunAfterCompileContinuation();
     if (!IsProcessRunning())
         return 0;
     if (!m_CommandQueue.LastCommandWasRun())
@@ -3320,20 +3399,54 @@ ProjectBuildTarget* CompilerGCC::GetBuildTargetForFile(ProjectFile* pf)
 int CompilerGCC::CompileFile(const wxString& file)
 {
     CheckProject();
+
+    ProjectFile* pf = m_pProject ? m_pProject->GetFileByFilename(file, true, false) : nullptr;
+    if (!pf)
+    {
+        // Standalone: flush/validate identity before DoPrepareQueue (COMMIT).
+        wxString path = file;
+        EditorBase* eb = Manager::Get()->GetEditorManager()->IsOpen(path);
+        if (eb)
+        {
+            if (!eb->Save())
+            {
+                ClearRunAfterCompileContinuation();
+                return -1;
+            }
+            path = eb->GetFilename();
+        }
+        if (path.empty() || FileTypeOf(path) != ftSource)
+        {
+            ClearRunAfterCompileContinuation();
+            LogMessage(_("Active file is not a compilable source file."), cltError);
+            return -1;
+        }
+
+        DoClearErrors();
+        DoPrepareQueue(false);
+        PrintBanner(baBuildFile, nullptr, nullptr);
+        if (!CompilerValid(nullptr).isValid)
+        {
+            ClearRunAfterCompileContinuation();
+            return -1;
+        }
+        return CompileFileWithoutProject(path);
+    }
+
     DoClearErrors();
     DoPrepareQueue(false);
 
-    ProjectFile* pf = m_pProject ? m_pProject->GetFileByFilename(file, true, false) : nullptr;
     ProjectBuildTarget* bt = GetBuildTargetForFile(pf);
-
     PrintBanner(baBuildFile, m_pProject, bt);
 
     if ( !CompilerValid(bt).isValid )
+    {
+        ClearRunAfterCompileContinuation();
         return -1;
-    if (!pf) // compile single file not belonging to a project
-        return CompileFileWithoutProject(file);
+    }
     if (!bt)
     {
+        ClearRunAfterCompileContinuation();
         const wxString err(_("error: Cannot find target for file"));
         LogMessage(pf->relativeToCommonTopLevelPath + ": " + err, cltError);
         LogWarningOrError(cltError, m_pProject, pf->relativeToCommonTopLevelPath, wxEmptyString, err);
@@ -3354,11 +3467,15 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
     if (eb)
     {
         if (!eb->Save())
+        {
+            ClearRunAfterCompileContinuation();
             return -1;
+        }
         path = eb->GetFilename();
     }
     if (path.empty() || FileTypeOf(path) != ftSource)
     {
+        ClearRunAfterCompileContinuation();
         LogMessage(_("Active file is not a compilable source file."), cltError);
         return -1;
     }
@@ -3374,6 +3491,7 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
     wxArrayString compile = dc.GetCompileSingleFileCommand(path);
     if (compile.IsEmpty())
     {
+        ClearRunAfterCompileContinuation();
         LogMessage(_("No compile commands for file: ") + path, cltError);
         return -1;
     }
@@ -3475,9 +3593,37 @@ void CompilerGCC::OnRun(cb_unused wxCommandEvent& event)
 
 void CompilerGCC::OnCompileAndRun(cb_unused wxCommandEvent& event)
 {
-    ProjectBuildTarget* target = nullptr;
-    m_RunAfterCompile = true;
-    Build(target);
+    // PREPARE → COMMIT: do not arm run-after-build until identity/route are established.
+    ActiveSourceRoute route = asrProject;
+    wxString standalonePath;
+    if (!PrepareBuildOrRunRouting(route, standalonePath))
+        return; // cancel ≡ never pressed
+
+    if (route == asrProject)
+    {
+        AskForActiveProject();
+        if (!m_pProject || !DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+        {
+            LogMessage(_("Cannot build and run: the active project has no source files."), cltError);
+            cbMessageBox(_("The active project has no source files to build and run.\n"
+                           "Add a source file to the project, or close the project and "
+                           "build and run a single file."),
+                         _("Build and run"), wxICON_WARNING);
+            return;
+        }
+    }
+
+    ArmRunAfterCompile(route, standalonePath);
+
+    int result;
+    if (route == asrStandalone)
+        result = CompileFile(standalonePath);
+    else
+        result = Build(static_cast<ProjectBuildTarget*>(nullptr));
+
+    // If the compiler never accepted the job, drop the continuation (pre-COMMIT outcome).
+    if (result < 0)
+        ClearRunAfterCompileContinuation();
 }
 
 void CompilerGCC::OnCompile(wxCommandEvent& event)
@@ -4341,8 +4487,12 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
         {
             if (m_RunAfterCompile)
             {
-                m_RunAfterCompile = false;
-                if (Run() == 0)
+                // Consume continuation exactly once. Launch only on clean build;
+                // failed compile → cancel continuation, do not launch.
+                const ActiveSourceRoute route = m_RunAfterCompileRoute;
+                const wxString path = m_RunAfterCompilePath;
+                ClearRunAfterCompileContinuation();
+                if (m_LastExitCode == 0 && RunPrepared(route, path) == 0)
                     DoRunQueue(idle_wake_up_timer);
             }
             else if (!Manager::IsBatchBuild())
@@ -4371,7 +4521,7 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
             }
         }
 
-        m_RunAfterCompile = false;
+        ClearRunAfterCompileContinuation();
 
         // no matter what happened with the build, return the focus to the active editor
         cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinEditor(Manager::Get()->GetEditorManager()->GetActiveEditor());

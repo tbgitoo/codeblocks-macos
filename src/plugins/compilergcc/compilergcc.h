@@ -201,6 +201,12 @@ class CompilerGCC : public cbCompilerPlugin
         /** v2.2 M2: save active source if needed; route Project vs Standalone by ownership. */
         enum ActiveSourceRoute { asrProject, asrStandalone };
         bool PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString& pathOut);
+        /** PREPARE succeeded → COMMIT Build-and-Run continuation (exactly one pending launch). */
+        void ArmRunAfterCompile(ActiveSourceRoute route, const wxString& standalonePath);
+        void ClearRunAfterCompileContinuation();
+        /** Launch using an identity already established by PREPARE (no re-route). */
+        int RunPrepared(ActiveSourceRoute route, const wxString& standalonePath);
+        int RunActiveProjectAfterPrepare(ProjectBuildTarget* target);
         void StartCompileFile(wxFileName file);
         void DoGotoNextError();
         void DoGotoPreviousError();
@@ -300,6 +306,9 @@ class CompilerGCC : public cbCompilerPlugin
         CompilerMessages*   m_pListLog;
         wxChoice*           m_pToolTarget;
         bool                m_RunAfterCompile;
+        /** Identity retained with m_RunAfterCompile (Launch Identity — do not re-resolve at finish). */
+        ActiveSourceRoute   m_RunAfterCompileRoute;
+        wxString            m_RunAfterCompilePath; ///< standalone post-save path; empty for project route
         wxString            m_CdRun;
         wxString            m_RunCmd;
         int                 m_LastExitCode;
