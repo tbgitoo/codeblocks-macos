@@ -178,6 +178,21 @@ void BreakpointsDlg::Reload()
             m_pList->SetColumnWidth(column, wxLIST_AUTOSIZE);
     }
     m_pList->Thaw();
+
+    // Keep gutter markers in sync with the breakpoint list. Temporary BPs (e.g. GDB
+    // `start` / Step Into) and StopDriver may remove list entries without touching
+    // editors; without this, orphan red "pseudo-breakpoints" remain and cannot be
+    // toggled away because RemoveBreakpoint no longer finds them.
+    EditorManager* editorManager = Manager::Get()->GetEditorManager();
+    if (editorManager)
+    {
+        for (int ii = 0; ii < editorManager->GetEditorsCount(); ++ii)
+        {
+            EditorBase* editor = editorManager->GetEditor(ii);
+            if (editor && editor->IsBuiltinEditor())
+                static_cast<cbEditor*>(editor)->RefreshBreakpointMarkers();
+        }
+    }
 }
 
 BreakpointsDlg::Items::iterator BreakpointsDlg::FindBreakpoint(const wxString &filename, int line)

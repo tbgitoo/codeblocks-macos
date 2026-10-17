@@ -160,22 +160,21 @@ bool DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(cbProject* project)
 
 bool DebuggeeDescriptionUtil::IsStandaloneDebugCandidate()
 {
-    if (Manager::Get()->GetProjectManager()->GetActiveProject())
-        return false;
-
+    // Ownership rule: active source establishes identity. An open/empty project
+    // must not suppress a non-member standalone ftSource (or never-saved buffer).
     cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor();
     if (!ed)
         return false;
 
-    // Never-saved buffers are candidates only after Save/Save As succeeds later.
+    // Never-saved: Save As later during PREPARE; not project-owned yet.
     if (!ed->IsOK())
         return true;
 
     const wxString filename = ed->GetFilename();
-    if (filename.empty())
+    if (filename.empty() || FileTypeOf(filename) != ftSource)
         return false;
 
-    return FileTypeOf(filename) == ftSource;
+    return !BelongsToActiveProject(ed, filename);
 }
 
 bool DebuggeeDescriptionUtil::SaveActiveSourceForStandaloneDebug(wxString& sourcePath)

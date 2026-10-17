@@ -41,7 +41,8 @@ namespace DebuggeeDescriptionUtil
       * otherwise the project file list). Empty projects must not Debug a leftover binary. */
     DLLIMPORT bool ProjectHasDebuggeeSources(cbProject* project);
 
-    /** Active builtin editor is a saved/saveable ftSource file and there is no active project. */
+    /** Active builtin editor is a never-saved buffer, or a saved ftSource that does not
+      * belong to the active project (standalone even when a project is open/empty). */
     DLLIMPORT bool IsStandaloneDebugCandidate();
 
     /** Save active editor if needed (existing CB Save / Save As). On success, fill @a sourcePath. */

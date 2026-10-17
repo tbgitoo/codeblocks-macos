@@ -744,47 +744,58 @@ bool DebuggerGDB::Debug(bool breakOnEntry)
     ProjectManager* prjMan = Manager::Get()->GetProjectManager();
     cbProject* project = prjMan->GetActiveProject();
 
-    // Additive branch: attach → project → standalone → fail
-    if (!project && m_PidToAttach == 0)
+    // Ownership routing: standalone candidate (incl. with empty/unrelated project
+    // open) uses v2.1 DebuggeeDescription path. Empty-project refuse applies only
+    // to the project route below — never suppresses a valid standalone identity.
+    if (m_PidToAttach == 0 && DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
     {
-        if (!DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
-            return false;
-
         wxString sourcePath;
         if (!DebuggeeDescriptionUtil::SaveActiveSourceForStandaloneDebug(sourcePath))
         {
             Log(_("Cannot debug: source must be saved to a filesystem path first."), Logger::error);
             return false;
         }
-        if (!DebuggeeDescriptionUtil::MakeStandalone(sourcePath, m_StandaloneDebuggee))
+        // Re-check after Save As: file may have been saved into the active project.
+        if (DebuggeeDescriptionUtil::BelongsToActiveProject(
+                Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor(), sourcePath))
         {
-            Log(_("Cannot build standalone debuggee description for this file."), Logger::error);
-            return false;
+            // Fall through to project Debug with the post-save membership.
+            project = prjMan->GetActiveProject();
         }
-        m_UseStandaloneDebuggee = true;
+        else
+        {
+            if (!DebuggeeDescriptionUtil::MakeStandalone(sourcePath, m_StandaloneDebuggee))
+            {
+                Log(_("Cannot build standalone debuggee description for this file."), Logger::error);
+                return false;
+            }
+            m_UseStandaloneDebuggee = true;
 
-        m_Canceled = false;
-        if (!EnsureStandaloneRebuildForDebug(breakOnEntry ? StartTypeStepInto : StartTypeRun, sourcePath))
-            return false;
+            m_Canceled = false;
+            if (!EnsureStandaloneRebuildForDebug(breakOnEntry ? StartTypeStepInto : StartTypeRun, sourcePath))
+                return false;
 
-        if (!WaitingCompilerToFinish() && !m_State.HasDriver() && !m_Canceled)
-            return DoDebug(breakOnEntry) == 0;
-        return true;
+            if (!WaitingCompilerToFinish() && !m_State.HasDriver() && !m_Canceled)
+                return DoDebug(breakOnEntry) == 0;
+            return true;
+        }
     }
 
     m_pProject = project;
     if (m_pProject && m_ActiveBuildTarget.IsEmpty())
         m_ActiveBuildTarget = m_pProject->GetActiveBuildTarget();
 
-    // Invariant: project Debug only after sources exist and are saved. An empty
-    // project must not launch a leftover binary from a previous build.
+    // Project route only: empty project must not launch a leftover binary.
     if (m_PidToAttach == 0)
     {
+        if (!m_pProject)
+            return false;
         if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
         {
             Log(_("Cannot debug: the active project has no source files."), Logger::error);
             cbMessageBox(_("The active project has no source files to debug.\n"
-                           "Add a source file to the project, or close the project and debug a single file."),
+                           "Add a source file to the project, or open a standalone "
+                           "source file and Debug that instead."),
                          _("Debug"), wxICON_WARNING);
             return false;
         }
@@ -2141,7 +2152,10 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
 //    m_pProcess = nullptr;
 
     ClearActiveMarkFromAllEditors();
-    m_State.StopDriver();
+    m_State.StopDriver(); // drops temporary BPs from the list
+    // Reload syncs the breakpoints dialog and editor gutter markers (see
+    // BreakpointsDlg::Reload) so Step Into / GDB `start` temps leave no orphan
+    // red markers after the session ends.
     Manager::Get()->GetDebuggerManager()->GetBreakpointDialog()->Reload();
     if (!Manager::IsAppShuttingDown())
     {
