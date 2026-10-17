@@ -138,7 +138,10 @@ static wxRegEx reHWBreakpoint("Hardware assisted breakpoint ([0-9]+) at (0x[0-9A
 // Hardware watchpoint 1: expr
 static wxRegEx reDataBreakpoint("Hardware watchpoint ([0-9]+):.*");
 // Temporary breakpoint 2 at 0x401203: file /home/obfuscated/projects/tests/_cb_dbg/watches/main.cpp, line 115.
-static wxRegEx reTemporaryBreakpoint("^[Tt]emporary[[:blank:]]breakpoint[[:blank:]]([0-9]+)[[:blank:]]at.*");
+// Do NOT anchor with ^ — GdbCmd_AddBreakpoint::ParseOutput often receives a multi-line
+// buffer (same as reBreakpoint, which is unanchored). A leading ^ left bp->index at -1
+// after tbreak, so the later "Temporary breakpoint N," hit could not find/remove the BP.
+static wxRegEx reTemporaryBreakpoint("[Tt]emporary[[:blank:]]breakpoint[[:blank:]]([0-9]+)[[:blank:]]at");
 // eax            0x40e66666       1088841318
 static wxRegEx reRegisters("([A-z0-9]+)[[:blank:]]+(0x[0-9A-Fa-f]+)[[:blank:]]+(.*)");
 // wayne registers
