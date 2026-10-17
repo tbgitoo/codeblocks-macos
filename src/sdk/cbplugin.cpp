@@ -660,6 +660,15 @@ bool cbDebuggerPlugin::GetDebuggee(wxString &pathToDebuggee, wxString &workingDi
         Log(_("Couldn't find the path to the debuggee!"), Logger::error);
         return false;
     }
+    // Refuse a leftover binary when sources were removed / never built for this target.
+    if ((target->GetTargetType() == ttExecutable
+         || target->GetTargetType() == ttConsoleOnly
+         || target->GetTargetType() == ttNative)
+        && !wxFileExists(out))
+    {
+        Log(wxString::Format(_("Debuggee does not exist: '%s'"), out), Logger::error);
+        return false;
+    }
 
     workingDirectory = target->GetWorkingDir();
     Manager::Get()->GetMacrosManager()->ReplaceEnvVars(workingDirectory);

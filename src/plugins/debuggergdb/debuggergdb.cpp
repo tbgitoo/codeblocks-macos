@@ -48,6 +48,7 @@
 #include "editbreakpointdlg.h"
 
 #include "databreakpointdlg.h"
+#include "debuggeedescription.h"
 #include "programconsole.h"
 #include "debuggerdriver.h"
 #include "debuggergdb.h"
@@ -774,6 +775,31 @@ bool DebuggerGDB::Debug(bool breakOnEntry)
     m_pProject = project;
     if (m_pProject && m_ActiveBuildTarget.IsEmpty())
         m_ActiveBuildTarget = m_pProject->GetActiveBuildTarget();
+
+    // Invariant: project Debug only after sources exist and are saved. An empty
+    // project must not launch a leftover binary from a previous build.
+    if (m_PidToAttach == 0)
+    {
+        if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+        {
+            Log(_("Cannot debug: the active project has no source files."), Logger::error);
+            cbMessageBox(_("The active project has no source files to debug.\n"
+                           "Add a source file to the project, or close the project and debug a single file."),
+                         _("Debug"), wxICON_WARNING);
+            return false;
+        }
+        if (m_pProject->GetModified() && !m_pProject->Save())
+        {
+            Log(_("Cannot debug: project file was not saved."), Logger::error);
+            return false;
+        }
+        if (!m_pProject->SaveAllFiles())
+        {
+            Log(_("Cannot debug: one or more project files were not saved "
+                  "(save canceled?)."), Logger::error);
+            return false;
+        }
+    }
 
     m_Canceled = false;
     if (!EnsureBuildUpToDate(breakOnEntry ? StartTypeStepInto : StartTypeRun))
