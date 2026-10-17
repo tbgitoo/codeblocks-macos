@@ -2052,6 +2052,10 @@ bool CompilerGCC::ExecutableExists(cbProject* prj)
         return (currentEditor != edmgr->GetEditor(_("Start here")));
     }
 
+    // Empty project (no sources) must not offer Run against a leftover binary.
+    if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(prj))
+        return false;
+
     // Get target name
     const wxString activeTarget(prj->GetActiveBuildTarget());
 
@@ -2100,6 +2104,28 @@ int CompilerGCC::Run(ProjectBuildTarget* target)
     CheckProject();
     if (!m_pProject)
         return -1;
+
+    // Match Debug: no sources → do not launch a leftover binary; save first or abort.
+    if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+    {
+        LogMessage(_("Cannot run: the active project has no source files."), cltError);
+        cbMessageBox(_("The active project has no source files to run.\n"
+                       "Add a source file to the project, or close the project and run a single file."),
+                     _("Run"), wxICON_WARNING);
+        return -1;
+    }
+    if (m_pProject->GetModified() && !m_pProject->Save())
+    {
+        LogMessage(_("Cannot run: project file was not saved."), cltError);
+        return -1;
+    }
+    if (!m_pProject->SaveAllFiles())
+    {
+        LogMessage(_("Cannot run: one or more project files were not saved "
+                     "(save canceled?)."), cltError);
+        return -1;
+    }
+
     target = m_pProject->GetBuildTarget(m_pProject->GetActiveBuildTarget());
     PrintBanner(baRun, m_pProject, target);
 
@@ -3764,8 +3790,13 @@ void CompilerGCC::OnUpdateUI(wxUpdateUIEvent& event)
 
     if (id == idMenuRun)
         event.Enable(ExecutableExists(prj));
-    else if (id == idMenuCompile || id == idMenuCompileAndRun)
+    else if (id == idMenuCompile)
         event.Enable(prj || ed);
+    else if (id == idMenuCompileAndRun)
+    {
+        // Build and Run: project needs sources, or an editor for standalone routing.
+        event.Enable((prj && DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(prj)) || ed);
+    }
     else if (   id == idMenuBuildWorkspace     || id == idMenuRebuild                || id == idMenuRebuildWorkspace
              || id == idMenuClean              || id == idMenuCleanWorkspace         || id == idMenuSelectTarget
              || id == idMenuSelectTargetDialog || id == idMenuProjectCompilerOptions || idToolTarget )
