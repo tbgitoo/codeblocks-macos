@@ -1,16 +1,8 @@
-2026-10-18 22:25  tbgitoo
+2026-10-18 22:42  tbgitoo
 
-v2.2 (M6 in tree): unofficial Apple Silicon macOS port
-	  * Watches: native Apple-libc++ std::string semantic summary
-	    over the existing GDBWatch tree (no Python; companion GDB
-	    unchanged). Parent shows "value"; raw children remain.
-	  * Strict recognition / length-based extraction (embedded NUL);
-	    unknown layout → raw fallback. Unit tests for SSO / long /
-	    NUL / decline.
 
-2026-10-18 17:50  tbgitoo
-
-v2.2 (M2–M5 in tree): unofficial Apple Silicon macOS port
+v2.2  Aim: Make standalone workflows behave consistently, facilitate access for beginners
+v2.2 DONE (tree, M1–M6): unofficial Apple Silicon macOS port
 	  * Active-source ownership for Build / Build and Run / Run /
 	    Debug / Step Into (not mere project existence)
 	  * PREPARE → COMMIT: cancel Save As ≡ never requested; no
@@ -18,20 +10,23 @@ v2.2 (M2–M5 in tree): unofficial Apple Silicon macOS port
 	    no Continue of a prior inferior (U1–U4, E′, V2/V3)
 	  * Empty project: refuse leftover project exe; standalone
 	    editor remains eligible (V3)
-	  * Run-after-compile retains prepared standalone path;
-	    temporary-breakpoint lifecycle / Run to Cursor polish
-	  * Stop usable for standalone Debug when focus leaves the
-	    editor; Save As C / C++ filter split (M1) partially in tree
-	  * Editor-tab Rename… (same-dir true rename; Overwrite/Cancel
-	    if target exists; project-owned via ProjectFile::Rename;
-	    disabled for never-saved / auto-generated)
+	  * Save As: separate C / C++ / header filters; legacy
+	    "C/C++ files" → "C files"; fresh default "C++ files"
+	  * Editor-tab Rename… (same-dir true rename; Overwrite/Cancel;
+	    project-owned via ProjectFile::Rename)
 	  * macOS Debug: Show program output immediately (companion
-	    GDB inferior-stdio-unbuffered; probe before Start; Run
-	    unchanged)
-	  * README.macos.md + plans/versioning_plan.md (M2–M5 DONE)
+	    GDB inferior-stdio-unbuffered; Run unchanged)
+	  * Watches: native Apple-libc++ std::string summary over the
+	    GDBWatch tree (no Python; GDB fork untouched); SSO max 22
+	  * Lessons (plans/versioning_plan_v2_2.md): PREPARE/COMMIT over
+	    symptom patches; empty-project gates project route only;
+	    silent start BP can hide the IDE cursor; line buffering is
+	    inferior libc FILE; M6 keeps Python-free self-contained GDB
+	  * README.macos.md + plans: v2.2 DONE (tag/release when ready)
 
 2026-10-16 23:10  tbgitoo
 
+v2.1  Aim: Remove projects from simple one-file debugging
 v2.1: unofficial Apple Silicon macOS port
 	  * Debug / cold-start Step Into a single open C/C++ source
 	    file with no project (same class as single-file Run)
@@ -51,6 +46,7 @@ v2.1: unofficial Apple Silicon macOS port
 
 2026-10-16 19:22  tbgitoo
 
+v2.0  Aim: Bring program I/O inside the IDE
 v2.0 (daf6e97): unofficial Apple Silicon macOS port
 	  * Integrated Program Console: Darwin PTY pane in Logs &
 	    others for Run and Debug (openpty, setsid / TIOCSCTTY,
@@ -70,6 +66,7 @@ v2.0 (daf6e97): unofficial Apple Silicon macOS port
 
 2026-10-15 06:34  tbgitoo
 
+v1.2  Aim: Make the debugger self-contained
 v1.2 (80d8e89): unofficial Apple Silicon macOS port
 	  * Bundle companion Darwin GDB from binutils-gdb 5564fbe into
 	    CodeBlocks.app/Contents/Resources/debugger/ (bin, share, lib,
@@ -86,6 +83,8 @@ v1.2 (80d8e89): unofficial Apple Silicon macOS port
 
 2026-10-14 17:57  tbgitoo
 
+
+v1.1  Aim: Make the macOS console/debug workflow reliable
 v1.1 (cf3e4f0): unofficial Apple Silicon macOS port
 	  * On macOS, probe show inferior-tty-claim and set
 	    inferior-tty-claim off before tty … (companion Darwin GDB);
@@ -100,6 +99,7 @@ v1.1 (cf3e4f0): unofficial Apple Silicon macOS port
 
 2026-10-13 20:28  tbgitoo
 
+v1.0  Aim: Make it run natively on Apple Silicon
 v1.0 (e5bc580): unofficial Apple Silicon macOS port
 	  * Import Code::Blocks trunk r14050 (2408e77) as git baseline
 	  * Terminal osascript: $SCRIPT substitution for debugger sleep
