@@ -87,20 +87,68 @@ inline BOOL WINAPI HandlerRoutine(cb_unused DWORD dwCtrlType)
 #if !defined(__WXMSW__)
 namespace
 {
+// Probe companion Darwin GDB for "inferior-stdio-unbuffered", optionally set
+// it on, then Start/Attach.  Queued after tty so set precedes "run"/"start".
+class GdbCmd_SetupMacOSUnbufferStdio : public DebuggerCmd
+{
+    public:
+        GdbCmd_SetupMacOSUnbufferStdio(DebuggerDriver* driver,
+                                       bool breakOnEntry,
+                                       int pidToAttach)
+            : DebuggerCmd(driver, "show inferior-stdio-unbuffered", true),
+              m_breakOnEntry(breakOnEntry),
+              m_pidToAttach(pidToAttach)
+        {
+        }
+
+        void ParseOutput(const wxString& output) override
+        {
+            const bool unsupported = output.Contains("Undefined")
+                                  || output.Contains("No symbol")
+                                  || output.Contains("Ambiguous");
+            const bool supported = !unsupported
+                && (output.Contains("on") || output.Contains("off"));
+
+            if (supported)
+            {
+                m_pDriver->QueueCommand(new DebuggerCmd(m_pDriver,
+                    "set inferior-stdio-unbuffered on", true));
+                m_pDriver->DebugLog(_("GDB supports inferior-stdio-unbuffered; "
+                    "enabling unbuffered stdout for this Debug session"));
+            }
+            else
+            {
+                m_pDriver->DebugLog(_("GDB lacks inferior-stdio-unbuffered; "
+                    "leaving line-buffered stdout"));
+            }
+
+            if (m_pidToAttach == 0)
+                m_pDriver->Start(m_breakOnEntry);
+            else
+                m_pDriver->Attach(m_pidToAttach);
+        }
+
+    private:
+        bool m_breakOnEntry;
+        int m_pidToAttach;
+};
+
 // Probe Darwin GDB for "inferior-tty-claim", optionally disable claiming, then
-// attach the Terminal console tty and start/attach.  Must run before Start() is
-// queued so set/tty precede "run".
+// attach the Terminal console tty and start/attach (or chain unbuffer probe).
+// Must run before Start() is queued so set/tty precede "run".
 class GdbCmd_SetupMacOSInferiorTty : public DebuggerCmd
 {
     public:
         GdbCmd_SetupMacOSInferiorTty(DebuggerDriver* driver,
                                      const wxString& ttyPath,
                                      bool breakOnEntry,
-                                     int pidToAttach)
+                                     int pidToAttach,
+                                     bool unbufferStdio)
             : DebuggerCmd(driver, "show inferior-tty-claim", true),
               m_ttyPath(ttyPath),
               m_breakOnEntry(breakOnEntry),
-              m_pidToAttach(pidToAttach)
+              m_pidToAttach(pidToAttach),
+              m_unbufferStdio(unbufferStdio)
         {
         }
 
@@ -130,7 +178,14 @@ class GdbCmd_SetupMacOSInferiorTty : public DebuggerCmd
             m_pDriver->QueueCommand(new DebuggerCmd(m_pDriver, gdbTtyCmd, true));
             m_pDriver->DebugLog(wxString::Format(_("Queued:[%s]"), gdbTtyCmd.wx_str()));
 
-            if (m_pidToAttach == 0)
+            if (m_unbufferStdio && m_pidToAttach == 0)
+            {
+                m_pDriver->QueueCommand(
+                    new GdbCmd_SetupMacOSUnbufferStdio(m_pDriver,
+                                                       m_breakOnEntry,
+                                                       m_pidToAttach));
+            }
+            else if (m_pidToAttach == 0)
                 m_pDriver->Start(m_breakOnEntry);
             else
                 m_pDriver->Attach(m_pidToAttach);
@@ -140,6 +195,7 @@ class GdbCmd_SetupMacOSInferiorTty : public DebuggerCmd
         wxString m_ttyPath;
         bool m_breakOnEntry;
         int m_pidToAttach;
+        bool m_unbufferStdio;
 };
 } // namespace
 #endif // !__WXMSW__
@@ -1144,12 +1200,19 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
                    : (target && target->GetUseConsoleRunner());
     m_programConsoleDebug = false;
     bool deferStartForMacOSTty = false;
+    // M5: macOS console Debug may probe companion GDB for unbuffered stdout.
+    // Attach never gets the set.  Claim-off path is unchanged for Terminal.app.
+    const bool wantMacOSUnbufferStdio =
+        platform::macosx
+        && m_PidToAttach == 0
+        && GetActiveConfigEx().GetFlag(DebuggerConfiguration::UnbufferStdio);
     if (m_bIsConsole)
     {
         wxString consoleTty;
         if (platform::macosx && ProgramConsole::PreferProgramConsole())
         {
-            /* M4: no Terminal.app, no cb_debug_console_hold, claim stays ON. */
+            /* Program Console: claim stays ON.  Optionally defer Start through
+               the unbuffer probe so set precedes run/start. */
             if (ProgramConsole::BeginDebugSession(consoleTty))
             {
                 m_programConsoleDebug = true;
@@ -1162,7 +1225,14 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
                     new DebuggerCmd(m_State.GetDriver(), gdbTtyCmd, true));
                 DebugLog(wxString::Format(_("Queued:[%s] (Program Console, claim ON)"),
                                           gdbTtyCmd.wx_str()));
-                /* Start/Attach queued below after tty — do not use claim-off path. */
+                if (wantMacOSUnbufferStdio)
+                {
+                    m_State.GetDriver()->QueueCommand(
+                        new GdbCmd_SetupMacOSUnbufferStdio(m_State.GetDriver(),
+                                                           breakOnEntry,
+                                                           m_PidToAttach));
+                    deferStartForMacOSTty = true;
+                }
             }
             else
             {
@@ -1187,7 +1257,8 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
                         new GdbCmd_SetupMacOSInferiorTty(m_State.GetDriver(),
                                                          consoleTty,
                                                          breakOnEntry,
-                                                         m_PidToAttach));
+                                                         m_PidToAttach,
+                                                         wantMacOSUnbufferStdio));
                     deferStartForMacOSTty = true;
                 }
                 else
