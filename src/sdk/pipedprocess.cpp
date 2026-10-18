@@ -13,6 +13,7 @@
     #include <wx/app.h>       // wxWakeUpIdle
 
     #include "globals.h"
+    #include "manager.h"
     #include "pipedprocess.h" // class' header file
     #include "sdk_events.h"
 #endif
@@ -190,22 +191,38 @@ void PipedProcess::ForfeitStreams()
     if ( IsErrorAvailable() )
     {
         wxInputStream *in = GetErrorStream();
-        while (in->Read(&buf, sizeof(buf)).LastRead())
-            ;
+        if (in)
+        {
+            while (in->Read(&buf, sizeof(buf)).LastRead())
+                ;
+        }
     }
     if ( IsInputAvailable() )
     {
         wxInputStream *in = GetInputStream();
-        while (in->Read(&buf, sizeof(buf)).LastRead())
-            ;
+        if (in)
+        {
+            while (in->Read(&buf, sizeof(buf)).LastRead())
+                ;
+        }
     }
 }
 
 bool PipedProcess::HasInput()
 {
+    // Quit / Kill races: child OnExit can run after pipes are already torn down.
+    // Never dereference a null stream or ReadLine on a dead one (macOS SIGSEGV /
+    // SIGBUS in PipedProcess::OnTerminate → HasInput after M3 rebuilds).
+    if (Manager::IsAppShuttingDown())
+        return false;
+
     if (IsErrorAvailable())
     {
-        cbTextInputStream serr(*GetErrorStream());
+        wxInputStream* err = GetErrorStream();
+        if (!err || !err->IsOk())
+            return false;
+
+        cbTextInputStream serr(*err);
 
         wxString msg;
         msg << serr.ReadLine();
@@ -213,17 +230,24 @@ bool PipedProcess::HasInput()
         if (m_Stopped)
             return true;
 
-        CodeBlocksEvent event(cbEVT_PIPEDPROCESS_STDERR, m_Id);
-        event.SetString(msg);
-        event.SetX(m_Index);
-        wxPostEvent(m_Parent, event);
+        if (m_Parent)
+        {
+            CodeBlocksEvent event(cbEVT_PIPEDPROCESS_STDERR, m_Id);
+            event.SetString(msg);
+            event.SetX(m_Index);
+            wxPostEvent(m_Parent, event);
+        }
 
         return true;
     }
 
     if (IsInputAvailable())
     {
-        cbTextInputStream sout(*GetInputStream());
+        wxInputStream* in = GetInputStream();
+        if (!in || !in->IsOk())
+            return false;
+
+        cbTextInputStream sout(*in);
 
         wxString msg;
         msg << sout.ReadLine();
@@ -231,10 +255,13 @@ bool PipedProcess::HasInput()
         if (m_Stopped)
             return true;
 
-        CodeBlocksEvent event(cbEVT_PIPEDPROCESS_STDOUT, m_Id);
-        event.SetString(msg);
-        event.SetX(m_Index);
-        wxPostEvent(m_Parent, event);
+        if (m_Parent)
+        {
+            CodeBlocksEvent event(cbEVT_PIPEDPROCESS_STDOUT, m_Id);
+            event.SetString(msg);
+            event.SetX(m_Index);
+            wxPostEvent(m_Parent, event);
+        }
 
         return true;
     }
@@ -244,14 +271,25 @@ bool PipedProcess::HasInput()
 
 void PipedProcess::OnTerminate(int /*pid*/, int status)
 {
-    // show the rest of the output
-    while ( HasInput() )
-        ;
+    if (m_timerPollProcess.IsRunning())
+        m_timerPollProcess.Stop();
 
-    CodeBlocksEvent event(cbEVT_PIPEDPROCESS_TERMINATED, m_Id);
-    event.SetInt(status);
-    event.SetX(m_Index);
-    wxPostEvent(m_Parent, event);
+    // Drain leftover output only while streams are still usable. During app
+    // shutdown (and after ForfeitStreams) IsErrorAvailable can still be true
+    // with a half-dead pipe — that is what crashed on quit after Debug rebuilds.
+    if (!Manager::IsAppShuttingDown() && !m_Stopped)
+    {
+        while ( HasInput() )
+            ;
+    }
+
+    if (m_Parent && !Manager::IsAppShuttingDown())
+    {
+        CodeBlocksEvent event(cbEVT_PIPEDPROCESS_TERMINATED, m_Id);
+        event.SetInt(status);
+        event.SetX(m_Index);
+        wxPostEvent(m_Parent, event);
+    }
 
     if (m_pvThis)
         *m_pvThis = nullptr;
@@ -260,12 +298,16 @@ void PipedProcess::OnTerminate(int /*pid*/, int status)
 
 void PipedProcess::OnTimer(cb_unused wxTimerEvent& event)
 {
-    wxWakeUpIdle();
+    if (!Manager::IsAppShuttingDown())
+        wxWakeUpIdle();
 }
 
 void PipedProcess::OnIdle(wxIdleEvent& event)
 {
-    while ( HasInput() )
-        ;
+    if (!Manager::IsAppShuttingDown())
+    {
+        while ( HasInput() )
+            ;
+    }
     event.Skip();
 }

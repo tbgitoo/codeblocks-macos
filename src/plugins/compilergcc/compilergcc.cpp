@@ -519,6 +519,11 @@ void CompilerGCC::OnRelease(bool appShutDown)
 
     m_timerIdleWakeUp.Stop();
 
+    // On quit, reap build/run children before FreeProcesses so a late
+    // wxExecute OnExit cannot drain closed pipes in PipedProcess::HasInput.
+    if (appShutDown)
+        KillProcess();
+
     FreeProcesses();
 
     CompilerFactory::UnregisterCompilers();
