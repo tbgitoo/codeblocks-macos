@@ -1280,6 +1280,7 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. Manual matrix C–H, F, L, **M–P**, **V1** still recommended before release. |
 | **M3** | Planned | Debug-side same invariants (separate milestone). See **M3 completion** below. |
 | **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
+| **M5** | Planned | **Unbuffered inferior stdout** via companion GDB. Independent of M1–M4; macOS Debug only. See below. |
 
 #### M2 completion (Run-side — **DONE** in tree)
 
@@ -1323,6 +1324,140 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 
 **Acceptance (sketch):** Rename standalone `.c` → `.cpp` via tab menu → one file on disk, tab and highlighting updated, Build/Run/Debug still see the new path; project-owned rename still consistent with project tree.
 
+#### Milestone 5 — Unbuffered inferior stdout (companion GDB)
+
+**Status: Planned.** Implement and test on a Mac. This Windows tree cannot host the PTY or the companion GDB. M5 does not block or depend on M1–M4.
+
+**Problem.** On macOS, Program Console (CB-owned PTY) and Terminal.app are both real terminals. The debuggee's libc therefore line-buffers `stdout`. `std::cout << "cocou"` stays in that `FILE` buffer until a newline, `std::flush` / `std::endl`, a tied `cin` read, or exit. Nothing is written to the slave, so the console cannot show it. Windows is different for a platform reason, not a Code::Blocks one: the MSVC CRT implements console `_IOLBF` as `_IONBF`, so the same line appears as soon as it runs. This repo does not call `setvbuf`. `openpty` is called with a null termios (`src/sdk/programconsole.cpp`). Termios flags do not control stdio buffering.
+
+**Constraint.** Do not edit the user's source and do not insert a dylib. The only sanctioned mutation is the companion GDB calling `setvbuf` inside the inferior at startup, and only when the user has asked for it. `std::ios_base::sync_with_stdio` in Code::Blocks does nothing to the inferior; the default in the inferior is already `true`, which is why `cout` uses the C `stdout` buffer. Do not call it.
+
+##### Product decisions (locked)
+
+| Topic | Decision |
+|-------|----------|
+| Who injects | Companion Darwin GDB in sister repo **`binutils-gdb`** (see top of this plan). Not Code::Blocks, not the PTY. |
+| GDB command | `set inferior-stdio-unbuffered on\|off` and `show inferior-stdio-unbuffered`. Same shape as `inferior-tty-claim`. |
+| GDB default | **off**. A shell `gdb` does not inject unless something sets the flag. |
+| Code::Blocks default | **on** (macOS debugger config). Escape hatch for programs that must stay line-buffered. |
+| When CB sends it | macOS **console Debug** only, and only after `show` proves this GDB has the command. Stock GDB: probe fails, Debug still starts, stdout stays line-buffered. |
+| Which consoles | **Both** Program Console and Terminal.app. Both are ttys. Unlike claim: claim-off stays **Terminal-only**; this flag does not change claim. |
+| Run | **Out of scope.** Run has no GDB. Program Console Run stays line-buffered. |
+| Windows / Linux | Do not queue the command. Windows console debug is already unbuffered at the CRT. Hide or disable the checkbox off macOS. |
+| Attach | Do not inject. The process has already started. |
+| What is unbuffered | C `stdout` only. `stderr` is already unbuffered. Do not touch `stdin`. |
+| `cout` | Covered only while `sync_with_stdio` stays at its default `true`. A program that turns it off gets a separate C++ buffer again. Document; do not fight it. |
+
+##### Code::Blocks command order (REQUIRED)
+
+`set` must be queued **before** `start` / `run`, and `Start()` must not be queued until that `set` is on the queue. `GdbCmd_SetupMacOSInferiorTty` already does this for claim by calling `Start()` from `ParseOutput`. Copy that. Do not queue the probe in `GDB_driver::Prepare` and then call `Start()` in `DebuggerGDB::DoDebug`: the probe's `ParseOutput` would append `set … on` **after** `run` is already queued.
+
+Today (`src/plugins/debuggergdb/debuggergdb.cpp`):
+
+- **Program Console:** queue `tty <slave>` (claim left **ON**), then `Start()` / `Attach()` immediately.
+- **Terminal.app:** queue `show inferior-tty-claim`; `ParseOutput` queues `set inferior-tty-claim off` (if supported), then `tty <path>`, then `Start()` / `Attach()`. `deferStartForMacOSTty` skips the immediate start.
+
+When the checkbox is **on**, both paths defer start through one new command, after the tty line and without disturbing claim:
+
+```text
+Program Console (claim stays ON):
+  tty <slave>
+  show inferior-stdio-unbuffered
+      → if supported: set inferior-stdio-unbuffered on
+      → then Start(breakOnEntry) or Attach   # from ParseOutput, not before
+
+Terminal.app (claim-off unchanged):
+  show inferior-tty-claim
+      → if supported: set inferior-tty-claim off
+  tty <path>
+  show inferior-stdio-unbuffered
+      → if supported: set inferior-stdio-unbuffered on
+      → then Start(breakOnEntry) or Attach
+```
+
+When the checkbox is **off**, queue nothing about this setting and keep today's start placement. Do not send `set inferior-stdio-unbuffered off` (GDB's own default is off; a new GDB process is started per session). A hand-written debugger init command may still turn it on; that is the user's command.
+
+Probe failure (`Undefined` / `No symbol` / `Ambiguous`, same test as `GdbCmd_SetupMacOSInferiorTty`) logs once and still starts. Debug must not abort because the GDB is stock.
+
+Suggested shape: a small `DebuggerCmd` next to `GdbCmd_SetupMacOSInferiorTty` (anonymous namespace in `debuggergdb.cpp`), not a change to `ProgramConsole` and not a fold into the claim-off command. The PTY path must not start sending `set inferior-tty-claim off`.
+
+##### Code::Blocks files
+
+| Piece | Change |
+|-------|--------|
+| `debuggeroptionsdlg.h` | New `DebuggerConfiguration::Flags` value, e.g. `UnbufferStdio`. |
+| `debuggeroptionsdlg.cpp` | Read/write like `CatchExceptions` (config bool, default **true**). |
+| `resources/debugger_options_dlg.xrc` | Checkbox on the GDB page, macOS-only (hide or do not create on other platforms). Label along the lines of “Show program output immediately while debugging (macOS)”. Help text: companion GDB only; turns off line buffering of `stdout`; does not change the source; Run is unchanged. |
+| `debuggergdb.cpp` | Queue the probe as above. Guard with `platform::macosx`, console debug, flag on, not attach-only if start is skipped — attach never gets the set. |
+| `README.macos.md` | Short subsection beside “Darwin GDB terminal handling”: the new set/show, the probe, and that line buffering remains if the GDB is stock or the box is unchecked. |
+| ChangeLog | One line when the milestone is done. |
+
+Do not put this in Environment → Console programs (`/console_output_mode` chooses PTY vs Terminal, not buffering).
+
+##### Companion GDB (sister `binutils-gdb`)
+
+Grep that tree for `inferior-tty-claim` / `inferior_tty_claim` and add the boolean beside it. Then grep `start_command` / `run_command_1` in `infcmd.c` (names drift; use whatever that tree calls the `start`/`run` path).
+
+**First task on the Mac, before writing the call.** `stdout` is a macro. Confirm the symbol and `_IONBF` against the SDK actually used to build this GDB:
+
+```gdb
+start
+info address __stdoutp
+ptype __stdoutp
+p (int)setvbuf(__stdoutp, 0, 2, 0)
+```
+
+If `ptype` says `FILE **`, the expression is `setvbuf(*__stdoutp, 0, 2, 0)` instead. Keep the expression that returns `0`. Confirm `#define _IONBF 2` in that SDK's `stdio.h` (it is 2 on Darwin; do not assume if the probe says otherwise). Hardcode the working expression with a comment that cites this probe. Do not call `sync_with_stdio`.
+
+**Injection.** When the flag is on, `run` and `start` only (not `attach`, not a later `fork`/`exec` of a grandchild):
+
+1. Plant one **internal** one-shot breakpoint at `main`. Prefer attaching the action to the temporary main breakpoint `start` already plants, so a Step Into / break-on-entry session does not stop at `main` twice.
+2. When that stop hits, before returning control to Code::Blocks, evaluate `setvbuf` in the inferior (`call_function_by_hand` or an equivalent silent call — not a user-visible extra stop).
+3. If the user asked for `run`: delete the internal breakpoint and resume. The user must not see a stop at `main` that Code::Blocks did not request.
+4. If the user asked for `start` (break on entry, Step Into): leave the inferior stopped at `main`, with `stdout` already unbuffered, so the next step's `cout` is visible.
+5. If `main` cannot be found (`-nostartfiles`, assembly): skip, one log line, run as usual.
+6. If `setvbuf` returns non-zero: one log line, do **not** stop the session, do **not** retry every step. POSIX allows `setvbuf` only before any other operation on the stream. A print from a static constructor has already happened; `main`'s later `cout` then stays line-buffered. Ordinary prints from `main` have not happened yet and are the case this milestone must pass.
+
+`stderr` and a raw `write()` already bypass this buffer. Do not poke the private `FILE` layout.
+
+##### Acceptance (manual, Mac)
+
+Build a console C++ program. No `endl`, no `flush`, no `cin`:
+
+```cpp
+#include <iostream>
+int main() {
+    std::cout << "cocou";
+    return 0;
+}
+```
+
+Use the bundled companion GDB (`CodeBlocks.app` `…/debugger/bin/gdb`, or `CB_GDB`).
+
+| ID | Steps | Expected |
+|----|-------|----------|
+| **W1** | Checkbox **on**, Program Console, Debug, step over the `cout` line | Pane shows `cocou` **before** the function returns. Claim stays **ON** (no `set inferior-tty-claim off` in the log). |
+| **W2** | Same, checkbox **off** | `cocou` does **not** appear on that step. It appears at exit (libc flush) or if the line is changed to `endl` / `flush`. |
+| **W3** | Checkbox **on**, `cout << "cocou\n"` and a later `endl` | Both still appear. `cin` still reads. |
+| **W4** | Checkbox **on**, Program Console, Ctrl-C while the inferior is running | SIGINT still delivered (claim ON). Unbuffering must not turn claim off. |
+| **W5** | Checkbox **on**, Terminal.app Debug | Same immediate `cocou`, **and** the existing claim-off handshake still runs (`set inferior-tty-claim off` before `tty` when that GDB supports it). |
+| **W6** | Checkbox **on**, Step Into / break on entry | One stop at `main`, not two. After stepping the `cout`, `cocou` is visible. |
+| **W7** | Checkbox **on**, point the debugger at a stock GDB with no such setting | `show` fails, Debug still starts, line-buffered behaviour, no fatal GDB error. |
+| **W8** | Checkbox **on**, `printf("cocou")` without `\n` | Same as **W1** (stdio path). |
+| **W9** | Run (not Debug), Program Console, checkbox on | **Unchanged** line buffering. M5 does not apply to Run. |
+| **W10** | Attach to an already-running process | No `setvbuf` attempt. |
+
+**W1** is the milestone. **W4** and **W5** exist so this flag cannot regress v1.1 claim-off or v2.0 claim-on.
+
+##### Non-goals (M5)
+
+- Editing the debuggee, `DYLD_INSERT_LIBRARIES`, or `stdbuf`.
+- Unbuffering Run, or scraping the `FILE` buffer out of the inferior.
+- Forcing `sync_with_stdio(true)` or `std::unitbuf`.
+- Unbuffering grandchildren after a later `exec`.
+- Changing Windows or Linux.
+- Shipping a new GDB from this repo. The boolean lands in **`binutils-gdb`**; Code::Blocks only probes and sets it. Bump the bundled GDB when that port is ready (same packaging path as v1.2).
+
 ### Scope summary
 
 **REQUIRED**
@@ -1339,6 +1474,7 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 **OPTIONAL / complement**
 
 - **M4:** Editor-tab **Rename…** (standalone true rename on disk + editor rebind; project-owned aligned with existing rename).  
+- **M5:** macOS Debug option that asks the companion GDB to `setvbuf(stdout, …, _IONBF, …)` at `main` (Program Console and Terminal). Not Run. See **Milestone 5**.  
 - Deduplicate prepare/save helper with `SaveActiveSourceForStandaloneDebug`.  
 - macOS-only post-OK extension nudge if native dialog omits ext despite filter.  
 - Grep leftover UI strings expecting `"C/C++ files"` beyond Save As config.
@@ -1355,11 +1491,12 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 - Standalone args/cwd/includes UI.  
 - Deleting leftover executables merely to pass empty-project tests.  
 - Inline editable tab titles (M4 is menu Rename, not caption editing).  
+- Unbuffering Run, injecting a dylib, or editing the debuggee source to flush `cout` (M5 is GDB-side `setvbuf` on Debug only).  
 - Unrelated cleanup.
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk.
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered.
 ---
 
 ## Status
@@ -1371,4 +1508,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **In progress** — M1 filters partially in tree; **M2 DONE** (tree: Run-side PREPARE→COMMIT + Transaction/Launch Identity); **M3** Planned (Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename. |
+| **v2.2** | **In progress** — M1 filters partially in tree; **M2 DONE** (tree: Run-side PREPARE→COMMIT + Transaction/Launch Identity); **M3** Planned (Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename; **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |
