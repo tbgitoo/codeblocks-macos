@@ -276,6 +276,26 @@ A GDB build without this setting is left unchanged. Debugging may still work, bu
 
 This behaviour is macOS-specific. It does not change Code::Blocks debugger handling on Windows or Linux.
 
+### Immediate program output while debugging (v2.2 M5)
+
+On macOS, a real tty (Program Console or Terminal.app) line-buffers the debuggee's `stdout`. `std::cout << "cocou"` without `endl` / `flush` therefore stays invisible until exit. **Run** is unchanged; this option applies to **Debug** only.
+
+Settings → Debugger → GDB/CDB debugger → Common:
+
+```text
+Show program output immediately while debugging (macOS)
+```
+
+Default is **on**. When enabled, Code::Blocks probes the companion GDB:
+
+```gdb
+show inferior-stdio-unbuffered
+```
+
+and, if supported, sends `set inferior-stdio-unbuffered on` **before** `run` / `start` (after `tty`, and after claim-off on the Terminal.app path). Stock GDB without the setting is left alone; Debug still starts with ordinary line buffering.
+
+The companion GDB then makes the inferior's C `stdout` unbuffered at `main` (so default-synced `cout` appears while stepping). Attach-to-process does not use this path. Uncheck the box if a program must stay line-buffered.
+
 ## Existing Code::Blocks settings
 
 Explicit user settings override compiled defaults.

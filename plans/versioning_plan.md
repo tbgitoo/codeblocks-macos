@@ -818,7 +818,7 @@ User-facing note and limitations: `README.macos.md` → **Debugging a single sou
 
 ## v2.2 — Standalone New → Save as C|C++ → Build / Run / Debug
 
-**Status: In progress** — **M2**, **M3**, and **M4** DONE (tree); **M1** filters partially in tree; **M5** still Planned.  
+**Status: In progress** — **M2**–**M5** DONE (tree); **M1** filters partially in tree.  
 **Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that formerly keyed off “any active project”).
 
 **Goal:** Make the standalone-source workflow coherent:
@@ -1280,7 +1280,7 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. |
 | **M3** | **DONE** (tree) | Debug-side same invariants. See **M3 completion** below. Manual **U1–U4**, **E** / **E′**, **Q**, **V2**, **V3** passed; Run to Cursor cancel + Stop with focus off editor also OK. |
 | **M4** | **DONE** (tree) | **Editor-tab Rename** (complement). See below. |
-| **M5** | Planned | **Unbuffered inferior stdout** via companion GDB. Independent of M1–M4; macOS Debug only. See below. |
+| **M5** | **DONE** (tree) | **Unbuffered inferior stdout** via companion GDB. See below. |
 
 #### M2 completion (Run-side — **DONE** in tree)
 
@@ -1327,7 +1327,7 @@ Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks 
 
 #### Milestone 5 — Unbuffered inferior stdout (companion GDB)
 
-**Status: Planned.** Implement and test on a Mac. This Windows tree cannot host the PTY or the companion GDB. M5 does not block or depend on M1–M4.
+**Status: DONE** (tree). Implemented on Mac in sister `binutils-gdb` + this repo; bundled via staging. M5 does not block or depend on M1–M4.
 
 **Problem.** On macOS, Program Console (CB-owned PTY) and Terminal.app are both real terminals. The debuggee's libc therefore line-buffers `stdout`. `std::cout << "cocou"` stays in that `FILE` buffer until a newline, `std::flush` / `std::endl`, a tied `cin` read, or exit. Nothing is written to the slave, so the console cannot show it. Windows is different for a platform reason, not a Code::Blocks one: the MSVC CRT implements console `_IOLBF` as `_IONBF`, so the same line appears as soon as it runs. This repo does not call `setvbuf`. `openpty` is called with a null termios (`src/sdk/programconsole.cpp`). Termios flags do not control stdio buffering.
 
@@ -1410,16 +1410,15 @@ p (int)setvbuf(__stdoutp, 0, 2, 0)
 
 If `ptype` says `FILE **`, the expression is `setvbuf(*__stdoutp, 0, 2, 0)` instead. Keep the expression that returns `0`. Confirm `#define _IONBF 2` in that SDK's `stdio.h` (it is 2 on Darwin; do not assume if the probe says otherwise). Hardcode the working expression with a comment that cites this probe. Do not call `sync_with_stdio`.
 
-**Injection.** When the flag is on, `run` and `start` only (not `attach`, not a later `fork`/`exec` of a grandchild):
+**Injection (as shipped).** When the flag is on, `run` and `start` only (not `attach`, not a later `fork`/`exec` of a grandchild):
 
-1. Plant one **internal** one-shot breakpoint at `main`. Prefer attaching the action to the temporary main breakpoint `start` already plants, so a Step Into / break-on-entry session does not stop at `main` twice.
-2. When that stop hits, before returning control to Code::Blocks, evaluate `setvbuf` in the inferior (`call_function_by_hand` or an equivalent silent call — not a user-visible extra stop).
-3. If the user asked for `run`: delete the internal breakpoint and resume. The user must not see a stop at `main` that Code::Blocks did not request.
-4. If the user asked for `start` (break on entry, Step Into): leave the inferior stopped at `main`, with `stdout` already unbuffered, so the next step's `cout` is visible.
-5. If `main` cannot be found (`-nostartfiles`, assembly): skip, one log line, run as usual.
-6. If `setvbuf` returns non-zero: one log line, do **not** stop the session, do **not** retry every step. POSIX allows `setvbuf` only before any other operation on the stream. A print from a static constructor has already happened; `main`'s later `cout` then stays line-buffered. Ordinary prints from `main` have not happened yet and are the case this milestone must pass.
+1. Plant / reuse a temporary breakpoint at `main` (`start`'s existing tbreak when break-on-entry; otherwise a silent run-only tbreak).
+2. On that stop, apply Darwin `setvbuf(stdout, NULL, _IONBF, 0)` semantics to the `FILE` behind `__stdoutp` (probe: `_IONBF==2`, `__stdoutp` is `FILE*`). **Note:** `call_function_by_hand` is unavailable on AArch64 Darwin (PC store rejected); the shipped path writes the known Darwin libc `_IONBF` FILE state instead.
+3. If the user asked for `run`: continue after unbuffering so the stop is not visible.
+4. If the user asked for `start` (break on entry, Step Into): leave stopped at `main` once, stdout already unbuffered.
+5. If `main` cannot be found: one warning, run as usual.
 
-`stderr` and a raw `write()` already bypass this buffer. Do not poke the private `FILE` layout.
+`stderr` and a raw `write()` already bypass this buffer.
 
 ##### Acceptance (manual, Mac)
 
@@ -1509,4 +1508,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **In progress** — **M1** filters partially in tree; **M2 DONE** (Run-side PREPARE→COMMIT); **M3 DONE** (Debug/Step Into / cancel-retry **U1–U4**, **V2**/**V3**, Run to Cursor / Stop); **M4 DONE** (tab Rename, Overwrite/Cancel); **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |
+| **v2.2** | **In progress** — **M1** filters partially in tree; **M2 DONE** (Run-side PREPARE→COMMIT); **M3 DONE** (Debug/Step Into / cancel-retry **U1–U4**, **V2**/**V3**, Run to Cursor / Stop); **M4 DONE** (tab Rename); **M5 DONE** (companion GDB unbuffers inferior `stdout` on macOS Debug). |

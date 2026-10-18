@@ -175,6 +175,19 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
     XRCCTRL(*panel, "chkTooltipEval",    wxCheckBox)->SetValue(GetFlag(EvalExpression));
     XRCCTRL(*panel, "chkAddForeignDirs", wxCheckBox)->SetValue(GetFlag(AddOtherProjectDirs));
     XRCCTRL(*panel, "chkDoNotRun",       wxCheckBox)->SetValue(GetFlag(DoNotRun));
+#ifdef __WXMAC__
+    {
+        wxCheckBox *unbuf = XRCCTRL(*panel, "chkUnbufferStdio", wxCheckBox);
+        if (unbuf)
+            unbuf->SetValue(GetFlag(UnbufferStdio));
+    }
+#else
+    {
+        wxWindow *unbuf = panel->FindWindow(XRCID("chkUnbufferStdio"));
+        if (unbuf)
+            unbuf->Show(false);
+    }
+#endif
     XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->SetSelection(m_config.ReadInt("disassembly_flavor", 0));
     XRCCTRL(*panel, "txtInstructionSet", wxTextCtrl)->ChangeValue(m_config.Read("instruction_set", wxEmptyString));
     return panel;
@@ -193,6 +206,14 @@ bool DebuggerConfiguration::SaveChanges(wxPanel *panel)
     m_config.Write("eval_tooltip",          XRCCTRL(*panel, "chkTooltipEval",    wxCheckBox)->GetValue());
     m_config.Write("add_other_search_dirs", XRCCTRL(*panel, "chkAddForeignDirs", wxCheckBox)->GetValue());
     m_config.Write("do_not_run",            XRCCTRL(*panel, "chkDoNotRun",       wxCheckBox)->GetValue());
+#ifdef __WXMAC__
+    {
+        wxWindow *unbuf = panel->FindWindow(XRCID("chkUnbufferStdio"));
+        if (unbuf)
+            m_config.Write("unbuffer_stdio",
+                           XRCCTRL(*panel, "chkUnbufferStdio", wxCheckBox)->GetValue());
+    }
+#endif
     m_config.Write("disassembly_flavor",    XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->GetSelection());
     m_config.Write("instruction_set",       XRCCTRL(*panel, "txtInstructionSet", wxTextCtrl)->GetValue());
 
@@ -217,6 +238,9 @@ bool DebuggerConfiguration::GetFlag(Flags flag)
             return m_config.ReadBool("add_other_search_dirs", false);
         case DoNotRun:
             return m_config.ReadBool("do_not_run", false);
+        case UnbufferStdio:
+            // macOS Debug default on; companion GDB probes before set.
+            return m_config.ReadBool("unbuffer_stdio", true);
         default:
             return false;
     }
@@ -245,6 +269,9 @@ void DebuggerConfiguration::SetFlag(Flags flag, bool value)
             break;
         case DoNotRun:
             m_config.Write("do_not_run", value);
+            break;
+        case UnbufferStdio:
+            m_config.Write("unbuffer_stdio", value);
             break;
         default:
             ;

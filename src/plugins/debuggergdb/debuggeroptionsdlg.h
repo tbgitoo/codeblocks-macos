@@ -27,7 +27,8 @@ class DebuggerConfiguration : public cbDebuggerConfiguration
             CatchExceptions,
             EvalExpression,
             AddOtherProjectDirs,
-            DoNotRun
+            DoNotRun,
+            UnbufferStdio   // macOS Debug: companion GDB unbuffers inferior stdout
         };
 
         bool GetFlag(Flags flag);

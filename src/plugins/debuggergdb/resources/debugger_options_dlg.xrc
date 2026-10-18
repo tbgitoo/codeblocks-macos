@@ -134,6 +134,13 @@
 						<flag>wxALL</flag>
 					</object>
 					<object class="sizeritem">
+						<object class="wxCheckBox" name="chkUnbufferStdio">
+							<label>Show program output immediately while debugging (macOS)</label>
+							<tooltip>Asks the companion Darwin GDB to unbuffer the debuggee&apos;s stdout at main so cout/printf without a newline appear while stepping. Requires the bundled GDB. Does not change your source. Run (non-Debug) is unchanged.</tooltip>
+						</object>
+						<flag>wxALIGN_LEFT</flag>
+					</object>
+					<object class="sizeritem">
 						<object class="wxCheckBox" name="chkTooltipEval">
 							<label>Evaluate expression under cursor</label>
 							<tooltip>While debugging, leaving the mouse over a variable (or the selection) evaluates it in a tooltip</tooltip>
