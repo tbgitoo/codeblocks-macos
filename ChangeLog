@@ -1,6 +1,6 @@
 2026-10-18 17:50  tbgitoo
 
-v2.2 (M2/M3 in tree): unofficial Apple Silicon macOS port
+v2.2 (M2/M3/M4 in tree): unofficial Apple Silicon macOS port
 	  * Active-source ownership for Build / Build and Run / Run /
 	    Debug / Step Into (not mere project existence)
 	  * PREPARE → COMMIT: cancel Save As ≡ never requested; no
@@ -12,8 +12,11 @@ v2.2 (M2/M3 in tree): unofficial Apple Silicon macOS port
 	    temporary-breakpoint lifecycle / Run to Cursor polish
 	  * Stop usable for standalone Debug when focus leaves the
 	    editor; Save As C / C++ filter split (M1) partially in tree
-	  * README.macos.md + plans/versioning_plan.md (M2/M3 DONE;
-	    M4 tab Rename and M5 unbuffered stdout still Planned)
+	  * Editor-tab Rename… (same-dir true rename; Overwrite/Cancel
+	    if target exists; project-owned via ProjectFile::Rename;
+	    disabled for never-saved / auto-generated)
+	  * README.macos.md + plans/versioning_plan.md (M2/M3/M4 DONE;
+	    M5 unbuffered stdout still Planned)
 
 2026-10-16 23:10  tbgitoo
 
