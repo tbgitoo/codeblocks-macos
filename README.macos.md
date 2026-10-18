@@ -63,6 +63,8 @@ Starting with v2.1, you can **Debug** or cold-start **Step Into** a lone C or C+
 
 With no project open, open a saved `.c` / `.cpp` (or similar) source file, set breakpoints as usual, and choose **Debug** / **Continue** or **Step Into**. Code::Blocks always recompiles that file first with the default compiler’s debug-information option enabled (and stripping disabled), then starts the debugger on the freshly linked executable next to the source.
 
+From **v2.2**, Build / Build and Run / Debug follow **active-source ownership**, i.e. whatever is actively open is debugged or run, be it a project or standalone file.
+
 **Deliberate limitations** (create a project when you need more):
 
 - One source file only; default compiler settings; no program arguments; working directory is the source file’s directory.

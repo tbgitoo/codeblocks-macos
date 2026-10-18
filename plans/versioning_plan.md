@@ -818,8 +818,8 @@ User-facing note and limitations: `README.macos.md` → **Debugging a single sou
 
 ## v2.2 — Standalone New → Save as C|C++ → Build / Run / Debug
 
-**Status: Planned.** Do not implement until this section is accepted.  
-**Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that today key off “any active project”).
+**Status: In progress** — **M2** and **M3** DONE (tree); **M1** filters partially in tree; **M4** / **M5** still Planned.  
+**Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that formerly keyed off “any active project”).
 
 **Goal:** Make the standalone-source workflow coherent:
 
@@ -829,7 +829,7 @@ New → choose/save as C or C++ → edit → Build / Build and Run / Debug
 
 while project-owned sources keep the existing project workflow. A project may be open without forcing every Build/Run/Debug onto that project.
 
-Two defects to fix: (1) Build / Build and Run (and today also Debug gates) can follow **project existence** or a **stale Untitled path** instead of the active source; (2) Save As exposes a combined **C/C++ files** filter whose first mask is `*.c`, without a first-class C++ choice.
+Defects addressed by this version: (1) **M2/M3 DONE** — Build / Build and Run / Debug must follow **active-source ownership** and post-save identity, not mere project existence or a stale Untitled path; (2) **M1 in progress** — Save As should expose separate **C files** / **C++ files** (not a combined filter whose first mask is `*.c`).
 
 ### Product decisions (locked)
 
@@ -843,7 +843,7 @@ Two defects to fix: (1) Build / Build and Run (and today also Debug gates) can f
 | Legacy filter preference | Stored `"C/C++ files"` → migrate to **`"C files"`** (preserves legacy `.c`-first default). |
 | Fresh / empty config default | **Independent** of migration: initial filter **`"C++ files"`** (`.cpp` first). Not a reason to force all new files to C. |
 | v2.1 Debug | Preserve `DebuggeeDescription` / DebuggerGDB hand-off; update **candidate / branch gates** to the ownership rule. |
-| **Operation lifecycle** | **PREPARE → COMMIT**; **Transaction** + **Launch Identity** (+ Retry) below. REQUIRED — M2/M3 cannot be DONE on symptom-level fixes alone. |
+| **Operation lifecycle** | **PREPARE → COMMIT**; **Transaction** + **Launch Identity** (+ Retry) below. REQUIRED for M2/M3 acceptance (not symptom-level fixes alone). **M2** / **M3** are DONE in tree after the invariant tests below. |
 | Scope | Minimal; reuse `cbEditor::Save` / Save As; no beginner mode, fake projects, parallel build system, or new transaction framework unless existing CB code cannot satisfy the invariants. |
 
 Notes on operation lifecycle:
@@ -1013,9 +1013,9 @@ If an operation COMMITs and then starts an asynchronous compiler operation: **ex
 
 A continuation must retain / identify the **prepared** operation. It must never silently resolve later against whichever project / editor / executable happens to be current. Prefer existing Code::Blocks mechanisms; do not require a new framework or state machine if they can satisfy this.
 
-##### Known violation today (lone-file)
+##### Former violation (lone-file) — **resolved for M2 / M3 (observational)**
 
-Menu sets `GetIsRunning` / clears log **before** Save As (mutate-before-PREPARE). Cancel can leave the user observationally in a prior debuggee (Continue of a live session, async finish, stale artifact, or bootstrap breakpoint). Fix under M2 (Run side) / M3 (Debug side). **Do not** mark those milestones DONE until Transaction + Launch Identity + retry tests pass.
+Historically the Debug menu reserved `GetIsRunning` / cleared the log **before** Save As (mutate-before-PREPARE), and cancel could appear to Continue a prior inferior or leave bootstrap state. **M2** (Run / Build and Run) and **M3** (Debug / Step Into / Run to Cursor) now satisfy the Transaction + Launch Identity + Retry invariants in practice: cancel Save As ≡ never requested (**F**, **P**, **U1–U4**, **E′**); no leftover run/debug continuation; no phantom bootstrap BP; Stop remains usable for a live standalone session when focus leaves the editor. Menu order may still set a running slot briefly before `Debug()` returns false on cancel — that is acceptable only while the **observable** outcome stays ≡ never requested (verified). Do not reopen this as an open bug without a failing U/E′ case.
 
 #### Routing rule (REQUIRED)
 
@@ -1198,7 +1198,7 @@ PrepareActiveSourceOperation(pathOut, routeOut) -> bool
 | `DebuggerMenuHandler::OnStart` / `OnStep` | No running-slot reservation, log clear, or session mutate until PREPARE succeeds. Cold Start must not `Continue` a prior inferior when the user intended a new prepare. |
 | Step Into / bootstrap BP | An automatically created Step Into / bootstrap breakpoint is **committed debugger-session state**. It must **not** exist before PREPARE succeeds. Untitled → Step Into → Save As → Cancel → **zero** automatic BP objects and **zero** automatic markers. Prevent premature creation — do not “create then delete on cancel.” |
 | `SaveActiveSourceForStandaloneDebug` | Keep save → `GetFilename()` invariant; may share prepare helper (**optional** dedup). Cancel → false all the way up (pre-COMMIT). |
-| Empty project / no sources | Disable Debug/Step UI; refuse launch (Launch Identity). Same gate for Run. |
+| Empty project / no sources | Gate the **project** route only (refuse leftover project exe). Valid active standalone source remains eligible (V2 / V3). Same for Run. |
 | Build-before-debug continuation | Same async ownership as Build-and-Run: prepared operation retained; consume exactly once. |
 | `DebuggeeDescription` | **Unchanged** type / MakeStandalone; identity only from successful current post-save path. |
 
@@ -1210,8 +1210,8 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 |---|---------|------------------|---------|----------|---------------|------|------|
 | 1 | `editorcolourset.cpp` (± filefilters) | `SetFileMasks` | One `"C/C++ files"` | **C** / **C++** / **header** filters; drop combined | Filter birthplace; one lexer | None | Med |
 | 2 | `cbeditor.cpp` | `SaveAs` | Default / remember `"C/C++ files"` | Fresh default **`C++ files`**; migrate **`C/C++ files` → `C files`**; persist new name | Only preference I/O | None | Low–med |
-| 3 | `compilergcc.cpp` (+ small helper) | `DoBuild`, `Run`, `CompileFileWithoutProject` | Project-if-exists; stale Untitled path | PREPARE → COMMIT; ownership route; post-save identity; Transaction + Launch Identity on Run | Bug locus | Align Build with Debug | Med |
-| 4 | `debuggeedescription.cpp`, `debuggergdb.cpp`, `debuggermenu.cpp` | Candidate / `Debug` / OnStart / OnStep / UpdateUI | No-project-only standalone; mutate-before-save | Ownership + PREPARE→COMMIT; no BP/session before COMMIT; same DebuggeeDescription | Gate / ordering only | Soft touch | Med |
+| 3 | `compilergcc.cpp` (+ small helper) | `DoBuild`, `Run`, `CompileFileWithoutProject` | **M2 DONE:** PREPARE→COMMIT; ownership; `m_RunAfterCompile` identity | (complete) | Bug locus | Align Build with Debug | — |
+| 4 | `debuggeedescription.cpp`, `debuggergdb.cpp`, `debuggermenu.cpp` | Candidate / `Debug` / OnStart / OnStep / UpdateUI | **M3 DONE:** ownership gates; cancel/retry (**U1–U4**); Stop with non-editor focus; same DebuggeeDescription | (complete) | Gate / ordering only | Soft touch | — |
 | 5 | README / ChangeLog / this plan | docs | — | C\|C++ Save, migration, ownership routing | Release | Mentions Debug | Low |
 
 **Abstain:** redesigning `DebuggeeDescription`; new debugger architecture; breakpoint subsystem redesign; fake projects; lexer split; global `.c`→`.cpp`; parallel build system; new generic transaction framework unless existing CB mechanisms cannot satisfy the invariants.
@@ -1277,8 +1277,8 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | # | Status | Work |
 |---|--------|------|
 | **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
-| **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. Manual matrix C–H, F, L, **M–P**, **V1** still recommended before release. |
-| **M3** | Planned | Debug-side same invariants (separate milestone). See **M3 completion** below. |
+| **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. |
+| **M3** | **DONE** (tree) | Debug-side same invariants. See **M3 completion** below. Manual **U1–U4**, **E** / **E′**, **Q**, **V2**, **V3** passed; Run to Cursor cancel + Stop with focus off editor also OK. |
 | **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
 | **M5** | Planned | **Unbuffered inferior stdout** via companion GDB. Independent of M1–M4; macOS Debug only. See below. |
 
@@ -1292,21 +1292,21 @@ Implementation (CompilerGCC) now satisfies the Run-side criteria:
 - empty project cannot Run leftover binary (**V1**); UpdateUI allows standalone editor when project has no sources
 - repeated cancel leaves no armed continuation (Retry Invariant for Run / Build and Run)
 
-**Not** in M2: Debug / Step Into / bootstrap BP / Continue (**M3**).
+Debug / Step Into / bootstrap BP / Continue were **M3** (now DONE — see below).
 
-#### M3 completion (Debug-side — keep separate)
+#### M3 completion (Debug-side — **DONE** in tree)
 
-M3 applies the same PREPARE / COMMIT invariants to:
+M3 applied the same PREPARE / COMMIT invariants to Debug, Step Into, debugger menu start, bootstrap breakpoints, build-before-debug continuation, prior-inferior Continue, and session reservation — without redesigning `DebuggeeDescription`.
 
-- Debug
-- Step Into
-- debugger menu start handling
-- automatic / bootstrap breakpoints (committed session state — must not exist before PREPARE succeeds)
-- build-before-debug continuation (exactly-once ownership of the prepared operation)
-- previous inferior / Continue behaviour
-- debugger session reservation
+**Accepted after manual matrix (macOS):**
 
-Do **not** mark M3 DONE based merely on successful normal standalone Debug or on **V3** passing. M3 requires clean cancellation and retry (**U1–U4**, **V2**, **V3**, E, **Q**) + docs / ChangeLog. Preserve `DebuggeeDescription`.
+- **U1–U4** — cancel / retry Step Into (no project and with project open); no Continue of prior inferior; no phantom BP; post-cancel Save As still works (**U3**)
+- **E** / **E′** — Untitled → Debug Save As OK / Cancel ≡ never requested
+- **Q** — project open + standalone `.cpp` → Debug that file only
+- **V2** / **V3** — empty project: refuse leftover exe without standalone; with standalone, Debug/Step use that file
+- **Run to Cursor** cancel on unsaved buffer and **Stop** while focus is on another pane (former cursor) — OK
+
+Docs: this plan + `README.macos.md` + ChangeLog **v2.2** note.
 
 #### Milestone 4 — Editor-tab Rename (planned complement)
 
@@ -1469,7 +1469,7 @@ Use the bundled companion GDB (`CodeBlocks.app` `…/debugger/bin/gdb`, or `CB_G
 5. Preserve v2.1 standalone Debug (**gates** follow the same ownership rule; no architecture rewrite).  
 6. **Operation Transaction Invariant** + **Launch Identity Invariant** (PREPARE → COMMIT; pre-COMMIT cancel ≡ never requested; no identity not established for the current request).  
 7. Retry Invariant; pre-COMMIT vs post-COMMIT outcomes; async continuation exactly-once ownership.  
-8. Manual matrix **A–T** plus invariant tests **U1–U4**, **V1–V2**.
+8. Manual matrix **A–T** plus invariant tests **U1–U4**, **V1–V3** (**M2** / **M3** cover Run and Debug sides; **M1** still owns filter cases A/B/K/R/S/T).
 
 **OPTIONAL / complement**
 
@@ -1508,4 +1508,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **In progress** — M1 filters partially in tree; **M2 DONE** (tree: Run-side PREPARE→COMMIT + Transaction/Launch Identity); **M3** Planned (Debug/Step Into / bootstrap BP / Continue); **M4** complement: tab Rename; **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |
+| **v2.2** | **In progress** — **M1** filters partially in tree; **M2 DONE** (Run-side PREPARE→COMMIT); **M3 DONE** (Debug/Step Into / cancel-retry **U1–U4**, **V2**/**V3**, Run to Cursor / Stop); **M4** Planned (tab Rename); **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |

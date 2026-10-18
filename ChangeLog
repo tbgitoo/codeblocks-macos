@@ -1,3 +1,20 @@
+2026-10-18 17:50  tbgitoo
+
+v2.2 (M2/M3 in tree): unofficial Apple Silicon macOS port
+	  * Active-source ownership for Build / Build and Run / Run /
+	    Debug / Step Into (not mere project existence)
+	  * PREPARE → COMMIT: cancel Save As ≡ never requested; no
+	    armed run/debug continuation; no phantom bootstrap BP;
+	    no Continue of a prior inferior (U1–U4, E′, V2/V3)
+	  * Empty project: refuse leftover project exe; standalone
+	    editor remains eligible (V3)
+	  * Run-after-compile retains prepared standalone path;
+	    temporary-breakpoint lifecycle / Run to Cursor polish
+	  * Stop usable for standalone Debug when focus leaves the
+	    editor; Save As C / C++ filter split (M1) partially in tree
+	  * README.macos.md + plans/versioning_plan.md (M2/M3 DONE;
+	    M4 tab Rename and M5 unbuffered stdout still Planned)
+
 2026-10-16 23:10  tbgitoo
 
 v2.1: unofficial Apple Silicon macOS port
