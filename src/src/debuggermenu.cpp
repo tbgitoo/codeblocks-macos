@@ -471,7 +471,12 @@ void DebuggerMenuHandler::OnUpdateUI(wxUpdateUIEvent& event)
             // candidate remains eligible (Launch Identity / V3).
             cbProject* prj = Manager::Get()->GetProjectManager()->GetActiveProject();
             const bool projectBusy = prj && prj->GetCurrentlyCompilingTarget();
-            if (DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
+            // A session already running must stay controllable after focus leaves
+            // the source editor (watches, logs). Starting a session still requires
+            // a standalone candidate or a project that has sources.
+            if (m_activeDebugger->IsRunning())
+                en = !projectBusy;
+            else if (DebuggeeDescriptionUtil::IsStandaloneDebugCandidate())
                 en = !projectBusy;
             else if (prj)
                 en = !projectBusy
@@ -852,8 +857,9 @@ void DebuggerToolbarHandler::OnUpdateUI(wxUpdateUIEvent& event)
                     enable = true;
                 else
                 {
+                    // No project means a standalone debuggee. Stop must still work.
                     cbProject* project = projectManager->GetActiveProject();
-                    enable = (project && !project->GetCurrentlyCompilingTarget());
+                    enable = !project || !project->GetCurrentlyCompilingTarget();
                 }
             }
         }
