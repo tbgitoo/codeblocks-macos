@@ -1562,6 +1562,11 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
     else
     {
         process.pProcess = new PipedProcess(&(process.pProcess), this, idGCCProcess, pipe, dir, procIndex);
+#ifdef __WXMSW__
+        // Let cb_console_runner bring its console in front of the IDE.
+        if (cmd->isRun)
+            ::AllowSetForegroundWindow(ASFW_ANY);
+#endif
         process.PID = process.pProcess->Launch(cmd->command, flags, poll_process_timer);
         if (!process.PID)
         {
@@ -1962,7 +1967,12 @@ void CompilerGCC::PrintBanner(BuildAction action, cbProject* prj, ProjectBuildTa
     }
 
     wxString compilerName(_("unknown"));
-    Compiler* compiler = CompilerFactory::GetCompiler(GetCurrentCompilerID(target));
+    // No project/target: the single-file path uses the default compiler.
+    // GetCurrentCompilerID() is empty in that case, which printed "unknown".
+    wxString compilerId = GetCurrentCompilerID(target);
+    if (compilerId.empty())
+        compilerId = CompilerFactory::GetDefaultCompilerID();
+    Compiler* compiler = CompilerFactory::GetCompiler(compilerId);
     if (compiler)
         compilerName = compiler->GetName();
 
@@ -2050,7 +2060,8 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
             {
                 // COMMIT only after this Run already prepared `filename` as identity.
                 ArmRunAfterCompile(asrStandalone, filename);
-                if (CompileFile(filename) < 0)
+                // -2/-3 while a compile is running means the link is deferred, not refused.
+                if (CompileFile(filename) < 0 && !IsRunning())
                     ClearRunAfterCompileContinuation();
                 return -1;
             }
@@ -2062,6 +2073,7 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
     }
 
     Manager::Get()->GetMacrosManager()->ReplaceEnvVars(m_CdRun);
+    PrintBanner(baRun, nullptr, nullptr);
     Manager::Get()->GetLogManager()->Log(wxString::Format(_("Executing: '%s' (in '%s')"), command, m_CdRun), m_PageIndex);
     CompilerCommand* runCmd = new CompilerCommand(command, wxEmptyString, nullptr, nullptr, true);
     runCmd->useProgramConsole = useProgramConsole;
@@ -3137,7 +3149,8 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
     if (!m_IsWorkspaceOperation && route == asrStandalone)
     {
         const int r = CompileFile(standalonePath);
-        if (r < 0)
+        // -2/-3 with a live queue means the compile started and the link is waiting.
+        if (r < 0 && !IsRunning())
             ClearRunAfterCompileContinuation();
         return r;
     }
@@ -3627,12 +3640,14 @@ void CompilerGCC::OnCompileAndRun(cb_unused wxCommandEvent& event)
     else
         result = Build(static_cast<ProjectBuildTarget*>(nullptr));
 
-    // If the compiler never accepted the job, drop the continuation (pre-COMMIT outcome).
-    if (result < 0)
+    // DoRunQueue returns -2 when this job already holds the process slot, and -3
+    // when the link step is waiting for that compile to finish. Both mean the
+    // build started: the debugger keeps this queue, and OnJobEnd links then runs.
+    // Clearing it here deleted the link and the Execute step (log ended at
+    // "Build finished"). Drop the continuation only when nothing was accepted.
+    if (result < 0 && !IsRunning())
     {
         ClearRunAfterCompileContinuation();
-        // DoRunQueue can fail after commands were queued (e.g. no free process slot).
-        // Leave no half-armed queue that would mark IsRunning and disable the UI.
         if (result == -2 || result == -3)
             m_CommandQueue.Clear();
     }
@@ -4547,10 +4562,14 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
 
         ClearRunAfterCompileContinuation();
 
-        // no matter what happened with the build, return the focus to the active editor
-        cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinEditor(Manager::Get()->GetEditorManager()->GetActiveEditor());
-        if (ed && ed->GetControl())
-            ed->GetControl()->SetFocus();
+        // A running console program should keep the foreground. Focusing the
+        // editor here hides that window behind the IDE.
+        if (!IsProcessRunning())
+        {
+            cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinEditor(Manager::Get()->GetEditorManager()->GetActiveEditor());
+            if (ed && ed->GetControl())
+                ed->GetControl()->SetFocus();
+        }
     }
 }
 
