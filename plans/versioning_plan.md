@@ -818,7 +818,7 @@ User-facing note and limitations: `README.macos.md` → **Debugging a single sou
 
 ## v2.2 — Standalone New → Save as C|C++ → Build / Run / Debug
 
-**Status: In progress** — **M2** and **M3** DONE (tree); **M1** filters partially in tree; **M4** / **M5** still Planned.  
+**Status: In progress** — **M2**, **M3**, and **M4** DONE (tree); **M1** filters partially in tree; **M5** still Planned.  
 **Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that formerly keyed off “any active project”).
 
 **Goal:** Make the standalone-source workflow coherent:
@@ -1279,7 +1279,7 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **M1** | In progress (tree) | Split C / C++ / header filters; drop combined name; legacy → **C files**; fresh default **C++ files**; tests A/B/K/R/S/T |
 | **M2** | **DONE** (tree) | Run-side PREPARE→COMMIT + ownership. See **M2 completion** below. |
 | **M3** | **DONE** (tree) | Debug-side same invariants. See **M3 completion** below. Manual **U1–U4**, **E** / **E′**, **Q**, **V2**, **V3** passed; Run to Cursor cancel + Stop with focus off editor also OK. |
-| **M4** | Planned | **Editor-tab Rename** (complement). See below. Order: after M1–M3 core workflow; does not block M1–M3. |
+| **M4** | **DONE** (tree) | **Editor-tab Rename** (complement). See below. |
 | **M5** | Planned | **Unbuffered inferior stdout** via companion GDB. Independent of M1–M4; macOS Debug only. See below. |
 
 #### M2 completion (Run-side — **DONE** in tree)
@@ -1308,21 +1308,22 @@ M3 applied the same PREPARE / COMMIT invariants to Debug, Step Into, debugger me
 
 Docs: this plan + `README.macos.md` + ChangeLog **v2.2** note.
 
-#### Milestone 4 — Editor-tab Rename (planned complement)
+#### Milestone 4 — Editor-tab Rename (**DONE** in tree)
 
-Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks has no inline tab-title edit. Project tree already has **Rename file…** (`ProjectManagerUI::OnRenameFile`); the editor-tab context menu (`EditorManager` tab popup: Close / Save / Open containing folder / …) has no Rename.
+Standalone Save As leaves the old path on disk (copy, not rename). Code::Blocks has no inline tab-title edit. Project tree already has **Rename file…** (`ProjectManagerUI::OnRenameFile`); the editor-tab context menu now has **Rename…** as well.
 
-**Goal:** Add **Rename…** to the editor-tab context menu so a wrongly saved extension (e.g. `.c` → `.cpp`) can be fixed without Finder + reopen and without leaving a duplicate from Save As.
+**Goal (met):** Add **Rename…** to the editor-tab context menu so a wrongly saved extension (e.g. `.c` → `.cpp`) can be fixed without Finder + reopen and without leaving a duplicate from Save As.
 
-| Topic | Plan |
-|-------|------|
+| Topic | Implementation |
+|-------|----------------|
 | UI | Tab right-click → **Rename…** (near Open containing folder / Copy full path). |
-| Standalone | Prompt for new name (same directory); `wxRenameFile` on disk; update open `cbEditor` path / tab title / language (`SetLanguage(HL_AUTO)`); **no** second copy. Never-saved (`!IsOK`) → disable or fall through to Save As. |
-| Project-owned | Prefer reusing / aligning with existing project-tree rename (`ProjectFile::Rename` + tree rebuild), or delegate to that path — do not invent a second ownership model. |
-| Prior art | `ProjectManagerUI::OnRenameFile`; tab menu built in `EditorManager` (~`OnNotebookContextMenu` / tab popup). |
-| Non-goals for M4 | Inline editable tab caption; mass rename; moving across directories (unless trivial same-dir rename only). |
+| Standalone | Prompt for new name (same directory); `wxRenameFile` on disk; update open `cbEditor` path / tab title / language (`SetLanguage(HL_AUTO)`); **no** second copy. Never-saved (`!IsOK`) → menu disabled (use Save As). |
+| Overwrite | If the target name already exists (and is not a case-only rename), **Overwrite** / **Cancel**; Cancel aborts with no disk change. Case-only renames allowed on case-insensitive volumes. |
+| Project-owned | Same disk rename, then `ProjectFile::Rename` + project-tree rebuild; auto-generated files remain disabled. Editor stays open (unlike the tree Rename path, which closes first). |
+| Prior art | `ProjectManagerUI::OnRenameFile`; tab menu in `EditorManager::OnPageContextMenu`. |
+| Non-goals (unchanged) | Inline editable tab caption; mass rename; cross-directory moves. |
 
-**Acceptance (sketch):** Rename standalone `.c` → `.cpp` via tab menu → one file on disk, tab and highlighting updated, Build/Run/Debug still see the new path; project-owned rename still consistent with project tree.
+**Acceptance:** Rename standalone `.c` → `.cpp` via tab menu → one file on disk, tab and highlighting updated, Build/Run/Debug still see the new path; project-owned rename stays consistent with the project tree.
 
 #### Milestone 5 — Unbuffered inferior stdout (companion GDB)
 
@@ -1496,7 +1497,7 @@ Use the bundled companion GDB (`CodeBlocks.app` `…/debugger/bin/gdb`, or `CB_G
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. Optional **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered.
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered.
 ---
 
 ## Status
@@ -1508,4 +1509,4 @@ New files Save As **C** or **C++** with the right extension. Build / Build and R
 | **v1.2** | **Released** — through `80d8e89`. Bundled GDB from [binutils-gdb](https://github.com/tbgitoo/binutils-gdb) **`5564fbe`**; macOS default; debugger entitlement; `code_signing.md`. |
 | **v2.0** | **In progress** — M1–M5 **DONE** (M3/M4 committed; M5 focus policies + docs in tree); Program Console default; Terminal.app optional; Win/Linux unchanged. |
 | **v2.1** | **DONE** (tree) — M1–M4 complete: standalone Debug / Step Into (DebuggerGDB); docs in README.macos.md + ChangeLog. Tag/release when ready. |
-| **v2.2** | **In progress** — **M1** filters partially in tree; **M2 DONE** (Run-side PREPARE→COMMIT); **M3 DONE** (Debug/Step Into / cancel-retry **U1–U4**, **V2**/**V3**, Run to Cursor / Stop); **M4** Planned (tab Rename); **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |
+| **v2.2** | **In progress** — **M1** filters partially in tree; **M2 DONE** (Run-side PREPARE→COMMIT); **M3 DONE** (Debug/Step Into / cancel-retry **U1–U4**, **V2**/**V3**, Run to Cursor / Stop); **M4 DONE** (tab Rename, Overwrite/Cancel); **M5** Planned (companion GDB unbuffers inferior `stdout` on macOS Debug). |

@@ -65,6 +65,8 @@ With no project open, open a saved `.c` / `.cpp` (or similar) source file, set b
 
 From **v2.2**, Build / Build and Run / Debug follow **active-source ownership**, i.e. whatever is actively open is debugged or run, be it a project or standalone file.
 
+Wrong extension after Save As? Right-click the editor tab → **Rename…** to rename the file in place (same directory, no duplicate). If the new name already exists you get **Overwrite** or **Cancel**. Untitled / never-saved tabs keep Rename disabled — use Save As first. Project-owned files update the project tree the same way as **Rename file…** in the project pane.
+
 **Deliberate limitations** (create a project when you need more):
 
 - One source file only; default compiler settings; no program arguments; working directory is the source file’s directory.
