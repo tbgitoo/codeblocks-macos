@@ -656,6 +656,9 @@ class PLUGIN_EXPORT cbDebuggerPlugin: public cbPlugin
         wxString GetGUIName() const { return m_guiName; }
         wxString GetSettingsName() const { return m_settingsName; }
 
+        /** True while a Debug/Step/Run-to-cursor rebuild is in flight before GDB starts. */
+        bool WaitingCompilerToFinish() const { return m_WaitingCompilerToFinish; }
+
     protected:
         void SwitchToDebuggingLayout();
         void SwitchToPreviousLayout();
@@ -665,7 +668,6 @@ class PLUGIN_EXPORT cbDebuggerPlugin: public cbPlugin
         /** Always-rebuild standalone source for Debug. Compile failure is a hard abort
           * (no "Debug anyway?"). Does not launch the debugger by itself. */
         bool EnsureStandaloneRebuildForDebug(StartType startType, const wxString& sourcePath);
-        bool WaitingCompilerToFinish() const { return m_WaitingCompilerToFinish; }
         bool IsStandaloneDebugBuild() const { return m_StandaloneDebugBuild; }
 
         int RunNixConsole(wxString& consoleTty);

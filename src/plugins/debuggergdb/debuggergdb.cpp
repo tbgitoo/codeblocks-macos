@@ -1844,15 +1844,32 @@ bool DebuggerGDB::RunToCursor(const wxString& filename, int line, const wxString
         Continue();
         return true;
     }
-    else
+
+    // Cold start: arm the one-shot BP only after the buffer has a real filesystem
+    // path. Otherwise an unsaved Untitled* location is recorded, the red marker
+    // appears while Save As is still open, and after save GDB gets a stale path
+    // so the first Run to Cursor never stops (later rounds work once saved).
+    wxString bpFile = filename;
+    if (m_PidToAttach == 0)
     {
-        if (!GetActiveConfigEx().GetFlag(DebuggerConfiguration::DoNotRun))
+        cbEditor* ed = Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor();
+        if (ed && !ed->IsOK())
         {
-            m_State.AddBreakpoint(filename, line, true, line_text);
-            Manager::Get()->GetDebuggerManager()->GetBreakpointDialog()->Reload();
+            wxString sourcePath;
+            if (!DebuggeeDescriptionUtil::SaveActiveSourceForStandaloneDebug(sourcePath))
+                return false;
+            bpFile = sourcePath;
         }
-        return Debug(false);
+        else if (ed && !ed->GetFilename().empty())
+            bpFile = ed->GetFilename();
     }
+
+    if (!GetActiveConfigEx().GetFlag(DebuggerConfiguration::DoNotRun))
+    {
+        m_State.AddBreakpoint(bpFile, line, true, line_text);
+        Manager::Get()->GetDebuggerManager()->GetBreakpointDialog()->Reload();
+    }
+    return Debug(false);
 }
 
 void DebuggerGDB::SetNextStatement(const wxString& filename, int line)
