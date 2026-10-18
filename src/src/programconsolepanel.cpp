@@ -338,11 +338,11 @@ void ProgramConsolePanel::OnChar(wxKeyEvent& event)
     event.Skip();
 }
 
+#if defined(__WXMAC__)
 namespace ProgramConsole
 {
 void RegisterPanel(wxWindow* infoPaneParent)
 {
-#if defined(__WXMAC__)
     if (!platform::macosx || !infoPaneParent)
         return;
     InfoPane* pane = dynamic_cast<InfoPane*>(infoPaneParent);
@@ -350,8 +350,6 @@ void RegisterPanel(wxWindow* infoPaneParent)
         return;
     auto* panel = new ProgramConsolePanel(pane);
     pane->AddNonLogger(panel, _("Program Console"));
-#else
-    wxUnusedVar(infoPaneParent);
-#endif
 }
 } // namespace ProgramConsole
+#endif

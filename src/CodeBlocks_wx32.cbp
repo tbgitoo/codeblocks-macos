@@ -782,6 +782,12 @@
 		<Unit filename="include/debuggermanager.h">
 			<Option target="sdk" />
 		</Unit>
+		<Unit filename="include/debuggeedescription.h">
+			<Option target="sdk" />
+		</Unit>
+		<Unit filename="include/programconsole.h">
+			<Option target="sdk" />
+		</Unit>
 		<Unit filename="include/editarrayfiledlg.h">
 			<Option target="sdk" />
 		</Unit>
@@ -2409,6 +2415,12 @@
 			<Option target="sdk" />
 		</Unit>
 		<Unit filename="sdk/debuggermanager.cpp">
+			<Option target="sdk" />
+		</Unit>
+		<Unit filename="sdk/debuggeedescription.cpp">
+			<Option target="sdk" />
+		</Unit>
+		<Unit filename="sdk/programconsole.cpp">
 			<Option target="sdk" />
 		</Unit>
 		<Unit filename="sdk/editarrayfiledlg.cpp">
