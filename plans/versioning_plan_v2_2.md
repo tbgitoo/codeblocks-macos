@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: In progress** — **M2**–**M5** DONE (tree); **M6** Planned; **M1** filters partially in tree.
+**Status: In progress** — **M2**–**M6** DONE (tree); **M1** filters partially in tree.
 
 **Depends on:** v2.1 standalone Debug (leave `DebuggeeDescription` / DebuggerGDB architecture intact; only adjust **routing gates** that formerly keyed off “any active project”).
 
@@ -468,7 +468,7 @@ Menu UpdateUI already uses `IsStandaloneDebugCandidate` — fixing that gate fix
 | **M3** | **DONE** (tree) | Debug-side same invariants. See **M3 completion** below. Manual **U1–U4**, **E** / **E′**, **Q**, **V2**, **V3** passed; Run to Cursor cancel + Stop with focus off editor also OK. |
 | **M4** | **DONE** (tree) | **Editor-tab Rename** (complement). See below. |
 | **M5** | **DONE** (tree) | **Unbuffered inferior stdout** via companion GDB. See below. |
-| **M6** | Planned | **Human-readable C++ Watches** (start with `std::string`). See below. Independent of M1–M5 lifecycle work. |
+| **M6** | **DONE** (tree) | **Human-readable C++ Watches** (Apple-libc++ `std::string`). See below. Independent of M1–M5 lifecycle work. |
 
 #### M2 completion (Run-side — **DONE** in tree)
 
@@ -648,7 +648,17 @@ Use the bundled companion GDB (`CodeBlocks.app` `…/debugger/bin/gdb`, or `CB_G
 
 #### Milestone 6 — Human-readable C++ Watches (`std::string` first)
 
-**Status: Planned.** Architecture locked: **Code::Blocks owns M6**; companion **`binutils-gdb` is completely out of scope**. Do not mark DONE until implemented and W1–W15 pass. Does not reopen M1–M5 PREPARE/COMMIT, Transaction, Launch Identity, Retry, breakpoint, or continuation work.
+**Status: DONE** (tree). Architecture locked: **Code::Blocks owns M6**; companion **`binutils-gdb` completely out of scope**. Does not reopen M1–M5 PREPARE/COMMIT, Transaction, Launch Identity, Retry, breakpoint, or continuation work.
+
+##### M6 completion
+
+Implemented in the debuggergdb plugin:
+
+- `nativewatchsummary.cpp` / `.h` — `TryNativeWatchSummary` after `ParseGDBWatchValue` (locals/args and user watches).
+- Apple libc++ `std::__1::string` / `basic_string<char,…>` with strict type+layout recognition; fingerprint path for typeless `info locals`.
+- SSO / long via `__is_long_`; length-based payload extraction (embedded NUL); parent summary + raw children preserved.
+- Decline → raw; no GDB/Python changes. Unit fixtures in `debuggergdb_test_native_summary.cpp`.
+- Verified ABI on this toolchain: SSO max length **22** (capacity 22; length 23 → heap).
 
 ##### Goal
 
@@ -908,7 +918,7 @@ M6 is orthogonal: after the inferior is already stopped, it only adjusts **how**
 
 - **M4:** Editor-tab **Rename…** (standalone true rename on disk + editor rebind; project-owned aligned with existing rename).  
 - **M5:** macOS Debug option that asks the companion GDB to `setvbuf(stdout, …, _IONBF, …)` at `main` (Program Console and Terminal). Not Run. See **Milestone 5**.  
-- **M6:** Human-readable C++ Watches starting with Apple-libc++ `std::string` via a native CB semantic-summary layer over the parsed GDBWatch tree (`binutils-gdb` completely out of scope; fixed raw GDB input). See **Milestone 6**.  
+- **M6:** Human-readable C++ Watches for Apple-libc++ `std::string` via native CB semantic-summary over the parsed GDBWatch tree (`binutils-gdb` out of scope). See **Milestone 6** (**DONE**).  
 - Deduplicate prepare/save helper with `SaveActiveSourceForStandaloneDebug`.  
 - macOS-only post-OK extension nudge if native dialog omits ext despite filter.  
 - Grep leftover UI strings expecting `"C/C++ files"` beyond Save As config.
@@ -930,5 +940,5 @@ M6 is orthogonal: after the inferior is already stopped, it only adjusts **how**
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered. **M6** (planned) makes Watches show a human-readable Apple-libc++ `std::string` parent summary via a native Code::Blocks formatter over the existing raw GDB parse tree (`binutils-gdb` out of scope; self-contained, no Python).
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered. **M6** makes Watches show a human-readable Apple-libc++ `std::string` parent summary via a native Code::Blocks formatter over the existing raw GDB parse tree (`binutils-gdb` out of scope; self-contained, no Python).
 

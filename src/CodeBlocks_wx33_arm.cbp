@@ -1996,6 +1996,12 @@
 		<Unit filename="plugins/debuggergdb/gdb_driver.h">
 			<Option target="Debugger" />
 		</Unit>
+		<Unit filename="plugins/debuggergdb/nativewatchsummary.cpp">
+			<Option target="Debugger" />
+		</Unit>
+		<Unit filename="plugins/debuggergdb/nativewatchsummary.h">
+			<Option target="Debugger" />
+		</Unit>
 		<Unit filename="plugins/debuggergdb/parsewatchvalue.cpp">
 			<Option target="Debugger" />
 		</Unit>
