@@ -648,7 +648,7 @@ Use the bundled companion GDB (`CodeBlocks.app` `…/debugger/bin/gdb`, or `CB_G
 
 #### Milestone 6 — Human-readable C++ Watches (`std::string` first)
 
-**Status: Planned.** Investigation only (this section). Do not mark DONE until implemented and W1–W10 pass. Does not reopen M1–M5 PREPARE/COMMIT, Transaction, Launch Identity, Retry, breakpoint, or continuation work.
+**Status: Planned.** Architecture locked: **Code::Blocks owns M6**; companion **`binutils-gdb` is completely out of scope**. Do not mark DONE until implemented and W1–W15 pass. Does not reopen M1–M5 PREPARE/COMMIT, Transaction, Launch Identity, Retry, breakpoint, or continuation work.
 
 ##### Goal
 
@@ -658,26 +658,78 @@ For a local `std::string a` whose value is `"12583934"`, the primary Watches row
 
 ```text
 a    "12583934"
+      > … raw implementation children …
 ```
 
-Internals may remain inspectable where useful; they must not replace the obvious semantic value as the primary representation. This is a debugger **value-presentation** problem (not a special-case of the name `a` or that literal).
+The beginner gets the useful value first; the advanced user can still expand raw implementation children. Internals must not replace the semantic value as the primary representation. No “beginner mode.” This is a Code::Blocks **value-presentation** feature over data the IDE already receives.
 
-Guiding rule: reliable semantic representation over primary exposure of ABI/storage fields. No “beginner mode.” No guessing private layouts in Code::Blocks when a debugger-level pretty-printer can provide the value.
+##### Hard boundary — do not touch the GDB fork
 
-##### Confirmed repo / runtime findings
+The sister repository **`binutils-gdb` is completely out of scope for M6.** This is stronger than “no GDB changes are currently expected.”
 
-| Finding | Evidence |
+For M6, do **not**:
+
+- modify, inspect, search, or build `binutils-gdb`
+- change its configure options; enable or propose enabling Python
+- add Python or another scripting runtime; add GDB pretty-printer scripts
+- add private GDB commands; add capability negotiation with the GDB fork
+- change GDB output, packaging, or staging specifically for M6
+- use the GDB fork as an implementation escape hatch
+
+Treat the **currently bundled GDB** and the **raw type/value information it already supplies** as a **fixed external input**. Already-established observations about that output may remain as evidence below; they do **not** authorise further investigation of the GDB repository.
+
+If existing output does not provide enough information to decode a value safely:
+
+```text
+native formatter → NOT HANDLED → display today’s raw representation
+```
+
+Do **not** respond by proposing a GDB change — even if changing GDB would make the formatter easier. Raw but truthful beats semantic but guessed.
+
+##### Ownership boundary
+
+```text
+existing GDB  (FIXED INTERFACE FOR M6)
+    |  raw type/value information already supplied today
+    v
+existing Code::Blocks GDB parsing
+    v
+parsed GDBWatch representation
+    v
+M6 native semantic formatter   ← Code::Blocks owns this
+    v
+Watches display
+```
+
+M6 answers: *Given the raw debugger information Code::Blocks already receives and parses, can Code::Blocks recognise a supported semantic C++ type and present its value more usefully?* The answer must **not** depend on changing the debugger.
+
+**Native Code::Blocks formatting IS the architecture** for M6 — not a temporary fallback pending a future Python/GDB implementation. Do not keep a competing GDB/Python architecture in this plan.
+
+##### Self-contained distribution (product requirement)
+
+The macOS Code::Blocks distribution must remain **self-contained**. M6 must not introduce a new runtime dependency merely to improve Watches.
+
+`std::string` presentation must **not** require the user to install, configure, locate, or maintain Python, printer scripts, debugger extensions, external packages, or another GDB build. Installing the existing Code::Blocks application bundle must be enough to obtain M6 behaviour from **Code::Blocks itself**.
+
+##### Explicit ABI trade-off
+
+We accept a **small amount of controlled Apple-libc++ ABI knowledge inside Code::Blocks** in exchange for keeping the distributed application self-contained and Python-free.
+
+That knowledge must stay: isolated in the native formatter; conservative; testable; type-specific; absent from generic Watches UI / generic GDB parsing / debugger command generation; able to decline an unknown representation. Do not conceal the maintenance cost of owning that ABI surface.
+
+##### Confirmed findings (preserved evidence only)
+
+| Finding | Evidence (already established; no further GDB-repo work) |
 |---------|----------|
-| Default macOS `clang++` debuggee uses **Apple libc++** | Test binary links `/usr/lib/libc++.1.dylib`; mangling `St3__1` / DWARF `std::__1::basic_string`; `whatis a` → `std::__1::string`. |
-| Bundled companion GDB was configured **without Python** | `show configuration` reports `--without-python` / `--without-python-libdir`; build `config.status` has `--with-python=no`. |
-| Python scripting unavailable at runtime | `python print(1)` → `Python scripting is not supported in this copy of GDB.` |
-| No GDB pretty-printer registry | `info pretty-printer` → `Undefined info command: "pretty-printer".` |
-| Code::Blocks does **not** disable pretty-printing | GDB prepare only queues `set print asm-demangle on` and `set print elements N` (`gdb_driver.cpp`). No `python`, no `disable pretty-printer`, no `set print pretty-printers off`. |
-| CB already has prior art for Python printer summaries | `parsewatchvalue.cpp` detects pretty-printer `to_string()`-style prefixes (`pythonToStringValue`) when GDB emits them. |
+| Default macOS `clang++` debuggee uses **Apple libc++** | Links `/usr/lib/libc++.1.dylib`; mangling `St3__1` / DWARF `std::__1::basic_string`; `whatis a` → `std::__1::string`. |
+| Bundled GDB supplies **raw** aggregates (no semantic `std::string` summary) | Direct `print a` of libc++ string shows `__endian_factor` / `__rep_` / `__data_` / `npos` (sample below). |
+| Bundled GDB has no Python pretty-printer path | Runtime: Python unsupported; `info pretty-printer` undefined. Treat as fixed input fact, not a knob M6 turns. |
+| CB parses aggregates into a `GDBWatch` tree | `ParseGDBWatchValue`; brace aggregates clear parent value and build children. |
+| Existing model supports **parent value + children** | Scalars use value; aggregates use children; parent `SetValue` is available. |
 
-##### Direct-GDB result for `std::string`
+##### Direct-GDB sample for `std::string` (preserved fixed input)
 
-With bundled `/Applications/CodeBlocks.app/.../debugger/bin/gdb` and a `clang++ -g -O0` libc++ program, after constructing `std::string a = "12583934"`:
+Already observed with bundled GDB and `clang++ -g -O0` libc++ after `std::string a = "12583934"`:
 
 ```text
 (gdb) print a
@@ -686,132 +738,158 @@ $1 = {static __endian_factor = 1, {__rep_ = {__s = {__data_ = "12583934\000...",
      static npos = 18446744073709551615}
 ```
 
-- GDB does **not** print a primary `"12583934"`.
-- The character data appears only as an implementation field (`__data_`).
-- This matches the Watches expansion the user sees (`static __endian_factor`, `[1]`, `static npos`, …).
-
-Conclusion for layer responsibility: **GDB is the primary deficiency**. Code::Blocks faithfully parses and displays the raw aggregate GDB returns. Secondary CB behaviour: when a watch value is brace-wrapped `{…}`, `ParseGDBWatchValue` clears the parent `SetValue` and builds children — correct for raw dumps, and already able to keep a summary prefix when GDB emits `"…" = {…}` (Python pretty-printer shape).
-
-**Root-cause classification: both, weighted GDB.** Blocking gap is absent pretty-printers (no Python). CB integration must still verify/adopt whatever format a fixed GDB emits for `info locals` / `output`.
+No primary `"12583934"` on the parent. Character data appears only under implementation fields. Code::Blocks already parses this shape into Watches. **M6 consumes that parsed tree** — it does not change what GDB emits.
 
 ##### Standard library / toolchain
 
 - Compiler: Apple Clang / `clang++` (default).
 - Library: **libc++** (`std::__1`), not libstdc++.
-- Do not assume libstdc++ printers apply.
+- M6 REQUIRED target: `std::__1::string` / `std::__1::basic_string<char, …>` only. Other STL types and libstdc++ are future/optional — not M6.
 
-##### Pretty-printer availability / status
+##### Code::Blocks insertion point
 
-| Question | Answer |
-|----------|--------|
-| Available in bundled GDB today? | **No** (no Python → no pretty-printer framework). |
-| Where would they come from? | Typical path: enable Python in companion GDB; ship/auto-load **libc++** GDB printers (LLVM / community), or equivalent vetted scripts under GDB’s auto-load / data-dir. Homebrew `gdb` already depends on Python — packaging precedent exists outside this fork. |
-| Does this GDB build support the mechanism? | Source tree has `gdb/python/`; **this Darwin staging build deliberately omitted it** (`--with-python=no`). |
-| Does CB bypass printers? | **No** — nothing to bypass until GDB can load them. |
-
-##### Exact Code::Blocks GDB → Watches data path
+Determine the narrowest insertion point **using only this repository** (debuggergdb plugin):
 
 ```text
 DebuggerGDB::DoWatches
   → GDB_driver::UpdateWatches
-       locals:  GdbCmd_LocalsFuncArgs  →  "info locals"
-       args:    GdbCmd_LocalsFuncArgs  →  "info args"
-       user watches: GdbCmd_FindWatchType → "whatis …" → GdbCmd_Watch → "output <symbol>"
-  → TokenizeGDBLocals (locals/args) or ParseOutput of GdbCmd_Watch
-  → ParseGDBWatchValue (parsewatchvalue.cpp)
-       brace aggregate → parent value cleared; children from name=value / nested braces
-       optional pythonToStringValue when summary appears before nested fields
-  → GDBWatch tree → Watches dialog
+       locals / args:  "info locals" / "info args"
+       user watches:   "whatis …" → "output <symbol>"
+  → TokenizeGDBLocals / GdbCmd_Watch::ParseOutput
+  → ParseGDBWatchValue  →  GDBWatch tree (type + children; parent often empty for `{…}`)
+  → [M6] native semantic summariser (type + parsed tree)   ← own ABI knowledge here
+        → handled: SetValue(semantic summary); keep children
+        → not handled: leave raw tree as today
+  → Watches dialog
 ```
 
-Why `std::string` shows internals with no useful parent value today:
+Operate **after** enough information is parsed to recognise a supported representation, and **before** presentation loses the chance to assign a semantic parent value. Prefer a **distinct** formatter/helper module over embedding libc++ layout knowledge in generic parsing, Watches rendering, or command generation.
 
-1. GDB’s `info locals` / `output a` returns the full `{static __endian_factor = …, … npos = …}` dump.
-2. `ParseGDBWatchValue` sees leading `{` … trailing `}` → `watch->SetValue(wxEmptyString)` then children for each field.
-3. The semantic characters sit under `__data_` (or similar), not on the parent row.
+Why parent shows no useful string today: brace-wrapped dump → parser clears parent value → children hold `__endian_factor` / `__data_` / `npos` / etc.
 
-Existing model already supports **value + children** on a node (`SetValue` / child watches). Scalars keep a value and no children. Pretty-printed types can show summary on the parent and optional children — once GDB emits that shape.
+##### Architecture — native semantic summariser
 
-##### Recommended architecture
+Illustrative contract (follow existing CB naming/conventions at implement time):
 
-1. **Fix presentation at the debugger layer first** (companion `binutils-gdb`), not by teaching Code::Blocks private libc++ layouts.
-2. **Preferred approach:** rebuild/repackage companion GDB **with Python**; install and auto-load **libc++** pretty-printers so `print` / `info locals` / `output` yield a semantic summary (e.g. `"12583934"`), optionally with children.
-3. **Code::Blocks:** keep using existing `info locals` / `output` + `ParseGDBWatchValue`. Adjust parsing only if the printer’s textual shape is not already handled by the `pythonToStringValue` / reference-prefix paths. Prefer preserving GDB’s summary on the parent when both summary and children exist.
-4. **Capability negotiation (same philosophy as `inferior-tty-claim` / `inferior-stdio-unbuffered`):** probe (e.g. Python available / printer registered / a cheap `print` of a known pattern). If unavailable → keep today’s raw behaviour; no crash; no invented value. Do not assume the private GDB feature is always present (stock GDB, older bundles).
-5. **Default GDB behaviour:** pretty-printers on for IDE Debug when the companion build includes them; a plain shell `gdb` without auto-load scripts remains usable. Avoid changing non-macOS CB paths unless the same GDB commands are already shared and tests pass.
-6. **Rejected as primary M6 path:** Code::Blocks hard-coded walk of `__rep_` / `__data_` / SSO vs long — ABI fragile, duplicates what printers exist to do, and violates “no guessing layouts.”
+```text
+TryNativeWatchSummary(type, parsedWatchTree)
+  → handled + semantic value
+  or
+  → not handled
+```
+
+Properties:
+
+1. **Distinct narrow transformation** over already-parsed debugger data — not ad-hoc field-name checks in the Watches UI.
+2. **Strict recognition:** act only when (a) type matches a specifically supported family **and** (b) the parsed representation matches a known supported layout strongly enough to extract safely. Else **NOT HANDLED** → raw tree. Never “this somewhat looks like a string.”
+3. **Contained ABI knowledge:** one formatter owns Apple libc++ short/long layout decoding. Do not spread `__rep_` / `__data_` / SSO flags through the plugin.
+4. **Length semantics:** use the layout’s size/length, not C-string NUL truncation. `std::string("abc\0def", 7)` must not become `"abc"`.
+5. **Value + children:** set semantic summary on the parent; **preserve** raw implementation children. Do not hide children because they are ugly. If brace-aggregate parsing always clears parent value, make only the **narrow** change needed so a formatter-generated parent summary can stick — do not globally rewrite unrelated aggregates unless evidence requires it.
+6. **Fail-safe:** insufficient type/layout/size/data → NOT HANDLED → raw. No invented value. No GDB-side “fix.”
+7. **No GDB protocol / probes** for M6.
+
+##### Pre-implementation investigation (within Code::Blocks + toolchain only)
+
+Before coding extraction, verify supported Apple libc++ layouts using **this repo**, the shipped app’s observed watch/parse behaviour, and public/toolchain headers as needed — **not** by inspecting or modifying `binutils-gdb`. Confirm at least:
+
+| Case | What to confirm |
+|------|-----------------|
+| Empty | How size/flag/data appear in the **parsed** `GDBWatch` tree. |
+| Short / SSO | Where characters and length live; SSO capacity for this ABI. |
+| Long / heap | Pointer + size (+ capacity); long vs short discriminator. |
+| SSO boundary | Transition length for this libc++; values immediately below/above. |
+| Embedded NUL | Size is authoritative; payload may contain `'\0'` before “end”. |
+| Endian / flag packing | Any packing that affects decoding of the **already-parsed** fields. |
+
+Do **not** implement by “find a child named `__data_` and display it.” Document confirmed SSO capacity and field mapping in implementation notes when DONE (do not hardcode the boundary in this plan until verified).
 
 ##### Files / functions likely affected (implementation phase — not now)
 
 | Area | Likely touch |
 |------|----------------|
-| Sister **`binutils-gdb`** | Configure `--with-python=…`; packaging of printer scripts / auto-load; possibly docs for staging. |
-| CB `gdb_driver.cpp` | Optional prepare-time enable/probe of printers; document `print elements` interaction. |
-| CB `parsewatchvalue.cpp` / `ParseGDBWatchValue` | Only if pretty-printed `output`/`info locals` text needs summary+children handling tweaks. |
-| CB `gdb_commands.h` (`GdbCmd_LocalsFuncArgs`, `GdbCmd_Watch`) | Unlikely command changes; verify output still tokenizes. |
-| `make_cb_app_bundle.sh` / README | Bundle Python runtime or note system Python; document printers. |
+| New narrow module under debuggergdb (native watch summary / libc++ string formatter) | Type match + layout decode; owns all ABI-specific names. |
+| Call site after `ParseGDBWatchValue` (locals/args and/or `GdbCmd_Watch::ParseOutput`) | Apply summary when handled; leave children. |
+| `parsewatchvalue.cpp` / `GDBWatch` | Only if needed so parent `SetValue` coexists with children for formatter results. |
+| Unit tests (`debuggergdb_test_parse_*.cpp` or new tests) | Empty / SSO / long / NUL / decline / unrelated aggregate. |
 | README.macos.md / ChangeLog | User-facing note when DONE. |
+
+**In scope:** Code::Blocks only. **Out of scope:** `binutils-gdb`, Python, printer scripts, GDB prepare/command changes for printers.
 
 ##### Must NOT change (M6)
 
-- M1–M5 PREPARE→COMMIT, Transaction, Launch Identity, Retry, breakpoint lifecycle, Run-after-compile, claim-off / unbuffer stdio command order.
-- `DebuggeeDescription` redesign; LLDB/DAP; gdbmi standalone scope expansion.
-- Rewriting the Watches UI or adding a “beginner mode.”
-- Hard-coded private libc++ / libstdc++ field parsers in CB unless investigation later proves no debugger-level mechanism is viable (must be explicitly re-justified).
+- M1–M5 PREPARE→COMMIT, Transaction, Launch Identity, Retry, breakpoint lifecycle, Run-after-compile, claim-off / unbuffer-stdio order.
+- Anything in **`binutils-gdb`** (including configure, Python, printers, private commands, output shaping, packaging).
+- New Python / scripting runtime or printer scripts in the Code::Blocks bundle.
+- `DebuggeeDescription` redesign; LLDB/DAP; Watches UI rewrite; beginner mode.
+- Spreading libc++ member names outside the formatter module.
+- Silently suppressing raw watch children when a summary exists.
 
 ##### Regression risks
 
 | Risk | Mitigation |
 |------|------------|
-| Python-enabled GDB binary size / signing / sandbox | Same entitlement + bundle path as v1.2; smoke codesign. |
-| Printer scripts mismatch Xcode libc++ version | Pin/test against current Apple libc++; fail safe to raw. |
-| `ParseGDBWatchValue` breaks on new text shapes | Unit tests in `debuggergdb_test_parse_*.cpp`; W1–W7. |
-| Slower watch updates | Printers only on supported types; scalars unchanged (W6). |
-| False semantic values | Never synthesise in CB; only display GDB-provided summary. |
+| Wrong summary on layout drift | Strict match; NOT HANDLED → raw; pin tests to observed ABI. |
+| Truncation at embedded NUL | Length-based extraction; W14. |
+| SSO↔long transition bugs | W12 / W13 / W15. |
+| Parent value cleared by parser | Narrow preserve-summary change; W1 + W8. |
+| Accidental effect on scalars / other aggregates | Type gate; W6; W7; unrelated aggregate untouched. |
+| Temptation to “fix” insufficient data in GDB | Hard rule: NOT HANDLED only — never a GDB change. |
 
-##### Acceptance matrix (refined)
+##### Acceptance matrix
 
 | ID | Steps | Expected |
 |----|-------|----------|
-| **W1** | `std::string a = "12583934";` stop after init | Parent Watches value ≈ `"12583934"` (human-readable). |
-| **W2** | Empty `std::string a;` | Clear empty-string representation (e.g. `""`). |
-| **W3** | `a = "hello world"` | Full text visible, including space. |
-| **W4** | Modify `a` across a step | Parent value updates old → new semantic text. |
-| **W5** | Two strings `a`, `b` | Independent correct values. |
-| **W6** | `int` / `double` / `bool` | Unchanged scalar display. |
-| **W7** | GDB without Python/printers (or printers disabled) | Raw aggregate as today; no crash; no invented quotes. |
-| **W8** | Raw inspection | Supported mechanism TBD at implement time: e.g. GDB raw print / disable pretty-printer / expand printer or remaining children — must not require inventing a new Watches UI. Document the chosen path when DONE. |
-| **W9** | Standalone Debug (v2.1/v2.2) of W1 | Same semantic parent value as project Debug. |
-| **W10** | Project Debug of W1 | Same as W9 — presentation independent of project vs standalone. |
+| **W1** | `std::string a = "12583934";` | Parent ≈ `"12583934"`; raw children available where supported. |
+| **W2** | Empty `std::string a;` | Parent `""`. |
+| **W3** | `"hello world"` | Full text including space. |
+| **W4** | `"hello"` then `+= " world"` across step | Parent updates `"hello"` → `"hello world"`. |
+| **W5** | Two strings | Independent correct values. |
+| **W6** | `int` / `double` / `bool`; unrelated non-string aggregates | Unchanged / untouched by the formatter. |
+| **W7** | Unrecognised / incomplete / malformed layout → decline | NOT HANDLED; raw remains; no crash; no guessed summary; **no** GDB-side proposal. |
+| **W8** | Recognised string | Semantic parent + raw tree reachable (expand children). |
+| **W9** | Standalone Debug W1 | Same semantic parent as project. |
+| **W10** | Project Debug W1 | Same as W9. |
+| **W11** | Very short / SSO (`"a"`) | `"a"`. |
+| **W12** | Values around confirmed SSO boundary | Correct on both sides of the representation transition. |
+| **W13** | Definitely long / heap-backed string | Full value from long representation. |
+| **W14** | `std::string a("abc\0def", 7)` | Must not silently truncate to `"abc"`; escaping may follow existing UI conventions but length is seven characters. |
+| **W15** | Step across short↔long (and long↔short) mutation | Semantic value remains correct across representation change. |
 
-**W1** is the milestone gate. Value presentation must not depend on project vs standalone routing (M2/M3 ownership unchanged).
+**W1** is the milestone gate. Presentation must not depend on project vs standalone routing (M2/M3 ownership unchanged). Embedded-NUL (W14) is mandatory: do not implement `std::string` as if it were a NUL-terminated C string.
 
 ##### REQUIRED / OPTIONAL / OUT OF SCOPE (M6)
 
 **REQUIRED**
 
-- `std::string` primary Watches value is human-readable when companion GDB+printers are present.
-- No ABI-specific value guessing in Code::Blocks.
-- Ordinary scalar Watches unchanged.
-- Missing/failed pretty-printer → existing raw behaviour.
-- No regression to M1–M5 debug lifecycle.
+1. Code::Blocks owns M6; native semantic-summary mechanism with strict recognition.  
+2. Apple-libc++ `std::string` / `basic_string<char>` for the shipped/tested toolchain.  
+3. Empty; short/SSO; long/heap; spaces; step updates; SSO↔long transitions; embedded NUL via length semantics.  
+4. Raw children remain accessible where practical.  
+5. Unknown / incomplete layout → raw Watches (NOT HANDLED).  
+6. Scalars and unrelated aggregates unchanged.  
+7. Project and standalone Debug identical presentation.  
+8. Self-contained bundle: no Python, no printer scripts, no external debugger dependency for M6.  
+9. **`binutils-gdb` completely untouched** (no modify / inspect / build / configure for M6).  
+10. M1–M5 lifecycle untouched.
 
-**OPTIONAL**
+**OPTIONAL (future — not M6)**
 
-- Other libc++ types that fall out of the **same** generic printer load (containers, etc.) **without** type-specific CB code.
+- Other native formatters (`vector`, `array`, `optional`, smart pointers, other string types) **only if** this mechanism proves clean — do not expand scope because the abstraction allows it.  
+- libstdc++ `std::string` — not automatic unless this distribution needs it.
 
 **OUT OF SCOPE**
 
-- Custom variable visualisers; graphical container viewers.
-- Changing C++ language semantics.
-- M1–M5 lifecycle/routing work.
-- LLDB / DAP.
-- Rewriting Watches UI.
-- Hard-coded private STL layout parsers unless explicitly re-justified.
+- Entire **`binutils-gdb`** surface for M6 (source, configure, Python, printers, private commands, output changes, packaging/staging).  
+- Python runtime; printer scripts; debugger extensions; external packages; alternate GDB builds.  
+- Competing “GDB should provide the summary later” architecture.  
+- Graphical / generic STL visualisers; beginner mode; Watches UI rewrite.  
+- LLDB / DAP; M1–M5 lifecycle/routing; C++ language semantics changes.  
+- Guessing unknown STL layouts; silently suppressing raw watch data.  
+- Capability negotiation with GDB for M6.
 
 ##### Interaction with M1–M5
 
-M6 is orthogonal: it only changes **how values are printed/parsed for display** after the inferior is already stopped. It must not alter prepare/save, ownership routing, claim-off, unbuffer-stdio probes, or breakpoint arming. Standalone vs project (W9/W10) must behave identically for presentation once stopped.
+M6 is orthogonal: after the inferior is already stopped, it only adjusts **how** a parsed watch is summarised for display inside Code::Blocks. It must not alter prepare/save, ownership routing, claim-off, unbuffer-stdio probes, or breakpoint arming. W9/W10 must match once stopped. M1–M5 remain untouched.
 
 ### Scope summary
 
@@ -830,7 +908,7 @@ M6 is orthogonal: it only changes **how values are printed/parsed for display** 
 
 - **M4:** Editor-tab **Rename…** (standalone true rename on disk + editor rebind; project-owned aligned with existing rename).  
 - **M5:** macOS Debug option that asks the companion GDB to `setvbuf(stdout, …, _IONBF, …)` at `main` (Program Console and Terminal). Not Run. See **Milestone 5**.  
-- **M6:** Human-readable C++ Watches starting with `std::string` (companion GDB pretty-printers + CB display of GDB summary). See **Milestone 6**.  
+- **M6:** Human-readable C++ Watches starting with Apple-libc++ `std::string` via a native CB semantic-summary layer over the parsed GDBWatch tree (`binutils-gdb` completely out of scope; fixed raw GDB input). See **Milestone 6**.  
 - Deduplicate prepare/save helper with `SaveActiveSourceForStandaloneDebug`.  
 - macOS-only post-OK extension nudge if native dialog omits ext despite filter.  
 - Grep leftover UI strings expecting `"C/C++ files"` beyond Save As config.
@@ -852,5 +930,5 @@ M6 is orthogonal: it only changes **how values are printed/parsed for display** 
 
 ### Outcome (when done)
 
-New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered. **M6** (planned) makes Watches show human-readable `std::string` (and similar) via companion GDB pretty-printers rather than raw libc++ fields.
+New files Save As **C** or **C++** with the right extension. Build / Build and Run / Debug always operate on the **active** source after a successful PREPARE, routed by **membership in the active project** — so an open project never hijacks a standalone editor — while project-owned files and v2.1 debugging remain intact. **Pre-COMMIT cancellation is observationally equivalent to never requesting the operation; no Build/Run/Debug uses an identity not established for that request** (including empty-project leftover binaries and prior inferiors). Legacy Save As preference `"C/C++ files"` becomes `"C files"`; new configs start on `"C++ files"`. **M4** adds tab-menu Rename so a wrong extension can be fixed without a duplicate on disk. **M5** (independent) lets macOS Debug ask the companion GDB to unbuffer inferior `stdout` so a `cout` without `endl` shows up while stepping; Run stays line-buffered. **M6** (planned) makes Watches show a human-readable Apple-libc++ `std::string` parent summary via a native Code::Blocks formatter over the existing raw GDB parse tree (`binutils-gdb` out of scope; self-contained, no Python).
 
