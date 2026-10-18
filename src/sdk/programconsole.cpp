@@ -341,6 +341,14 @@ wxString GetFocusPolicyDebug()
 #endif
 }
 
+#if !defined(__WXMAC__)
+void RegisterPanel(wxWindow* infoPaneParent)
+{
+    /* The panel itself is macOS-only. Windows imports this from the SDK. */
+    wxUnusedVar(infoPaneParent);
+}
+#endif
+
 void ShowPanel()
 {
 #if defined(__WXMAC__)

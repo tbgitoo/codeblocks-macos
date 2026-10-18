@@ -65,3 +65,4 @@ src/tools/cb_share_config/cb_share_config
 src/build_tools/autorevision/auto_revision
 
 CodeBlocks-macos-arm64.dmg
+build.log
