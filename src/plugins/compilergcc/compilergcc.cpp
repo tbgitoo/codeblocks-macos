@@ -1357,8 +1357,10 @@ int CompilerGCC::GetNextAvailableProcessIndex() const
     for (size_t i = 0; i < m_CompilerProcessList.size(); ++i)
     {
         const CompilerProcess &p = m_CompilerProcessList[i];
-        if (!p.pProcess && p.PID == 0)
-            return i;
+        // A null process with a leftover PID is a leaked slot (e.g. older KillProcess);
+        // treat it as free so Build / Build and Run can recover without restart.
+        if (!p.pProcess)
+            return static_cast<int>(i);
     }
     return -1;
 }
@@ -3332,7 +3334,11 @@ int CompilerGCC::KillProcess()
         // after killing the process...
         //
         // [1] https://docs.wxwidgets.org/trunk/classwx_process.html#aa378b7e705c9191431cad51a81581836
+        // Must clear PID too: GetNextAvailableProcessIndex requires both null.
+        // Leaving a stale PID after abort permanently blocks DoRunQueue (-2), so
+        // Build / Build and Run appear to do nothing until restart.
         p.pProcess = nullptr;
+        p.PID = 0;
 
         if (!platform::windows)
         {
@@ -3623,7 +3629,13 @@ void CompilerGCC::OnCompileAndRun(cb_unused wxCommandEvent& event)
 
     // If the compiler never accepted the job, drop the continuation (pre-COMMIT outcome).
     if (result < 0)
+    {
         ClearRunAfterCompileContinuation();
+        // DoRunQueue can fail after commands were queued (e.g. no free process slot).
+        // Leave no half-armed queue that would mark IsRunning and disable the UI.
+        if (result == -2 || result == -3)
+            m_CommandQueue.Clear();
+    }
 }
 
 void CompilerGCC::OnCompile(wxCommandEvent& event)
@@ -3927,8 +3939,20 @@ void CompilerGCC::OnUpdateUI(wxUpdateUIEvent& event)
     cbPlugin* runningPlugin = projectManager->GetIsRunning();
     if (runningPlugin && runningPlugin != this)
     {
-        event.Enable(false);
-        return;
+        // Drop a stale debugger reservation (claimed the slot but not debugging /
+        // not waiting on a rebuild). Otherwise Build and Run stays disabled.
+        cbDebuggerPlugin* dbg = Manager::Get()->GetDebuggerManager()->GetActiveDebugger();
+        if (dbg && runningPlugin == static_cast<cbPlugin*>(dbg)
+            && !dbg->IsRunning() && !dbg->WaitingCompilerToFinish())
+        {
+            projectManager->SetIsRunning(nullptr);
+            runningPlugin = nullptr;
+        }
+        else
+        {
+            event.Enable(false);
+            return;
+        }
     }
 
     cbProject* prj = projectManager->GetActiveProject();
