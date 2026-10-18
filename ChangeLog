@@ -1,3 +1,13 @@
+2026-10-18 22:25  tbgitoo
+
+v2.2 (M6 in tree): unofficial Apple Silicon macOS port
+	  * Watches: native Apple-libc++ std::string semantic summary
+	    over the existing GDBWatch tree (no Python; companion GDB
+	    unchanged). Parent shows "value"; raw children remain.
+	  * Strict recognition / length-based extraction (embedded NUL);
+	    unknown layout → raw fallback. Unit tests for SSO / long /
+	    NUL / decline.
+
 2026-10-18 17:50  tbgitoo
 
 v2.2 (M2–M5 in tree): unofficial Apple Silicon macOS port

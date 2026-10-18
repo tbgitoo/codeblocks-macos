@@ -67,6 +67,8 @@ From **v2.2**, Build / Build and Run / Debug follow **active-source ownership**,
 
 Wrong extension after Save As? Right-click the editor tab → **Rename…** to rename the file in place (same directory, no duplicate). If the new name already exists you get **Overwrite** or **Cancel**. Untitled / never-saved tabs keep Rename disabled — use Save As first. Project-owned files update the project tree the same way as **Rename file…** in the project pane.
 
+**Watches and `std::string` (v2.2 M6):** On Apple Silicon with the default Apple libc++ toolchain, Watches show a human-readable parent value for `std::string` (for example `a    "12583934"`). Expand the row to inspect the raw libc++ representation GDB still provides. This is implemented entirely in Code::Blocks (no Python, no change to the bundled GDB). Unsupported or unrecognised layouts keep today’s raw display.
+
 **Deliberate limitations** (create a project when you need more):
 
 - One source file only; default compiler settings; no program arguments; working directory is the source file’s directory.

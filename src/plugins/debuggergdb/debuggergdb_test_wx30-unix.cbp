@@ -53,11 +53,14 @@
 		<Unit filename="debuggergdb_test_defs.cpp" />
 		<Unit filename="debuggergdb_test_examine_memory.cpp" />
 		<Unit filename="debuggergdb_test_main.cpp" />
+		<Unit filename="debuggergdb_test_native_summary.cpp" />
 		<Unit filename="debuggergdb_test_parse_locals.cpp" />
 		<Unit filename="debuggergdb_test_parser.cpp" />
 		<Unit filename="debuggergdb_test_parser_cdb.cpp" />
 		<Unit filename="debuggeroptionsprjdlg.h" />
 		<Unit filename="gdb_commands.h" />
+		<Unit filename="nativewatchsummary.cpp" />
+		<Unit filename="nativewatchsummary.h" />
 		<Unit filename="parsewatchvalue.cpp" />
 		<Unit filename="parsewatchvalue.h" />
 		<Extensions>

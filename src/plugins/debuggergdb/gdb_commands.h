@@ -35,6 +35,7 @@
 #include "gdb_driver.h"
 #include "remotedebugging.h"
 #include "parsewatchvalue.h"
+#include "nativewatchsummary.h"
 
 namespace
 {
@@ -844,6 +845,8 @@ class GdbCmd_Watch : public DebuggerCmd
                 m_watch->SetValue(msg);
                 Manager::Get()->GetLogManager()->LogError(msg);
             }
+            else
+                TryNativeWatchSummary(m_watch);
         }
 };
 
@@ -1149,7 +1152,8 @@ class GdbCmd_LocalsFuncArgs : public DebuggerCmd
                 if (it->error)
                     continue;
                 cb::shared_ptr<GDBWatch> watch = AddChild(m_watch, it->name);
-                ParseGDBWatchValue(watch, it->value);
+                if (ParseGDBWatchValue(watch, it->value))
+                    TryNativeWatchSummary(watch);
             }
             m_watch->RemoveMarkedChildren();
         }

@@ -39,7 +39,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v1.2** | **Released** — through `80d8e89`. Bundled companion GDB (`5564fbe`); debugger entitlement; `code_signing.md`. | [versioning_plan_v1_2.md](versioning_plan_v1_2.md) |
 | **v2.0** | **In progress** — M1–M5 DONE in tree (Program Console default; Terminal.app optional; focus policies). | [versioning_plan_v2_0.md](versioning_plan_v2_0.md) |
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
-| **v2.2** | **In progress** — M2–M5 DONE; M1 filters partial; **M6 Planned** (readable `std::string` Watches). | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
+| **v2.2** | **In progress** — M2–M6 DONE; M1 filters partial (readable Apple-libc++ `std::string` Watches). | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
 
 ### One-line outcomes
 
@@ -50,7 +50,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v1.2** | Fresh macOS install gets bundled GDB under `Resources/debugger/` by default (entitlement + signing docs). |
 | **v2.0** | In-IDE Program Console (CB-owned PTY) as default console Run/Debug; Terminal.app remains optional. |
 | **v2.1** | Debug / Step Into a single saved C/C++ file with no project (always rebuild for debug). |
-| **v2.2** | Active-source ownership + PREPARE→COMMIT for Build/Run/Debug; Save As C/C++ split; tab Rename; unbuffered Debug stdout; planned human-readable Watches. |
+| **v2.2** | Active-source ownership + PREPARE→COMMIT for Build/Run/Debug; Save As C/C++ split; tab Rename; unbuffered Debug stdout; human-readable Apple-libc++ `std::string` Watches. |
 
 ---
 
