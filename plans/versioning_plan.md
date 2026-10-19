@@ -11,6 +11,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v2.0 (integrated Program Console / PTY pane)
   → v2.1 (Debug single open file, no project)
   → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug; tab Rename; readable Watches)
+  → v2.3 (Enable debugging helper — no manual codesign; no paid Apple membership)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -40,6 +41,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.0** | **In progress** — M1–M5 DONE in tree (Program Console default; Terminal.app optional; focus policies). | [versioning_plan_v2_0.md](versioning_plan_v2_0.md) |
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
+| **v2.3** | **Planned** — Enable debugging helper (tiered ad-hoc then local cert); no manual `codesign`/Keychain as primary path; no paid Apple Program. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
 
 ### One-line outcomes
 
@@ -51,6 +53,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.0** | In-IDE Program Console (CB-owned PTY) as default console Run/Debug; Terminal.app remains optional. |
 | **v2.1** | Debug / Step Into a single saved C/C++ file with no project (always rebuild for debug). |
 | **v2.2** | Active-source ownership + PREPARE→COMMIT for Build/Run/Debug; Save As C/C++ split; tab Rename; unbuffered Debug stdout; human-readable Apple-libc++ `std::string` Watches. |
+| **v2.3** | DMG still ships ad-hoc+entitled gdb (happy path); in-app Enable debugging is repair-only when task-port/signing fails (consent; tiers automatic). |
 
 ---
 
