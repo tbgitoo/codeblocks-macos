@@ -200,30 +200,28 @@ The bundle script:
 
 That is the **happy path** shipped in release DMGs. If you still see **No stack** / Mach task port errors after a fresh bundle, the planned v2.3 product path is in-app **Enable debugging** (repair); until then, the optional local-certificate commands above remain advanced recovery.
 
-### Developer lab: `CB_BUNDLE_GDB_SIGN` (v2.3 M1)
+### Developer lab: `--gdb-sign` (v2.3 M1)
 
 For one-Mac testing of future Enable debugging repair (see [plans/versioning_plan_v2_3.md](plans/versioning_plan_v2_3.md)). **Default is `normal` — always use that for release DMGs.**
 
-| Value | Nested `gdb` result | Intent |
-|-------|---------------------|--------|
+| `--gdb-sign=` | Nested `gdb` result | Intent |
+|---------------|---------------------|--------|
 | `normal` (default) | Ad-hoc + `com.apple.security.cs.debugger` | Release / healthy |
 | `unsigned` | Signature removed | Inject missing signature (Debug should stall) |
 | `no-entitlement` | Ad-hoc, **no** debugger entitlement | Inject missing entitlement (Debug should stall) |
 
 ```bash
-# Release / happy path (same as omitting the variable)
+# Release / happy path (same as omitting the flag)
 ./make_cb_app_bundle.sh
 
 # Lab: unsigned gdb
-CB_BUNDLE_GDB_SIGN=unsigned ./make_cb_app_bundle.sh
+./make_cb_app_bundle.sh --gdb-sign=unsigned
 
 # Lab: signed without cs.debugger
-CB_BUNDLE_GDB_SIGN=no-entitlement ./make_cb_app_bundle.sh
+./make_cb_app_bundle.sh --gdb-sign=no-entitlement
 ```
 
-Aliases: `0`/`off` → `unsigned`; `1`/`on` → `normal`.
-
-The mode is also written to `CodeBlocks.app/Contents/Resources/debugger/.cb_gdb_sign_lab` for later diagnosis.
+Also accepts `--gdb-sign unsigned` (space form). The mode is written to `CodeBlocks.app/Contents/Resources/debugger/.cb_gdb_sign_lab` for later diagnosis.
 
 **What this lab proves:** reproducible defective signing states; that Debug can stall when signature or entitlement is missing; packaging switches for Tier 1 repair tests.
 
@@ -231,9 +229,9 @@ The mode is also written to `CodeBlocks.app/Contents/Resources/debugger/.cb_gdb_
 
 **Note:** On Apple Silicon, an unsigned nested `gdb` is typically killed on exec (`SIGKILL`). The lab asserts signature removal via `codesign --verify` failure; it does not run that binary as a smoke test.
 
-**Force Tier 2** is a separate **runtime** injection for later milestones (not a bundle signing mode). Do not confuse it with `CB_BUNDLE_GDB_SIGN`.
+**Force Tier 2** is a separate **runtime** injection for later milestones (not a bundle signing flag). Do not confuse it with `--gdb-sign`.
 
-**Never** pass `unsigned` or `no-entitlement` when building a public release DMG (`make_cb_dmg.sh` expects a finished app).
+**Never** pass `--gdb-sign=unsigned` or `--gdb-sign=no-entitlement` when building a public release DMG (`make_cb_dmg.sh` expects a finished app).
 
 ---
 
