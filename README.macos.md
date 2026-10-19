@@ -12,11 +12,31 @@ The Code::Blocks IDE is licensed under GPL-3 (`COPYING`). The SDK is licensed un
 
 ## Download and install
 
-Prebuilt macOS releases are available from the **Releases** section of this GitHub repository. Download the `.dmg` file for the version you want, open it, and copy `CodeBlocks.app` to your Applications folder or another location of your choice.
+Prebuilt macOS releases are available from the **Releases** section of this GitHub repository. Download the `.dmg` file for the version you want, open it, and copy `CodeBlocks.app` to your Applications folder or another location of your choice. You can drag the CodeBlocks.app in the dmg onto the Applications link for convenience.
 
 The application is built natively for Apple Silicon. It does not require Rosetta.
 
-The application is not currently notarised by Apple. Depending on your macOS security settings, the first launch may therefore need to be allowed manually in **System Settings > Privacy & Security**.
+### First launch (Gatekeeper)
+
+The application is **not notarised** by Apple (no paid Apple Developer Program membership). The first time you open a downloaded `CodeBlocks.app`, macOS Gatekeeper therefore blocks it. That is expected for this distribution — not a damaged download.
+
+![DMG: drag CodeBlocks.app to Applications](docs/images/dmg-install.png)
+
+**1.** Open `CodeBlocks.app` (for example from Applications, or by double-clicking). You should see a dialog like this:
+
+![Gatekeeper: “CodeBlocks.app” Not Opened](docs/images/gatekeeper-not-opened.png)
+
+Do **not** choose **Move to Bin**. Click **Done**.
+
+**2.** Open **System Settings → Privacy & Security**, scroll to the security section, and look for the blocked-app notice. Click **Open Anyway**:
+
+![Privacy & Security: Open Anyway](docs/images/privacy-security-open-anyway.png)
+
+**3.** Confirm again if macOS asks. Code::Blocks should then launch.
+
+On later launches the app opens normally. If you replace the app with a newer copy from a new `.dmg`, you may need to repeat this once for that copy.
+
+Debugging with the bundled GDB is a **separate** signing step if you see **No stack** / “Unable to find Mach task port”. See **[code_signing.md](code_signing.md)**.
 
 ## Debugger support
 
