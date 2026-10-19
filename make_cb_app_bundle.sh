@@ -16,6 +16,22 @@ RES="$APP/Contents/Resources/share/codeblocks"
 GDB_PREFIX="${CB_BUNDLE_GDB_PREFIX:-$SCRIPT_DIR/../binutils-gdb/staging}"
 DBG="$APP/Contents/Resources/debugger"
 
+# v2.3 M1 lab: how nested gdb is signed (default = release happy path).
+#   normal         — ad-hoc + com.apple.security.cs.debugger (default; ship this)
+#   unsigned       — strip signature from gdb after app signing (Debug should stall)
+#   no-entitlement — ad-hoc sign gdb without debugger entitlement (Debug should stall)
+# Never ship a release DMG with unsigned or no-entitlement.
+CB_BUNDLE_GDB_SIGN="${CB_BUNDLE_GDB_SIGN:-normal}"
+case "$CB_BUNDLE_GDB_SIGN" in
+    normal|unsigned|no-entitlement) ;;
+    0|off|false) CB_BUNDLE_GDB_SIGN=unsigned ;;
+    1|on|true) CB_BUNDLE_GDB_SIGN=normal ;;
+    *)
+        echo "ERROR: CB_BUNDLE_GDB_SIGN must be normal|unsigned|no-entitlement (got: $CB_BUNDLE_GDB_SIGN)" >&2
+        exit 2
+        ;;
+esac
+
 require() {
     command -v "$1" >/dev/null 2>&1 || {
         echo "ERROR: required command not found: $1" >&2
@@ -395,7 +411,10 @@ while IFS= read -r link; do
     esac
 done < <(find "$APP" -type l)
 
-echo "==> Ad-hoc signing"
+echo "==> Ad-hoc signing (CB_BUNDLE_GDB_SIGN=$CB_BUNDLE_GDB_SIGN)"
+if [[ "$CB_BUNDLE_GDB_SIGN" != "normal" ]]; then
+    echo "WARNING: Lab signing mode '$CB_BUNDLE_GDB_SIGN' — do NOT ship this bundle as a release DMG." >&2
+fi
 xattr -cr "$APP" || true
 GDB_ENTITLEMENTS="$SCRIPT_DIR/osx/gdb.entitlements"
 [[ -f "$GDB_ENTITLEMENTS" ]] || {
@@ -404,25 +423,82 @@ GDB_ENTITLEMENTS="$SCRIPT_DIR/osx/gdb.entitlements"
 }
 # Sign nested debugger Mach-Os first. install_name_tool invalidates any prior
 # signature, and codesign --deep alone is not reliable for Resources/debugger.
-# GDB must keep com.apple.security.cs.debugger or taskgated refuses debugging.
+# Release (normal): GDB must keep com.apple.security.cs.debugger.
 if compgen -G "$DBG/lib/"*.dylib >/dev/null; then
     for library in "$DBG/lib/"*.dylib; do
         [[ -f "$library" && ! -L "$library" ]] || continue
         codesign --force --sign - "$library"
     done
 fi
-codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
+
+case "$CB_BUNDLE_GDB_SIGN" in
+    normal)
+        codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
+        ;;
+    no-entitlement)
+        # Ad-hoc signature without debugger entitlement (lab).
+        codesign --force --sign - "$DBG/bin/gdb"
+        ;;
+    unsigned)
+        # Leave gdb unsigned for now; --deep may still stamp it — stripped below.
+        :
+        ;;
+esac
+
 codesign --force --deep --sign - "$APP"
-# Re-apply debugger entitlement after --deep (which may resign nested code).
-codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
-codesign --verify --deep --strict --verbose=2 "$APP"
-codesign --verify --verbose=2 "$DBG/bin/gdb"
-if ! codesign -d --entitlements - "$DBG/bin/gdb" 2>&1 | grep -Fq "com.apple.security.cs.debugger"; then
-    echo "ERROR: Bundled GDB is missing com.apple.security.cs.debugger entitlement." >&2
-    exit 3
+
+case "$CB_BUNDLE_GDB_SIGN" in
+    normal)
+        # Re-apply debugger entitlement after --deep (which may resign nested code).
+        codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
+        ;;
+    no-entitlement)
+        codesign --force --sign - "$DBG/bin/gdb"
+        ;;
+    unsigned)
+        codesign --remove-signature "$DBG/bin/gdb" 2>/dev/null || true
+        # Confirm removal: verify should fail for an unsigned binary.
+        if codesign --verify --verbose=2 "$DBG/bin/gdb" 2>/dev/null; then
+            echo "ERROR: Lab mode unsigned: gdb still has a verifiable signature." >&2
+            exit 3
+        fi
+        ;;
+esac
+
+# Deep app verify: skip for unsigned lab (nested gdb intentionally has no signature).
+if [[ "$CB_BUNDLE_GDB_SIGN" == "unsigned" ]]; then
+    echo "Skipping codesign --verify --deep (lab unsigned: nested gdb has no signature)."
+else
+    codesign --verify --deep --strict --verbose=2 "$APP"
 fi
-"$DBG/bin/gdb" -nx -batch -ex 'show data-directory' >/dev/null
-echo "Bundled GDB smoke check OK (debugger entitlement present)."
+
+# Lab marker for later diagnosis (M2+); always written so tooling can see the mode.
+printf '%s\n' "$CB_BUNDLE_GDB_SIGN" > "$DBG/.cb_gdb_sign_lab"
+case "$CB_BUNDLE_GDB_SIGN" in
+    normal)
+        codesign --verify --verbose=2 "$DBG/bin/gdb"
+        if ! codesign -d --entitlements - "$DBG/bin/gdb" 2>&1 | grep -Fq "com.apple.security.cs.debugger"; then
+            echo "ERROR: Bundled GDB is missing com.apple.security.cs.debugger entitlement." >&2
+            exit 3
+        fi
+        "$DBG/bin/gdb" -nx -batch -ex 'show data-directory' >/dev/null
+        echo "Bundled GDB smoke check OK (debugger entitlement present)."
+        ;;
+    no-entitlement)
+        codesign --verify --verbose=2 "$DBG/bin/gdb"
+        if codesign -d --entitlements - "$DBG/bin/gdb" 2>&1 | grep -Fq "com.apple.security.cs.debugger"; then
+            echo "ERROR: Lab mode no-entitlement: gdb unexpectedly has cs.debugger." >&2
+            exit 3
+        fi
+        "$DBG/bin/gdb" -nx -batch -ex 'show data-directory' >/dev/null
+        echo "Lab GDB check OK (ad-hoc signed, debugger entitlement ABSENT)."
+        ;;
+    unsigned)
+        # Do not execute unsigned gdb: Apple Silicon kills it (SIGKILL). Signature
+        # removal was already asserted above; that is the lab proof for M1.
+        echo "Lab GDB check OK (signature removed; do not exec; Debug should stall)."
+        ;;
+esac
 
 echo "==> Installing to $DEST"
 if [[ -e "$DEST" ]]; then
