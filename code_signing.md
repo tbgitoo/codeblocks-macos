@@ -200,6 +200,10 @@ The bundle script:
 
 That is the **happy path** shipped in release DMGs. If you still see **No stack** / Mach task port errors after a fresh bundle, the planned v2.3 product path is in-app **Enable debugging** (repair); until then, the optional local-certificate commands above remain advanced recovery.
 
+### Diagnosis (v2.3 M2)
+
+When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgated` output), Code::Blocks may log a **macOS GDB signing diagnosis** block in the debugger log. It reports whether the configured debugger is the **bundled** `Resources/debugger/bin/gdb`, `codesign` verify result, presence of `com.apple.security.cs.debugger`, and whether quarantine xattrs are present (noted separately). **Bare “No stack” alone does not imply a signing defect.** This is evidence only — no repair and no Enable debugging prompt until later milestones.
+
 ### Developer lab: `--gdb-sign` (v2.3 M1)
 
 For one-Mac testing of future Enable debugging repair (see [plans/versioning_plan_v2_3.md](plans/versioning_plan_v2_3.md)). **Default is `normal` — always use that for release DMGs.**

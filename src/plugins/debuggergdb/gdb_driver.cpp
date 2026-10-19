@@ -11,6 +11,7 @@
 
 #include "gdb_driver.h"
 #include "gdb_commands.h"
+#include "debuggergdb.h"
 #include "debuggeroptionsdlg.h"
 #include "debuggerstate.h"
 
@@ -731,6 +732,9 @@ void GDB_driver::ParseOutput(const wxString& output)
     const wxArrayString lines = GetArrayFromString(buffer, _T('\n'));
     for (unsigned int i = 0; i < lines.GetCount(); ++i)
     {
+        // v2.3 M2: macOS signing / task-port session evidence (no repair).
+        m_pDBG->ObserveMacGdbOutputLine(lines[i]);
+
         // log GDB's version
         if (lines[i].StartsWith("GNU gdb"))
         {
