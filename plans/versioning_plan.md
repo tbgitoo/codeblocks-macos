@@ -41,7 +41,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.0** | **In progress** — M1–M5 DONE in tree (Program Console default; Terminal.app optional; focus policies). | [versioning_plan_v2_0.md](versioning_plan_v2_0.md) |
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
-| **v2.3** | **Planned** — Enable debugging helper (tiered ad-hoc then local cert); no manual `codesign`/Keychain as primary path; no paid Apple Program. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
+| **v2.3** | **In progress** — M1 DONE (lab `CB_BUNDLE_GDB_SIGN`); M2–M5 Enable debugging helper still planned. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
 
 ### One-line outcomes
 

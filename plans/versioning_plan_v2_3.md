@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: Planned.** Do not implement until this plan is accepted. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
+**Status: In progress (M1 DONE in tree).** M2–M5 remain planned. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -134,22 +134,26 @@ Resolve experimentally at implement time; mark as acceptance items, do not inven
 
 ### Developer lab (this Mac only)
 
-Injectable states (mechanism illustrative — env flag / packaging switch; default = normal release signing **on**):
+Injectable states via **`CB_BUNDLE_GDB_SIGN`** on `make_cb_app_bundle.sh` (default **`normal`** = release):
 
-| State | Intent |
-|-------|--------|
-| **normal** | Ad-hoc + debugger entitlement (healthy / no-op) |
-| **unsigned** | Missing signature |
-| **no-entitlement** | Signed but `cs.debugger` absent |
-| **force Tier 2** | Dev-only injection to exercise Tier 2 even when this Mac accepts ad-hoc — **not** claimed as natural `taskgated` rejection |
+| State | Mechanism | Intent |
+|-------|-----------|--------|
+| **normal** | `CB_BUNDLE_GDB_SIGN=normal` (default) | Ad-hoc + debugger entitlement (happy path / ship) |
+| **unsigned** | `CB_BUNDLE_GDB_SIGN=unsigned` | Missing signature |
+| **no-entitlement** | `CB_BUNDLE_GDB_SIGN=no-entitlement` | Signed but `cs.debugger` absent |
+| **force Tier 2** | Runtime injection later (M4) — **not** a bundle sign mode | Exercise Tier 2 when this Mac accepts ad-hoc — **not** natural `taskgated` rejection |
 
-**Lab may prove:** diagnosis; detect missing/invalid signing; entitlement detection; Tier 1 repair; Tier 2 create/trust/sign; verification; idempotence; UI / error handling; bundled-path-only restriction.
+Mode is recorded in `Resources/debugger/.cb_gdb_sign_lab`. Details: `code_signing.md` (Developer lab).
+
+**Lab may prove (M1):** packaging of normal / unsigned / no-entitlement; smoke checks; loud warnings against shipping lab modes.
+
+**Lab may prove (later M2–M5):** diagnosis; Tier 1/2 repair; verification; idempotence; UI / consent.
 
 **Lab must not claim:** that unsigned or entitlement-stripped `gdb` faithfully reproduces  
 `valid ad-hoc + valid entitlement + taskgated refusal on another Mac`.  
 That remains an **explicit residual validation limitation**.
 
-Never ship a release DMG with signing off or with force-Tier-2 injection enabled.
+Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2 injection enabled.
 
 ### Docs impact
 
@@ -162,7 +166,7 @@ Never ship a release DMG with signing off or with force-Tier-2 injection enabled
 
 | # | Status | Work |
 |---|--------|------|
-| **M1** | Planned | Dev injection of **normal / unsigned / no-entitlement** (+ optional force Tier 2); document what the lab proves and does not prove. |
+| **M1** | **DONE** (tree) | `CB_BUNDLE_GDB_SIGN` = `normal` / `unsigned` / `no-entitlement`; lab marker + docs; force Tier 2 deferred to M4 runtime. |
 | **M2** | Planned | Diagnosis: bundled path only; signature; entitlements; distinguish task-port/signing evidence from bare No stack; quarantine noted separately. |
 | **M3** | Planned | Tier 1 restoration when defective; verify; skip resign when already valid; idempotent. |
 | **M4** | Planned | Tier 2 path + force-injection; resolve identity lifecycle questions enough to ship safely; idempotent. |

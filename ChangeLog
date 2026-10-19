@@ -1,3 +1,14 @@
+2026-10-19 17:55  tbgitoo
+
+v2.3 M1 (tree): unofficial Apple Silicon macOS port
+	  * make_cb_app_bundle.sh: CB_BUNDLE_GDB_SIGN=normal|unsigned|
+	    no-entitlement (default normal = release ad-hoc + cs.debugger;
+	    lab modes warn loudly; never ship)
+	  * Resources/debugger/.cb_gdb_sign_lab records the mode
+	  * code_signing.md / README / plans: lab proves packaging
+	    injection only; not a stand-in for foreign-Mac taskgated
+	    refusal; force Tier 2 deferred to M4 runtime
+
 2026-10-18 22:42  tbgitoo
 
 

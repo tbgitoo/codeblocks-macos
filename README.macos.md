@@ -157,7 +157,7 @@ The important inputs include:
 
 `make_cb_app_bundle.sh` copies those into the app and vendors the license-permitted runtime dylibs currently required by that GDB build (`libzstd`, `libmpfr`, `libgmp`, with install-name rewrite). Override the staging prefix with `CB_BUNDLE_GDB_PREFIX` if the sister tree is elsewhere. The bundle fails if GDB or `share/gdb` is missing.
 
-Bundled `gdb` is ad-hoc signed with the `com.apple.security.cs.debugger` entitlement (`osx/gdb.entitlements`). Without that entitlement, macOS refuses the Mach task port and debugging stops with “Unable to find Mach task port” / “No stack”. Ad-hoc signing is not always enough on every Mac and is not reliable for downloaded `.dmg` installs; full local certificate steps are in [code_signing.md](code_signing.md).
+Bundled `gdb` is ad-hoc signed with the `com.apple.security.cs.debugger` entitlement (`osx/gdb.entitlements`). That is the **default release** path (`CB_BUNDLE_GDB_SIGN=normal`). Without that entitlement, macOS refuses the Mach task port and debugging stops with “Unable to find Mach task port” / “No stack”. Ad-hoc signing is not always enough on every Mac; recovery docs are in [code_signing.md](code_signing.md). Developers may inject unsigned / no-entitlement lab bundles via `CB_BUNDLE_GDB_SIGN` — see that file; **never** ship those modes.
 
 Resulting layout:
 
