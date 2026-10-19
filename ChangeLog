@@ -1,3 +1,12 @@
+2026-10-19 22:45  tbgitoo
+
+v2.3 M3 (tree): unofficial Apple Silicon macOS port
+	  * Tier 1 restore: ad-hoc codesign + cs.debugger on bundled gdb only;
+	    skip when already valid; refuse custom paths
+	  * Ships Resources/debugger/gdb.entitlements for in-app restore
+	  * Debug → Enable debugging on this Mac… (enabled after diagnosis
+	    suggests repair and debugger is stopped; auto-offer is M5)
+
 2026-10-19 22:30  tbgitoo
 
 v2.3 M2 (tree): unofficial Apple Silicon macOS port

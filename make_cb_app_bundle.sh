@@ -138,6 +138,14 @@ cp -v "$GDB_BIN_SRC" "$DBG/bin/gdb"
 chmod 755 "$DBG/bin/gdb"
 rsync -a "$GDB_SHARE_SRC/" "$DBG/share/gdb/"
 
+# Entitlements for in-app Tier 1 restore (v2.3 M3) and packaging codesign.
+GDB_ENTITLEMENTS_SRC="$SCRIPT_DIR/osx/gdb.entitlements"
+[[ -f "$GDB_ENTITLEMENTS_SRC" ]] || {
+    echo "ERROR: Missing GDB entitlements file: $GDB_ENTITLEMENTS_SRC" >&2
+    exit 2
+}
+cp -v "$GDB_ENTITLEMENTS_SRC" "$DBG/gdb.entitlements"
+
 # License-permitted runtime dylibs currently linked from Homebrew (zstd BSD/MIT,
 # mpfr/gmp LGPL-or-later). Vendor under debugger/lib and rewrite load paths.
 copy_gdb_license_file() {

@@ -199,9 +199,14 @@ class DebuggerGDB : public cbDebuggerPlugin
         void OnUpdateCatchThrow(wxUpdateUIEvent &event);
         void OnCatchThrow(wxCommandEvent &event);
 
+        void OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event);
+        void OnEnableDebuggingMac(wxCommandEvent &event);
+
         /** Run codesign diagnosis at most once per Debug session; log only. */
         void LogMacGdbSigningDiagnosisOnce(const wxString &reason);
         void ResetMacGdbSigningDiagnosis();
+        /** Insert Debug-menu item (macOS); safe to call more than once. */
+        void EnsureMacEnableDebuggingMenuItem();
     private:
         PipedProcess* m_pProcess;
         bool m_LastExitCode;
@@ -246,9 +251,11 @@ class DebuggerGDB : public cbDebuggerPlugin
 
         int m_printElements;
 
-        /** v2.3 M2: macOS GDB signing diagnosis (evidence only). */
+        /** v2.3 M2/M3: macOS GDB signing diagnosis / Tier 1 menu enable. */
         GdbMacSessionEvidence m_macGdbSessionEvidence;
         bool m_macGdbSigningDiagnosisLogged;
+        /** True after diagnosis that WouldOfferEnableDebugging (menu on Debug, not Information). */
+        bool m_macEnableDebuggingSuggested;
 
         DECLARE_EVENT_TABLE()
 };

@@ -232,6 +232,7 @@ long idMenuInfoPrintElements100 = wxNewId();
 long idMenuInfoPrintElements200 = wxNewId();
 
 long idMenuInfoCatchThrow = wxNewId();
+long idMenuEnableDebuggingMac = wxNewId();
 
 long idGDBProcess = wxNewId();
 long idTimerPollDebugger = wxNewId();
@@ -277,6 +278,9 @@ BEGIN_EVENT_TABLE(DebuggerGDB, cbDebuggerPlugin)
 
     EVT_UPDATE_UI(idMenuInfoCatchThrow, DebuggerGDB::OnUpdateCatchThrow)
     EVT_MENU(idMenuInfoCatchThrow, DebuggerGDB::OnCatchThrow)
+
+    EVT_UPDATE_UI(idMenuEnableDebuggingMac, DebuggerGDB::OnUpdateEnableDebuggingMac)
+    EVT_MENU(idMenuEnableDebuggingMac, DebuggerGDB::OnEnableDebuggingMac)
 END_EVENT_TABLE()
 
 DebuggerGDB::DebuggerGDB() :
@@ -296,7 +300,8 @@ DebuggerGDB::DebuggerGDB() :
     m_programConsoleDebug(false),
     m_TemporaryBreak(false),
     m_printElements(200),
-    m_macGdbSigningDiagnosisLogged(false)
+    m_macGdbSigningDiagnosisLogged(false),
+    m_macEnableDebuggingSuggested(false)
 {
     if (!Manager::LoadResource("debugger.zip"))
     {
@@ -331,6 +336,8 @@ void DebuggerGDB::OnAttachReal()
 
     // register event sink
     Manager::Get()->RegisterEventSink(cbEVT_BUILDTARGET_SELECTED, new cbEventFunctor<DebuggerGDB, CodeBlocksEvent>(this, &DebuggerGDB::OnBuildTargetSelected));
+
+    EnsureMacEnableDebuggingMenuItem();
 }
 
 void DebuggerGDB::OnReleaseReal(cb_unused bool appShutDown)
@@ -2099,6 +2106,38 @@ void DebuggerGDB::ResetMacGdbSigningDiagnosis()
 {
     m_macGdbSessionEvidence = GdbMacSessionEvidence();
     m_macGdbSigningDiagnosisLogged = false;
+    // Keep m_macEnableDebuggingSuggested across a new Debug attempt until repair or healthy.
+}
+
+void DebuggerGDB::EnsureMacEnableDebuggingMenuItem()
+{
+    if (!platform::macosx)
+        return;
+    wxFrame *frame = Manager::Get()->GetAppFrame();
+    if (!frame)
+        return;
+    wxMenuBar *mbar = frame->GetMenuBar();
+    if (!mbar)
+        return;
+    // Anchor on Attach: insert Enable debugging just above it on the Debug menu.
+    wxMenuItem *attach = mbar->FindItem(XRCID("idDebuggerMenuAttachToProcess"));
+    if (!attach)
+        return;
+    wxMenu *debugMenu = attach->GetMenu();
+    if (!debugMenu)
+        return;
+    if (debugMenu->FindItem(idMenuEnableDebuggingMac))
+        return; // already installed
+
+    size_t pos = 0;
+    for (; pos < debugMenu->GetMenuItemCount(); ++pos)
+    {
+        if (debugMenu->FindItemByPosition(pos) == attach)
+            break;
+    }
+    debugMenu->Insert(pos, idMenuEnableDebuggingMac,
+                      _("Enable debugging on this Mac…"),
+                      _("Restore ad-hoc signature and debugger entitlement on the bundled GDB when signing is defective"));
 }
 
 void DebuggerGDB::ObserveMacGdbOutputLine(const wxString &line)
@@ -2120,8 +2159,13 @@ void DebuggerGDB::LogMacGdbSigningDiagnosisOnce(const wxString &reason)
         return;
     m_macGdbSigningDiagnosisLogged = true;
 
+    EnsureMacEnableDebuggingMenuItem();
+
     const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
     const GdbMacSigningDiagnosis diag = DiagnoseMacGdbSigning(exe, m_macGdbSessionEvidence);
+    // Offer the Debug-menu repair only when diagnosis says it would help (not always when stopped).
+    m_macEnableDebuggingSuggested = diag.WouldOfferEnableDebugging();
+
     DebugLog(wxString::Format(_("macOS GDB signing diagnosis trigger: %s"), reason));
     // Split multi-line summary so the debugger log stays readable.
     const wxString summary = FormatGdbMacSigningDiagnosisForLog(diag);
@@ -2227,6 +2271,90 @@ void DebuggerGDB::OnCatchThrow(wxCommandEvent &event)
     bool flag = event.IsChecked();
     GetActiveConfigEx().SetFlag(DebuggerConfiguration::CatchExceptions, flag);
     m_State.GetDriver()->EnableCatchingThrow(flag);
+}
+
+void DebuggerGDB::OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event)
+{
+    // On the main Debug menu (not Information). Enabled only when diagnosis
+    // suggested a repair and the debugger is not currently running.
+    event.Enable(platform::macosx && !IsRunning() && m_macEnableDebuggingSuggested);
+}
+
+void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
+{
+    if (!platform::macosx)
+        return;
+    if (IsRunning())
+    {
+        cbMessageBox(_("Stop the debugger before enabling debugging on this Mac."),
+                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
+    const GdbMacSigningDiagnosis before = DiagnoseMacGdbSigning(exe, GdbMacSessionEvidence());
+    const GdbMacTier1Decision decision = DecideMacGdbTier1(before);
+
+    if (decision == GdbMacTier1Decision::SkipAlreadyValid)
+    {
+        m_macEnableDebuggingSuggested = false;
+        Log(_("Enable debugging: bundled GDB signature and entitlement already look valid (no change)."));
+        cbMessageBox(_("The bundled debugger already has a valid signature and "
+                       "debugger entitlement. No repair was needed."),
+                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+        return;
+    }
+    if (decision == GdbMacTier1Decision::RefuseMissing
+        || decision == GdbMacTier1Decision::RefuseNotBundled
+        || decision == GdbMacTier1Decision::RefuseNotOnMac)
+    {
+        m_macEnableDebuggingSuggested = false;
+        const wxString msg = (decision == GdbMacTier1Decision::RefuseNotBundled)
+            ? _("Enable debugging only applies to the debugger bundled inside Code::Blocks.\n"
+                "Your configured debugger path is elsewhere and will not be modified.")
+            : _("The bundled debugger was not found. Enable debugging cannot run.");
+        Log(msg, Logger::warning);
+        cbMessageBox(msg, _("Enable debugging"), wxOK | wxICON_WARNING);
+        return;
+    }
+
+    AnnoyingDialog dlg(_("Enable debugging on this Mac"),
+                       _("Code::Blocks can restore the ad-hoc signature and debugger "
+                         "entitlement on the bundled GDB (Tier 1).\n\n"
+                         "This does not create a certificate. Continue?"),
+                       wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtYES);
+    if (dlg.ShowModal() != AnnoyingDialog::rtYES)
+    {
+        Log(_("Enable debugging: cancelled by user."));
+        return;
+    }
+
+    Log(_("Enable debugging: running Tier 1 restore…"));
+    const GdbMacTier1Result result = TryMacGdbTier1Restore(exe);
+    const wxString summary = FormatGdbMacTier1ResultForLog(result);
+    wxStringTokenizer tok(summary, "\n", wxTOKEN_RET_EMPTY_ALL);
+    while (tok.HasMoreTokens())
+        Log(tok.GetNextToken());
+
+    if (result.kind == GdbMacTier1ResultKind::Restored)
+    {
+        m_macEnableDebuggingSuggested = false;
+        cbMessageBox(_("Bundled debugger signing was restored.\n"
+                       "Try Debug again."),
+                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+    }
+    else if (result.kind == GdbMacTier1ResultKind::SkippedAlreadyValid)
+    {
+        m_macEnableDebuggingSuggested = false;
+        cbMessageBox(_("No change was required."),
+                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+    }
+    else
+    {
+        cbMessageBox(_("Could not restore bundled debugger signing.\n"
+                       "See the debugger log for details."),
+                     _("Enable debugging"), wxOK | wxICON_ERROR);
+    }
 }
 
 void DebuggerGDB::OnInfoFrame(wxCommandEvent& WXUNUSED(event))
