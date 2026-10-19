@@ -100,4 +100,45 @@ TEST(FormatSummaryMentionsBareNoStackNote)
     CHECK(s.Contains(wxT("bare \"No stack\" alone")));
 }
 
+TEST(Tier1DecideSkipWhenValid)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidAdhoc;
+    d.hasDebuggerEntitlement = true;
+    CHECK_EQUAL(GdbMacTier1Decision::SkipAlreadyValid, DecideMacGdbTier1(d));
+}
+
+TEST(Tier1DecideRestoreWhenNoEntitlement)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidAdhoc;
+    d.hasDebuggerEntitlement = false;
+    CHECK_EQUAL(GdbMacTier1Decision::ShouldRestore, DecideMacGdbTier1(d));
+}
+
+TEST(Tier1DecideRestoreWhenUnsigned)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::MissingOrInvalid;
+    CHECK_EQUAL(GdbMacTier1Decision::ShouldRestore, DecideMacGdbTier1(d));
+}
+
+TEST(Tier1DecideRefuseNotBundled)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::NotBundled;
+    d.signature = GdbMacSignatureState::MissingOrInvalid;
+    CHECK_EQUAL(GdbMacTier1Decision::RefuseNotBundled, DecideMacGdbTier1(d));
+}
+
+TEST(Tier1DecideRefuseMissing)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Missing;
+    CHECK_EQUAL(GdbMacTier1Decision::RefuseMissing, DecideMacGdbTier1(d));
+}
+
 } // SUITE

@@ -202,7 +202,11 @@ That is the **happy path** shipped in release DMGs. If you still see **No stack*
 
 ### Diagnosis (v2.3 M2)
 
-When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgated` output), Code::Blocks may log a **macOS GDB signing diagnosis** block in the debugger log. It reports whether the configured debugger is the **bundled** `Resources/debugger/bin/gdb`, `codesign` verify result, presence of `com.apple.security.cs.debugger`, and whether quarantine xattrs are present (noted separately). **Bare “No stack” alone does not imply a signing defect.** This is evidence only — no repair and no Enable debugging prompt until later milestones.
+When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgated` output), Code::Blocks may log a **macOS GDB signing diagnosis** block in the debugger log. It reports whether the configured debugger is the **bundled** `Resources/debugger/bin/gdb`, `codesign` verify result, presence of `com.apple.security.cs.debugger`, and whether quarantine xattrs are present (noted separately). **Bare “No stack” alone does not imply a signing defect.**
+
+### Tier 1 restore (v2.3 M3)
+
+After a Debug session where diagnosis finds a Tier 1 candidate (`would offer Enable debugging: yes`), **Debug → Enable debugging on this Mac…** becomes enabled once the debugger is **stopped**. It re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger` on the **bundled** `gdb` only (`Resources/debugger/gdb.entitlements`). Custom paths are refused. The item stays disabled when there is no diagnosed issue (Information submenu is unchanged). Automatic offer-on-failure is later (M5). Tier 2 is later (M4).
 
 ### Developer lab: `--gdb-sign` (v2.3 M1)
 

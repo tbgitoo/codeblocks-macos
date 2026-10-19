@@ -78,4 +78,49 @@ GdbMacSigningDiagnosis DiagnoseMacGdbSigning(const wxString &configuredDebuggerP
 /** One multi-line human-readable summary for the debugger log. */
 wxString FormatGdbMacSigningDiagnosisForLog(const GdbMacSigningDiagnosis &d);
 
+// --- v2.3 M3: Tier 1 restoration (ad-hoc + cs.debugger; bundled only) --------
+
+/** Pure decision from diagnosis (unit-testable; no codesign). */
+enum class GdbMacTier1Decision
+{
+    RefuseNotOnMac,
+    RefuseMissing,
+    RefuseNotBundled,
+    SkipAlreadyValid, ///< valid signature + entitlement — do not resign
+    ShouldRestore     ///< defective signature and/or missing entitlement
+};
+
+GdbMacTier1Decision DecideMacGdbTier1(const GdbMacSigningDiagnosis &d);
+
+enum class GdbMacTier1ResultKind
+{
+    Refused,
+    SkippedAlreadyValid,
+    Restored,
+    Failed
+};
+
+struct GdbMacTier1Result
+{
+    GdbMacTier1ResultKind kind = GdbMacTier1ResultKind::Refused;
+    wxString message;
+    GdbMacSigningDiagnosis before;
+    GdbMacSigningDiagnosis after;
+};
+
+/**
+ * Bundled debugger entitlements plist shipped next to bin/
+ * (Resources/debugger/gdb.entitlements). Empty if missing.
+ */
+wxString GetMacBundledGdbEntitlementsPath();
+
+/**
+ * Tier 1: restore ad-hoc signature + com.apple.security.cs.debugger on the
+ * bundled gdb only. Skips when already valid. Never touches custom paths.
+ * May shell out to codesign on macOS.
+ */
+GdbMacTier1Result TryMacGdbTier1Restore(const wxString &configuredDebuggerPath);
+
+wxString FormatGdbMacTier1ResultForLog(const GdbMacTier1Result &r);
+
 #endif // GDBMACOSSIGNINGDIAGNOSE_H

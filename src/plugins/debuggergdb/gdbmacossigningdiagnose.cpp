@@ -2,11 +2,13 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v2.3 M2: macOS bundled-GDB signing / task-port diagnosis (evidence only; no repair).
+ * v2.3 M2: macOS bundled-GDB signing / task-port diagnosis.
+ * v2.3 M3: Tier 1 ad-hoc + cs.debugger restoration (bundled only).
  */
 
 #include "sdk.h"
 #ifndef CB_PRECOMP
+    #include <wx/dir.h>
     #include <wx/filename.h>
     #include <wx/utils.h>
     #include "configmanager.h"
@@ -264,5 +266,159 @@ wxString FormatGdbMacSigningDiagnosisForLog(const GdbMacSigningDiagnosis &d)
       << (d.WouldOfferEnableDebugging() ? "yes" : "no");
     if (d.session.bareNoStack && !d.WouldOfferEnableDebugging() && !d.SigningDefective())
         s << "\n  note: bare \"No stack\" alone is not enough without signing or task-port evidence";
+    return s;
+}
+
+GdbMacTier1Decision DecideMacGdbTier1(const GdbMacSigningDiagnosis &d)
+{
+    switch (d.pathKind)
+    {
+        case GdbMacPathKind::NotOnMac:
+            return GdbMacTier1Decision::RefuseNotOnMac;
+        case GdbMacPathKind::Missing:
+            return GdbMacTier1Decision::RefuseMissing;
+        case GdbMacPathKind::NotBundled:
+            return GdbMacTier1Decision::RefuseNotBundled;
+        case GdbMacPathKind::Bundled:
+            break;
+    }
+    if (!d.SigningDefective())
+        return GdbMacTier1Decision::SkipAlreadyValid;
+    return GdbMacTier1Decision::ShouldRestore;
+}
+
+wxString GetMacBundledGdbEntitlementsPath()
+{
+#ifdef __WXMAC__
+    // Contents/Resources/share/codeblocks → ../../debugger/gdb.entitlements
+    wxFileName ents(ConfigManager::GetDataFolder() + "/../../debugger/gdb.entitlements");
+    ents.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
+    if (ents.FileExists())
+        return ents.GetFullPath();
+    return wxString();
+#else
+    return wxString();
+#endif
+}
+
+GdbMacTier1Result TryMacGdbTier1Restore(const wxString &configuredDebuggerPath)
+{
+    GdbMacTier1Result r;
+    r.before = DiagnoseMacGdbSigning(configuredDebuggerPath, GdbMacSessionEvidence());
+    const GdbMacTier1Decision decision = DecideMacGdbTier1(r.before);
+
+    switch (decision)
+    {
+        case GdbMacTier1Decision::RefuseNotOnMac:
+            r.kind = GdbMacTier1ResultKind::Refused;
+            r.message = "Tier 1 refused: not macOS";
+            return r;
+        case GdbMacTier1Decision::RefuseMissing:
+            r.kind = GdbMacTier1ResultKind::Refused;
+            r.message = "Tier 1 refused: debugger executable missing";
+            return r;
+        case GdbMacTier1Decision::RefuseNotBundled:
+            r.kind = GdbMacTier1ResultKind::Refused;
+            r.message = "Tier 1 refused: not the bundled Resources/debugger/bin/gdb";
+            return r;
+        case GdbMacTier1Decision::SkipAlreadyValid:
+            r.kind = GdbMacTier1ResultKind::SkippedAlreadyValid;
+            r.after = r.before;
+            r.message = "Tier 1 skipped: signature and cs.debugger already valid (no resign)";
+            return r;
+        case GdbMacTier1Decision::ShouldRestore:
+            break;
+    }
+
+#if !defined(__WXMAC__)
+    r.kind = GdbMacTier1ResultKind::Refused;
+    r.message = "Tier 1 refused: not built for macOS";
+    return r;
+#else
+    const wxString ents = GetMacBundledGdbEntitlementsPath();
+    if (ents.empty())
+    {
+        r.kind = GdbMacTier1ResultKind::Failed;
+        r.message = "Tier 1 failed: bundled gdb.entitlements not found under Resources/debugger/";
+        return r;
+    }
+
+    const wxString gdbPath = r.before.configuredPath;
+    const wxString qGdb = QuoteForShell(gdbPath);
+    const wxString qEnts = QuoteForShell(ents);
+
+    // Re-sign companion dylibs ad-hoc (no debugger entitlement required).
+    wxFileName libDirFn(gdbPath);
+    const wxString libDir = libDirFn.GetPath() + wxFileName::GetPathSeparator() + ".."
+                          + wxFileName::GetPathSeparator() + "lib";
+    wxFileName libNorm(libDir);
+    libNorm.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
+    if (wxDir::Exists(libNorm.GetFullPath()))
+    {
+        wxDir dir(libNorm.GetFullPath());
+        wxString name;
+        bool cont = dir.GetFirst(&name, "*.dylib", wxDIR_FILES);
+        while (cont)
+        {
+            const wxString libPath = libNorm.GetFullPath() + wxFileName::GetPathSeparator() + name;
+            int libRc = -1;
+            RunCapture("codesign --force --sign - " + QuoteForShell(libPath), &libRc);
+            if (libRc != 0)
+            {
+                r.kind = GdbMacTier1ResultKind::Failed;
+                r.message = wxString::Format("Tier 1 failed: codesign dylib %s (exit %d)", name, libRc);
+                return r;
+            }
+            cont = dir.GetNext(&name);
+        }
+    }
+
+    int signRc = -1;
+    RunCapture("codesign --force --sign - --entitlements " + qEnts + " " + qGdb, &signRc);
+    if (signRc != 0)
+    {
+        r.kind = GdbMacTier1ResultKind::Failed;
+        r.message = wxString::Format("Tier 1 failed: codesign gdb (exit %d)", signRc);
+        r.after = DiagnoseMacGdbSigning(gdbPath, GdbMacSessionEvidence());
+        return r;
+    }
+
+    r.after = DiagnoseMacGdbSigning(gdbPath, GdbMacSessionEvidence());
+    if (r.after.SigningDefective() || !r.after.hasDebuggerEntitlement
+        || r.after.signature == GdbMacSignatureState::MissingOrInvalid)
+    {
+        r.kind = GdbMacTier1ResultKind::Failed;
+        r.message = "Tier 1 failed: post-sign verify still defective";
+        return r;
+    }
+
+    r.kind = GdbMacTier1ResultKind::Restored;
+    r.message = "Tier 1 restored: ad-hoc signature + com.apple.security.cs.debugger";
+    return r;
+#endif
+}
+
+wxString FormatGdbMacTier1ResultForLog(const GdbMacTier1Result &r)
+{
+    wxString s;
+    s << "macOS GDB Tier 1 restore (v2.3 M3):\n";
+    s << "  result: ";
+    switch (r.kind)
+    {
+        case GdbMacTier1ResultKind::Refused:
+            s << "refused";
+            break;
+        case GdbMacTier1ResultKind::SkippedAlreadyValid:
+            s << "skipped (already valid)";
+            break;
+        case GdbMacTier1ResultKind::Restored:
+            s << "restored";
+            break;
+        case GdbMacTier1ResultKind::Failed:
+            s << "failed";
+            break;
+    }
+    s << '\n';
+    s << "  " << r.message;
     return s;
 }
