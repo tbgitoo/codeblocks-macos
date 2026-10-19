@@ -17,17 +17,56 @@ GDB_PREFIX="${CB_BUNDLE_GDB_PREFIX:-$SCRIPT_DIR/../binutils-gdb/staging}"
 DBG="$APP/Contents/Resources/debugger"
 
 # v2.3 M1 lab: how nested gdb is signed (default = release happy path).
-#   normal         — ad-hoc + com.apple.security.cs.debugger (default; ship this)
-#   unsigned       — strip signature from gdb after app signing (Debug should stall)
-#   no-entitlement — ad-hoc sign gdb without debugger entitlement (Debug should stall)
+#   --gdb-sign=normal         — ad-hoc + com.apple.security.cs.debugger (default; ship this)
+#   --gdb-sign=unsigned       — strip signature from gdb after app signing (Debug should stall)
+#   --gdb-sign=no-entitlement — ad-hoc sign gdb without debugger entitlement (Debug should stall)
 # Never ship a release DMG with unsigned or no-entitlement.
-CB_BUNDLE_GDB_SIGN="${CB_BUNDLE_GDB_SIGN:-normal}"
-case "$CB_BUNDLE_GDB_SIGN" in
+GDB_SIGN_MODE=normal
+
+usage() {
+    cat <<'EOF'
+Usage: ./make_cb_app_bundle.sh [--gdb-sign=MODE]
+
+Build /Applications/CodeBlocks.app from the local prefix.
+
+  --gdb-sign=MODE   How nested gdb is signed (default: normal)
+                      normal         ad-hoc + cs.debugger (release / ship)
+                      unsigned       no signature (lab; do not ship)
+                      no-entitlement ad-hoc without cs.debugger (lab; do not ship)
+  -h, --help        Show this help
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --gdb-sign=*)
+            GDB_SIGN_MODE="${1#--gdb-sign=}"
+            shift
+            ;;
+        --gdb-sign)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --gdb-sign requires a value (normal|unsigned|no-entitlement)" >&2
+                exit 2
+            fi
+            GDB_SIGN_MODE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$GDB_SIGN_MODE" in
     normal|unsigned|no-entitlement) ;;
-    0|off|false) CB_BUNDLE_GDB_SIGN=unsigned ;;
-    1|on|true) CB_BUNDLE_GDB_SIGN=normal ;;
     *)
-        echo "ERROR: CB_BUNDLE_GDB_SIGN must be normal|unsigned|no-entitlement (got: $CB_BUNDLE_GDB_SIGN)" >&2
+        echo "ERROR: --gdb-sign must be normal|unsigned|no-entitlement (got: $GDB_SIGN_MODE)" >&2
         exit 2
         ;;
 esac
@@ -411,9 +450,9 @@ while IFS= read -r link; do
     esac
 done < <(find "$APP" -type l)
 
-echo "==> Ad-hoc signing (CB_BUNDLE_GDB_SIGN=$CB_BUNDLE_GDB_SIGN)"
-if [[ "$CB_BUNDLE_GDB_SIGN" != "normal" ]]; then
-    echo "WARNING: Lab signing mode '$CB_BUNDLE_GDB_SIGN' — do NOT ship this bundle as a release DMG." >&2
+echo "==> Ad-hoc signing (--gdb-sign=$GDB_SIGN_MODE)"
+if [[ "$GDB_SIGN_MODE" != "normal" ]]; then
+    echo "WARNING: Lab signing mode '$GDB_SIGN_MODE' — do NOT ship this bundle as a release DMG." >&2
 fi
 xattr -cr "$APP" || true
 GDB_ENTITLEMENTS="$SCRIPT_DIR/osx/gdb.entitlements"
@@ -431,7 +470,7 @@ if compgen -G "$DBG/lib/"*.dylib >/dev/null; then
     done
 fi
 
-case "$CB_BUNDLE_GDB_SIGN" in
+case "$GDB_SIGN_MODE" in
     normal)
         codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
         ;;
@@ -447,7 +486,7 @@ esac
 
 codesign --force --deep --sign - "$APP"
 
-case "$CB_BUNDLE_GDB_SIGN" in
+case "$GDB_SIGN_MODE" in
     normal)
         # Re-apply debugger entitlement after --deep (which may resign nested code).
         codesign --force --sign - --entitlements "$GDB_ENTITLEMENTS" "$DBG/bin/gdb"
@@ -466,15 +505,15 @@ case "$CB_BUNDLE_GDB_SIGN" in
 esac
 
 # Deep app verify: skip for unsigned lab (nested gdb intentionally has no signature).
-if [[ "$CB_BUNDLE_GDB_SIGN" == "unsigned" ]]; then
+if [[ "$GDB_SIGN_MODE" == "unsigned" ]]; then
     echo "Skipping codesign --verify --deep (lab unsigned: nested gdb has no signature)."
 else
     codesign --verify --deep --strict --verbose=2 "$APP"
 fi
 
 # Lab marker for later diagnosis (M2+); always written so tooling can see the mode.
-printf '%s\n' "$CB_BUNDLE_GDB_SIGN" > "$DBG/.cb_gdb_sign_lab"
-case "$CB_BUNDLE_GDB_SIGN" in
+printf '%s\n' "$GDB_SIGN_MODE" > "$DBG/.cb_gdb_sign_lab"
+case "$GDB_SIGN_MODE" in
     normal)
         codesign --verify --verbose=2 "$DBG/bin/gdb"
         if ! codesign -d --entitlements - "$DBG/bin/gdb" 2>&1 | grep -Fq "com.apple.security.cs.debugger"; then
