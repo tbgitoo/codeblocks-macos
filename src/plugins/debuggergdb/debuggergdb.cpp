@@ -295,7 +295,8 @@ DebuggerGDB::DebuggerGDB() :
     m_nConsolePid(0),
     m_programConsoleDebug(false),
     m_TemporaryBreak(false),
-    m_printElements(200)
+    m_printElements(200),
+    m_macGdbSigningDiagnosisLogged(false)
 {
     if (!Manager::LoadResource("debugger.zip"))
     {
@@ -748,6 +749,8 @@ int DebuggerGDB::LaunchProcess(const wxString& cmd, const wxString& cwd)
         delete m_pProcess;
         m_pProcess = nullptr;
         Log(_("failed"), Logger::error);
+        m_macGdbSessionEvidence.launchFailed = true;
+        LogMacGdbSigningDiagnosisOnce(_("debugger launch failed"));
         return -1;
     }
     else if (!m_pProcess->GetOutputStream())
@@ -755,6 +758,8 @@ int DebuggerGDB::LaunchProcess(const wxString& cmd, const wxString& cwd)
         delete m_pProcess;
         m_pProcess = nullptr;
         Log(_("failed (to get debugger's stdin)"), Logger::error);
+        m_macGdbSessionEvidence.launchFailed = true;
+        LogMacGdbSigningDiagnosisOnce(_("debugger launch failed (stdin)"));
         return -2;
     }
     else if (!m_pProcess->GetInputStream())
@@ -762,6 +767,8 @@ int DebuggerGDB::LaunchProcess(const wxString& cmd, const wxString& cwd)
         delete m_pProcess;
         m_pProcess = nullptr;
         Log(_("failed (to get debugger's stdout)"), Logger::error);
+        m_macGdbSessionEvidence.launchFailed = true;
+        LogMacGdbSigningDiagnosisOnce(_("debugger launch failed (stdout)"));
         return -2;
     }
     else if (!m_pProcess->GetErrorStream())
@@ -769,6 +776,8 @@ int DebuggerGDB::LaunchProcess(const wxString& cmd, const wxString& cwd)
         delete m_pProcess;
         m_pProcess = nullptr;
         Log(_("failed (to get debugger's stderr)"), Logger::error);
+        m_macGdbSessionEvidence.launchFailed = true;
+        LogMacGdbSigningDiagnosisOnce(_("debugger launch failed (stderr)"));
         return -2;
     }
     Log(_("done"));
@@ -897,6 +906,7 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
     m_bIsConsole = false;
     m_nConsolePid = 0;
     m_programConsoleDebug = false;
+    ResetMacGdbSigningDiagnosis();
     ProjectManager* prjMan = Manager::Get()->GetProjectManager();
 
     // select the build target to debug (project path only; standalone uses DebuggeeDescription)
@@ -2085,6 +2095,41 @@ void DebuggerGDB::ParseOutput(const wxString& output)
     }
 }
 
+void DebuggerGDB::ResetMacGdbSigningDiagnosis()
+{
+    m_macGdbSessionEvidence = GdbMacSessionEvidence();
+    m_macGdbSigningDiagnosisLogged = false;
+}
+
+void DebuggerGDB::ObserveMacGdbOutputLine(const wxString &line)
+{
+    if (!platform::macosx)
+        return;
+    if (!ClassifyGdbMacSessionLine(line, m_macGdbSessionEvidence))
+        return;
+    // Log as soon as we have No stack or task-port evidence (do not wait for terminate).
+    if (m_macGdbSessionEvidence.bareNoStack || m_macGdbSessionEvidence.taskPortOrTaskgated)
+        LogMacGdbSigningDiagnosisOnce(_("GDB session evidence"));
+}
+
+void DebuggerGDB::LogMacGdbSigningDiagnosisOnce(const wxString &reason)
+{
+    if (m_macGdbSigningDiagnosisLogged)
+        return;
+    if (!platform::macosx)
+        return;
+    m_macGdbSigningDiagnosisLogged = true;
+
+    const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
+    const GdbMacSigningDiagnosis diag = DiagnoseMacGdbSigning(exe, m_macGdbSessionEvidence);
+    DebugLog(wxString::Format(_("macOS GDB signing diagnosis trigger: %s"), reason));
+    // Split multi-line summary so the debugger log stays readable.
+    const wxString summary = FormatGdbMacSigningDiagnosisForLog(diag);
+    wxStringTokenizer tok(summary, "\n", wxTOKEN_RET_EMPTY_ALL);
+    while (tok.HasMoreTokens())
+        Log(tok.GetNextToken());
+}
+
 void DebuggerGDB::GetCurrentPosition(wxString &filename, int &line)
 {
     if (m_State.HasDriver())
@@ -2248,6 +2293,16 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
     if (!Manager::IsAppShuttingDown())
     {
         Log(wxString::Format(_("Debugger finished with status %d"), m_LastExitCode));
+
+        // v2.3 M2: diagnose bundled gdb signing when the session looked unhealthy.
+        if (m_macGdbSessionEvidence.bareNoStack
+            || m_macGdbSessionEvidence.taskPortOrTaskgated
+            || m_macGdbSessionEvidence.launchFailed
+            || m_LastExitCode != 0)
+        {
+            LogMacGdbSigningDiagnosisOnce(
+                wxString::Format(_("debugger finished (status %d)"), m_LastExitCode));
+        }
 
         if (m_NoDebugInfo)
         {

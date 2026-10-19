@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: In progress (M1 DONE in tree).** M2–M5 remain planned. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
+**Status: In progress (M1–M2 DONE in tree).** M3–M5 remain planned. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -147,7 +147,9 @@ Mode is recorded in `Resources/debugger/.cb_gdb_sign_lab`. Details: `code_signin
 
 **Lab may prove (M1):** packaging of normal / unsigned / no-entitlement; smoke checks; loud warnings against shipping lab modes.
 
-**Lab may prove (later M2–M5):** diagnosis; Tier 1/2 repair; verification; idempotence; UI / consent.
+**Lab may prove (M2):** debugger log diagnosis for bundled path / signature / entitlement; bare No stack vs task-port evidence; no mutation.
+
+**Lab may prove (later M3–M5):** Tier 1/2 repair; verification; idempotence; UI / consent.
 
 **Lab must not claim:** that unsigned or entitlement-stripped `gdb` faithfully reproduces  
 `valid ad-hoc + valid entitlement + taskgated refusal on another Mac`.  
@@ -167,7 +169,7 @@ Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2
 | # | Status | Work |
 |---|--------|------|
 | **M1** | **DONE** (tree) | `--gdb-sign=` = `normal` / `unsigned` / `no-entitlement`; lab marker + docs; force Tier 2 deferred to M4 runtime. |
-| **M2** | Planned | Diagnosis: bundled path only; signature; entitlements; distinguish task-port/signing evidence from bare No stack; quarantine noted separately. |
+| **M2** | **DONE** (tree) | `gdbmacossigningdiagnose`: bundled path only; `codesign` verify + `cs.debugger`; session classifiers (bare No stack vs task-port/taskgated); quarantine noted separately; logs evidence only (no prompt / no repair). |
 | **M3** | Planned | Tier 1 restoration when defective; verify; skip resign when already valid; idempotent. |
 | **M4** | Planned | Tier 2 path + force-injection; resolve identity lifecycle questions enough to ship safely; idempotent. |
 | **M5** | Planned | Consent prompt on confirmed failure; silence + Debugger pref to re-enable; menu; README + `code_signing.md`; acceptance S1–S10. |

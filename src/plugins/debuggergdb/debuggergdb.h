@@ -19,6 +19,7 @@
 #include "debuggerstate.h"
 #include "debugger_defs.h"
 #include "debuggeedescription.h"
+#include "gdbmacossigningdiagnose.h"
 
 class cbProject;
 class TiXmlElement;
@@ -138,6 +139,9 @@ class DebuggerGDB : public cbDebuggerPlugin
 
         void DetermineLanguage();
 
+        /** v2.3 M2: accumulate GDB lines for macOS signing / task-port evidence. */
+        void ObserveMacGdbOutputLine(const wxString &line);
+
         /** Forced console cleanup (SIGTERM): holder exits immediately, no key wait. */
         void KillConsole();
 
@@ -194,6 +198,10 @@ class DebuggerGDB : public cbDebuggerPlugin
 
         void OnUpdateCatchThrow(wxUpdateUIEvent &event);
         void OnCatchThrow(wxCommandEvent &event);
+
+        /** Run codesign diagnosis at most once per Debug session; log only. */
+        void LogMacGdbSigningDiagnosisOnce(const wxString &reason);
+        void ResetMacGdbSigningDiagnosis();
     private:
         PipedProcess* m_pProcess;
         bool m_LastExitCode;
@@ -237,6 +245,10 @@ class DebuggerGDB : public cbDebuggerPlugin
         friend struct TestIfBelongToProject;
 
         int m_printElements;
+
+        /** v2.3 M2: macOS GDB signing diagnosis (evidence only). */
+        GdbMacSessionEvidence m_macGdbSessionEvidence;
+        bool m_macGdbSigningDiagnosisLogged;
 
         DECLARE_EVENT_TABLE()
 };

@@ -30,6 +30,7 @@ libdebugger_la_SOURCES = cdb_driver.cpp \
 			editbreakpointdlg.cpp \
 			editwatchdlg.cpp \
 			gdb_driver.cpp \
+			gdbmacossigningdiagnose.cpp \
 			nativewatchsummary.cpp \
 			parsewatchvalue.cpp
 
@@ -46,6 +47,7 @@ noinst_HEADERS = cdb_commands.h \
 			editwatchdlg.h \
 			gdb_commands.h \
 			gdb_driver.h \
+			gdbmacossigningdiagnose.h \
 			nativewatchsummary.h \
 			parsewatchvalue.h \
 			remotedebugging.h
@@ -54,6 +56,7 @@ EXTRA_DIST = debuggergdb_test_defs.cpp \
 		debuggergdb_test_backtrace.cpp \
 		debuggergdb_test_common.h \
 		debuggergdb_test_main.cpp \
+		debuggergdb_test_mac_signing.cpp \
 		debuggergdb_test_native_summary.cpp \
 		debuggergdb_test_parser.cpp \
 		debuggergdb_test_parser_cdb.cpp \

@@ -27,19 +27,7 @@
 
 #include "debuggergdb.h"
 #include "debuggermanager.h"
-
-#ifdef __WXMAC__
-namespace
-{
-wxFileName MacBundledGdbFileName()
-{
-    // Contents/Resources/share/codeblocks → ../../debugger/bin/gdb
-    wxFileName bundled(ConfigManager::GetDataFolder() + "/../../debugger/bin/gdb");
-    bundled.Normalize(wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
-    return bundled;
-}
-} // namespace
-#endif
+#include "gdbmacossigningdiagnose.h"
 
 class DebuggerConfigurationPanel : public wxPanel
 {
@@ -86,7 +74,7 @@ class DebuggerConfigurationPanel : public wxPanel
 #ifdef __WXMAC__
             // Open inside Contents/Resources/debugger/bin so the user does not have
             // to navigate into the .app package (the system picker blocks that).
-            const wxFileName bundled = MacBundledGdbFileName();
+            const wxFileName bundled(GetMacBundledGdbPath());
             if (bundled.FileExists())
             {
                 startDir = bundled.GetPath();
@@ -106,7 +94,7 @@ class DebuggerConfigurationPanel : public wxPanel
 #ifdef __WXMAC__
         void OnUseBundled(cb_unused wxCommandEvent &event)
         {
-            const wxFileName bundled = MacBundledGdbFileName();
+            const wxFileName bundled(GetMacBundledGdbPath());
             if (!bundled.FileExists())
             {
                 cbMessageBox(_("The bundled GDB was not found in this application."),
@@ -153,7 +141,7 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
     {
         wxWindow *bundledBtn = XRCCTRL(*panel, "btnBundledGdb", wxWindow);
         if (bundledBtn)
-            bundledBtn->Show(MacBundledGdbFileName().FileExists());
+            bundledBtn->Show(wxFileName(GetMacBundledGdbPath()).FileExists());
     }
 #else
     {
@@ -292,7 +280,7 @@ wxString DebuggerConfiguration::GetDebuggerExecutable(bool expandMacro)
         return result;
 
 #ifdef __WXMAC__
-    const wxFileName bundled = MacBundledGdbFileName();
+    const wxFileName bundled(GetMacBundledGdbPath());
     if (bundled.FileExists())
         return bundled.GetFullPath();
 #endif

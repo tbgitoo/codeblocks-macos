@@ -1,3 +1,13 @@
+2026-10-19 22:30  tbgitoo
+
+v2.3 M2 (tree): unofficial Apple Silicon macOS port
+	  * gdbmacossigningdiagnose: bundled-path gate; codesign verify;
+	    cs.debugger entitlement; quarantine noted separately
+	  * Session classifiers: bare "No stack" vs Mach task port /
+	    taskgated; WouldOfferEnableDebugging for later M5 (no UI yet)
+	  * Debugger log: one diagnosis dump per unhealthy session
+	    (launch fail / No stack / task-port / non-zero exit)
+
 2026-10-19 17:55  tbgitoo
 
 v2.3 M1 (tree): unofficial Apple Silicon macOS port
