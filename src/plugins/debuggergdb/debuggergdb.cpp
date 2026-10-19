@@ -2172,6 +2172,17 @@ void DebuggerGDB::LogMacGdbSigningDiagnosisOnce(const wxString &reason)
     wxStringTokenizer tok(summary, "\n", wxTOKEN_RET_EMPTY_ALL);
     while (tok.HasMoreTokens())
         Log(tok.GetNextToken());
+
+    if (m_macEnableDebuggingSuggested)
+    {
+        // Prominent, red debugger-log guidance (do not require the user to hunt the menu).
+        // Stay on / switch to the Debugger pane so Program Console does not hide this.
+        ShowLog(false);
+        Log(_("✕ Debugger signing is defective — debugging cannot attach."), Logger::error);
+        Log(_("   Choose Debug → Enable debugging on this Mac… to fix, then Debug again."),
+            Logger::error);
+        ShowLog(false);
+    }
 }
 
 void DebuggerGDB::GetCurrentPosition(wxString &filename, int &line)
@@ -2275,23 +2286,40 @@ void DebuggerGDB::OnCatchThrow(wxCommandEvent &event)
 
 void DebuggerGDB::OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event)
 {
-    // On the main Debug menu (not Information). Enabled only when diagnosis
-    // suggested a repair and the debugger is not currently running.
-    event.Enable(platform::macosx && !IsRunning() && m_macEnableDebuggingSuggested);
+    // Main Debug menu: enabled when diagnosis suggested a repair (even if a
+    // failed session is still active — Enable debugging will stop it first).
+    event.Enable(platform::macosx && m_macEnableDebuggingSuggested);
 }
 
 void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
 {
     if (!platform::macosx)
         return;
+
+    // Capture path before Stop(); config is unchanged, but be explicit.
+    const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
+
     if (IsRunning())
     {
-        cbMessageBox(_("Stop the debugger before enabling debugging on this Mac."),
-                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
-        return;
+        Log(_("Enable debugging: stopping the current debugger session…"));
+        Stop();
+        // Wait for GDB to terminate so we can re-sign the binary safely.
+        int wait = 200; // ~2s
+        while (IsRunning() && wait-- > 0)
+        {
+            wxMilliSleep(10);
+            Manager::Yield();
+        }
+        if (IsRunning())
+        {
+            cbMessageBox(_("Could not stop the debugger.\n"
+                           "Use Debug → Stop debugger, then try Enable debugging again."),
+                         _("Enable debugging"), wxOK | wxICON_WARNING);
+            return;
+        }
+        Log(_("Enable debugging: debugger stopped."));
     }
 
-    const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
     const GdbMacSigningDiagnosis before = DiagnoseMacGdbSigning(exe, GdbMacSessionEvidence());
     const GdbMacTier1Decision decision = DecideMacGdbTier1(before);
 

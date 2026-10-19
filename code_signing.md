@@ -206,7 +206,7 @@ When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgat
 
 ### Tier 1 restore (v2.3 M3)
 
-After a Debug session where diagnosis finds a Tier 1 candidate (`would offer Enable debugging: yes`), **Debug → Enable debugging on this Mac…** becomes enabled once the debugger is **stopped**. It re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger` on the **bundled** `gdb` only (`Resources/debugger/gdb.entitlements`). Custom paths are refused. The item stays disabled when there is no diagnosed issue (Information submenu is unchanged). Automatic offer-on-failure is later (M5). Tier 2 is later (M4).
+After diagnosis finds a Tier 1 candidate, the debugger log shows a red **✕** hint, and **Debug → Enable debugging on this Mac…** becomes enabled (even if the failed session is still open — it stops the session first, then restores). It re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger` on the **bundled** `gdb` only. Custom paths are refused. Automatic dialog-on-failure is later (M5). Tier 2 is later (M4).
 
 ### Developer lab: `--gdb-sign` (v2.3 M1)
 
