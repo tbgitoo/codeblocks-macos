@@ -209,8 +209,9 @@ class DebuggerGDB : public cbDebuggerPlugin
         void OfferMacEnableDebugging();
         /** Manual menu and automatic offer share this repair. alreadyConsented skips the second question. */
         void RunMacEnableDebuggingRepair(bool alreadyConsented);
-        /** Insert Debug-menu item (macOS); safe to call more than once. */
+        /** Insert or remove the Debug-menu item. Shown only after a signature failure, or when lab force Tier 2 is on. */
         void EnsureMacEnableDebuggingMenuItem();
+        bool MacEnableDebuggingMenuWanted();
     private:
         PipedProcess* m_pProcess;
         bool m_LastExitCode;
