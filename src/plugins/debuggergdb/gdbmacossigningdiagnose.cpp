@@ -24,6 +24,9 @@
 #include <Security/SecPolicy.h>
 #include <Security/SecTrustSettings.h>
 #include <dlfcn.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace
@@ -47,6 +50,14 @@ wxString QuoteForShell(const wxString &path)
     escaped.Replace("'", "'\\''");
     return "'" + escaped + "'";
 }
+
+#ifdef __WXMAC__
+void AppendCapturedOutput(wxString &message, const wxString &output)
+{
+    if (!output.empty())
+        message += ": " + output;
+}
+#endif
 
 bool LineLooksLikeTaskPortEvidence(const wxString &line)
 {
@@ -154,6 +165,38 @@ void RemoveLoginTier2Identity(const wxString &cn)
     RunCapture("security delete-certificate -c " + name + " " + login, &rc);
 }
 
+struct CfTypeGuard
+{
+    CFTypeRef ref = nullptr;
+    CfTypeGuard() = default;
+    ~CfTypeGuard()
+    {
+        if (ref)
+            CFRelease(ref);
+    }
+    CfTypeGuard(const CfTypeGuard &) = delete;
+    CfTypeGuard &operator=(const CfTypeGuard &) = delete;
+    void reset(CFTypeRef next)
+    {
+        if (ref)
+            CFRelease(ref);
+        ref = next;
+    }
+};
+
+struct DlopenGuard
+{
+    void *handle = nullptr;
+    DlopenGuard() = default;
+    ~DlopenGuard()
+    {
+        if (handle)
+            dlclose(handle);
+    }
+    DlopenGuard(const DlopenGuard &) = delete;
+    DlopenGuard &operator=(const DlopenGuard &) = delete;
+};
+
 /**
  * Trust a DER certificate for code signing in the admin domain.
  * Called from this GUI process so macOS can show the administrator panel.
@@ -173,50 +216,62 @@ wxString TrustCertificateFileForCodeSigning(const wxString &derPath)
         return "cannot read certificate for trust settings";
     in.Close();
 
-    void *security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
-    if (!security)
+    DlopenGuard securityLib;
+    securityLib.handle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
+    if (!securityLib.handle)
         return wxString("cannot load Security framework: ") + dlerror();
 
     using CreateCertFn = SecCertificateRef (*)(CFAllocatorRef, CFDataRef);
     using CreatePolicyFn = SecPolicyRef (*)(CFTypeRef, CFDictionaryRef);
     using SetTrustFn = OSStatus (*)(SecCertificateRef, SecTrustSettingsDomain, CFTypeRef);
-    auto createCert = reinterpret_cast<CreateCertFn>(dlsym(security, "SecCertificateCreateWithData"));
-    auto createPolicy = reinterpret_cast<CreatePolicyFn>(dlsym(security, "SecPolicyCreateWithProperties"));
-    auto setTrust = reinterpret_cast<SetTrustFn>(dlsym(security, "SecTrustSettingsSetTrustSettings"));
-    auto policyId = reinterpret_cast<CFStringRef *>(dlsym(security, "kSecPolicyAppleCodeSigning"));
+    auto createCert = reinterpret_cast<CreateCertFn>(dlsym(securityLib.handle, "SecCertificateCreateWithData"));
+    auto createPolicy = reinterpret_cast<CreatePolicyFn>(dlsym(securityLib.handle, "SecPolicyCreateWithProperties"));
+    auto setTrust = reinterpret_cast<SetTrustFn>(dlsym(securityLib.handle, "SecTrustSettingsSetTrustSettings"));
+    auto policyId = reinterpret_cast<CFStringRef *>(dlsym(securityLib.handle, "kSecPolicyAppleCodeSigning"));
     if (!createCert || !createPolicy || !setTrust || !policyId || !*policyId)
         return "Security framework is missing the trust-settings API";
 
-    CFDataRef der = CFDataCreate(kCFAllocatorDefault,
-                                 reinterpret_cast<const UInt8 *>(bytes.data()),
-                                 static_cast<CFIndex>(len));
-    SecCertificateRef cert = der ? createCert(kCFAllocatorDefault, der) : nullptr;
-    if (der)
-        CFRelease(der);
-    if (!cert)
+    CfTypeGuard der;
+    der.reset(CFDataCreate(kCFAllocatorDefault,
+                           reinterpret_cast<const UInt8 *>(bytes.data()),
+                           static_cast<CFIndex>(len)));
+    if (!der.ref)
         return "certificate could not be parsed";
 
-    SecPolicyRef policy = createPolicy(*policyId, nullptr);
+    CfTypeGuard cert;
+    cert.reset(createCert(kCFAllocatorDefault, static_cast<CFDataRef>(der.ref)));
+    if (!cert.ref)
+        return "certificate could not be parsed";
+
+    CfTypeGuard policy;
+    policy.reset(createPolicy(*policyId, nullptr));
+    if (!policy.ref)
+        return "cannot create code signing policy";
+
     SInt32 trustResult = kSecTrustSettingsResultTrustRoot;
-    CFNumberRef resultNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &trustResult);
+    CfTypeGuard resultNum;
+    resultNum.reset(CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &trustResult));
+    if (!resultNum.ref)
+        return "cannot create trust settings";
+
     const void *keys[] = { kSecTrustSettingsPolicy, kSecTrustSettingsResult };
-    const void *vals[] = { policy, resultNum };
-    CFDictionaryRef constraint = CFDictionaryCreate(kCFAllocatorDefault, keys, vals, 2,
-                                                    &kCFTypeDictionaryKeyCallBacks,
-                                                    &kCFTypeDictionaryValueCallBacks);
-    CFArrayRef settings = CFArrayCreate(kCFAllocatorDefault,
-                                        reinterpret_cast<const void **>(&constraint), 1,
-                                        &kCFTypeArrayCallBacks);
+    const void *vals[] = { policy.ref, resultNum.ref };
+    CfTypeGuard constraint;
+    constraint.reset(CFDictionaryCreate(kCFAllocatorDefault, keys, vals, 2,
+                                        &kCFTypeDictionaryKeyCallBacks,
+                                        &kCFTypeDictionaryValueCallBacks));
+    if (!constraint.ref)
+        return "cannot create trust settings";
 
-    const OSStatus st = setTrust(cert, kSecTrustSettingsDomainAdmin, settings);
+    const void *items[] = { constraint.ref };
+    CfTypeGuard settings;
+    settings.reset(CFArrayCreate(kCFAllocatorDefault, items, 1, &kCFTypeArrayCallBacks));
+    if (!settings.ref)
+        return "cannot create trust settings";
 
-    CFRelease(settings);
-    CFRelease(constraint);
-    if (resultNum)
-        CFRelease(resultNum);
-    if (policy)
-        CFRelease(policy);
-    CFRelease(cert);
+    const OSStatus st = setTrust(reinterpret_cast<SecCertificateRef>(const_cast<void *>(cert.ref)),
+                                  kSecTrustSettingsDomainAdmin,
+                                  settings.ref);
 
     if (st == errSecSuccess)
         return wxString();
@@ -224,6 +279,62 @@ wxString TrustCertificateFileForCodeSigning(const wxString &derPath)
         return "code signing trust was cancelled";
     return wxString::Format("code signing trust was not set (error %d)", static_cast<int>(st));
 }
+
+/** mkdtemp directory, mode 0700. Empty string on failure. */
+wxString CreatePrivateCertTempDir()
+{
+    const wxString pattern = wxFileName::GetTempDir()
+                           + wxFileName::GetPathSeparator()
+                           + "cb-gdb-cert-XXXXXX";
+    const wxScopedCharBuffer utf8 = pattern.utf8_str();
+    if (!utf8 || utf8.length() == 0)
+        return wxString();
+    char *storage = static_cast<char *>(malloc(utf8.length() + 1));
+    if (!storage)
+        return wxString();
+    memcpy(storage, utf8.data(), utf8.length() + 1);
+    const char *made = mkdtemp(storage);
+    const wxString dir = made ? wxString::FromUTF8(made) : wxString();
+    free(storage);
+    return dir;
+}
+
+/** Unlink one temp file. unlink does not follow a final-path symlink. */
+void UnlinkOwnedTempFile(const wxString &path)
+{
+    const wxScopedCharBuffer utf8 = path.utf8_str();
+    if (!utf8)
+        return;
+    struct stat st;
+    if (lstat(utf8.data(), &st) != 0)
+        return;
+    if (S_ISLNK(st.st_mode) || S_ISREG(st.st_mode))
+        unlink(utf8.data());
+}
+
+/** Removes only the files this operation creates, then the directory itself. */
+struct Tier2TempCleanup
+{
+    wxString dir;
+    Tier2TempCleanup() = default;
+    ~Tier2TempCleanup()
+    {
+        if (dir.empty())
+            return;
+        static const char *const kFiles[] = {
+            "openssl.cnf", "key.pem", "cert.pem", "cert.der",
+            "import.sh", "askpass.sh", "launch.sh"
+        };
+        const wxString sep = wxFileName::GetPathSeparator();
+        for (const char *name : kFiles)
+            UnlinkOwnedTempFile(dir + sep + name);
+        const wxScopedCharBuffer dirUtf8 = dir.utf8_str();
+        if (dirUtf8)
+            rmdir(dirUtf8.data());
+    }
+    Tier2TempCleanup(const Tier2TempCleanup &) = delete;
+    Tier2TempCleanup &operator=(const Tier2TempCleanup &) = delete;
+};
 
 /** Create self-signed code-signing cert in the System keychain. Empty string means success. */
 wxString CreateTier2IdentityInSystemKeychain(const wxString &cn, bool *created)
@@ -236,13 +347,11 @@ wxString CreateTier2IdentityInSystemKeychain(const wxString &cn, bool *created)
         return wxString();
     }
 
-    wxString tmpDir = wxFileName::CreateTempFileName("cb-gdb-cert-");
-    // CreateTempFileName creates a file; we want a directory.
-    if (!tmpDir.empty())
-        wxRemoveFile(tmpDir);
-    tmpDir = wxFileName::GetTempDir() + "/cb-gdb-cert-" + wxString::Format("%ld", wxGetProcessId());
-    if (!wxFileName::Mkdir(tmpDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+    const wxString tmpDir = CreatePrivateCertTempDir();
+    if (tmpDir.empty())
         return "cannot create temp dir for certificate";
+    Tier2TempCleanup cleanup;
+    cleanup.dir = tmpDir;
 
     // Install the cert and private key the way LLDB's macos-setup-codesign.sh
     // does (System keychain, key imported with -A, taskgated restarted).
@@ -344,16 +453,6 @@ wxString CreateTier2IdentityInSystemKeychain(const wxString &cn, bool *created)
     if (rc == 0)
         trustErr = TrustCertificateFileForCodeSigning(der);
 
-    // Cleanup secrets from disk (best effort).
-    wxRemoveFile(key);
-    wxRemoveFile(cert);
-    wxRemoveFile(der);
-    wxRemoveFile(cnf);
-    wxRemoveFile(script);
-    wxRemoveFile(askpass);
-    wxRemoveFile(launcher);
-    wxRmdir(tmpDir);
-
     if (rc != 0)
         return "System keychain import failed: " + importOut;
     if (!trustErr.empty())
@@ -375,16 +474,20 @@ bool SignPathWithIdentity(const wxString &path, const wxString &identity,
     const wxString qPath = QuoteForShell(path);
     const wxString qId = QuoteForShell(identity);
     int rc = 0;
+    wxString captured;
     if (entitlementsPath.empty())
-        RunCapture("codesign --force --sign " + qId + " " + qPath, &rc);
+        captured = RunCapture("codesign --force --sign " + qId + " " + qPath, &rc);
     else
-        RunCapture("codesign --force --sign " + qId + " --entitlements "
-                       + QuoteForShell(entitlementsPath) + " " + qPath,
-                   &rc);
+        captured = RunCapture("codesign --force --sign " + qId + " --entitlements "
+                                  + QuoteForShell(entitlementsPath) + " " + qPath,
+                              &rc);
     if (rc != 0)
     {
         if (err)
+        {
             *err = wxString::Format("codesign failed for %s (exit %d)", path, rc);
+            AppendCapturedOutput(*err, captured);
+        }
         return false;
     }
     return true;
@@ -652,11 +755,12 @@ GdbMacTier1Result TryMacGdbTier1Restore(const wxString &configuredDebuggerPath)
         {
             const wxString libPath = libNorm.GetFullPath() + wxFileName::GetPathSeparator() + name;
             int libRc = -1;
-            RunCapture("codesign --force --sign - " + QuoteForShell(libPath), &libRc);
+            const wxString libOut = RunCapture("codesign --force --sign - " + QuoteForShell(libPath), &libRc);
             if (libRc != 0)
             {
                 r.kind = GdbMacTier1ResultKind::Failed;
                 r.message = wxString::Format("Tier 1 failed: codesign dylib %s (exit %d)", name, libRc);
+                AppendCapturedOutput(r.message, libOut);
                 return r;
             }
             cont = dir.GetNext(&name);
@@ -664,11 +768,12 @@ GdbMacTier1Result TryMacGdbTier1Restore(const wxString &configuredDebuggerPath)
     }
 
     int signRc = -1;
-    RunCapture("codesign --force --sign - --entitlements " + qEnts + " " + qGdb, &signRc);
+    const wxString signOut = RunCapture("codesign --force --sign - --entitlements " + qEnts + " " + qGdb, &signRc);
     if (signRc != 0)
     {
         r.kind = GdbMacTier1ResultKind::Failed;
         r.message = wxString::Format("Tier 1 failed: codesign gdb (exit %d)", signRc);
+        AppendCapturedOutput(r.message, signOut);
         r.after = DiagnoseMacGdbSigning(gdbPath, GdbMacSessionEvidence());
         return r;
     }
