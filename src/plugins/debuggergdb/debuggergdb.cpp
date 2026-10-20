@@ -301,7 +301,8 @@ DebuggerGDB::DebuggerGDB() :
     m_TemporaryBreak(false),
     m_printElements(200),
     m_macGdbSigningDiagnosisLogged(false),
-    m_macEnableDebuggingSuggested(false)
+    m_macEnableDebuggingSuggested(false),
+    m_macEnableDebuggingOfferScheduled(false)
 {
     if (!Manager::LoadResource("debugger.zip"))
     {
@@ -2180,11 +2181,92 @@ void DebuggerGDB::LogMacGdbSigningDiagnosisOnce(const wxString &reason)
         // Prominent, red debugger-log guidance (do not require the user to hunt the menu).
         // Stay on / switch to the Debugger pane so Program Console does not hide this.
         ShowLog(false);
-        Log(_("✕ Debugger signing is defective — debugging cannot attach."), Logger::error);
-        Log(_("   Choose Debug → Enable debugging on this Mac… to fix, then Debug again."),
+        Log(_("✕ Debugging cannot attach because the bundled debugger is not authorized."),
             Logger::error);
+        const bool offer = GetActiveConfigEx().GetFlag(DebuggerConfiguration::OfferMacEnableDebugging);
+        if (offer)
+        {
+            Log(_("   Code::Blocks will ask whether to enable debugging on this Mac."),
+                Logger::error);
+        }
+        else
+        {
+            Log(_("   Automatic offers are off. Use Debug → Enable debugging on this Mac…, "
+                  "or turn them back on under Settings → Debugger → GDB/CDB debugger."),
+                Logger::error);
+        }
         ShowLog(false);
+        if (offer && !m_macEnableDebuggingOfferScheduled)
+        {
+            m_macEnableDebuggingOfferScheduled = true;
+            CallAfter([this]() { OfferMacEnableDebugging(); });
+        }
     }
+}
+
+namespace
+{
+int ShowMacEnableDebuggingOffer(bool *dontAskAgain)
+{
+    if (dontAskAgain)
+        *dontAskAgain = false;
+    wxWindow *parent = Manager::Get()->GetAppFrame();
+    wxDialog dlg(parent, wxID_ANY, _("Enable debugging on this Mac"),
+                 wxDefaultPosition, wxDefaultSize,
+                 wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    wxBoxSizer *root = new wxBoxSizer(wxVERTICAL);
+    wxStaticText *text = new wxStaticText(&dlg, wxID_ANY,
+        _("Debugging cannot attach on this Mac because the bundled debugger is not allowed to control the program.\n\n"
+          "Code::Blocks can repair that. macOS may ask for an administrator password.\n\n"
+          "You can also do this later with Debug → Enable debugging on this Mac…"));
+    text->Wrap(460);
+    root->Add(text, 0, wxALL | wxEXPAND, 12);
+    wxCheckBox *silence = new wxCheckBox(&dlg, wxID_ANY, _("Don't ask again"));
+    root->Add(silence, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
+    wxStdDialogButtonSizer *buttons = new wxStdDialogButtonSizer();
+    wxButton *enable = new wxButton(&dlg, wxID_OK, _("Enable debugging"));
+    wxButton *notNow = new wxButton(&dlg, wxID_CANCEL, _("Not now"));
+    enable->SetDefault();
+    buttons->AddButton(enable);
+    buttons->AddButton(notNow);
+    buttons->Realize();
+    root->Add(buttons, 0, wxALL | wxALIGN_RIGHT, 12);
+    dlg.SetSizerAndFit(root);
+    dlg.CenterOnParent();
+    const int answer = dlg.ShowModal();
+    if (dontAskAgain)
+        *dontAskAgain = silence->GetValue();
+    return answer;
+}
+} // namespace
+
+void DebuggerGDB::OfferMacEnableDebugging()
+{
+    m_macEnableDebuggingOfferScheduled = false;
+    if (!platform::macosx || !m_macEnableDebuggingSuggested)
+        return;
+    if (!GetActiveConfigEx().GetFlag(DebuggerConfiguration::OfferMacEnableDebugging))
+        return;
+
+    const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
+    const GdbMacSigningDiagnosis diag = DiagnoseMacGdbSigning(exe, m_macGdbSessionEvidence);
+    if (diag.pathKind != GdbMacPathKind::Bundled)
+        return;
+
+    bool dontAskAgain = false;
+    const int answer = ShowMacEnableDebuggingOffer(&dontAskAgain);
+    if (dontAskAgain)
+    {
+        GetActiveConfigEx().SetFlag(DebuggerConfiguration::OfferMacEnableDebugging, false);
+        Log(_("Enable debugging: automatic offers turned off. "
+              "Turn them back on under Settings → Debugger → GDB/CDB debugger."));
+    }
+    if (answer != wxID_OK)
+    {
+        Log(_("Enable debugging: not now."));
+        return;
+    }
+    RunMacEnableDebuggingRepair(true);
 }
 
 void DebuggerGDB::GetCurrentPosition(wxString &filename, int &line)
@@ -2300,6 +2382,11 @@ void DebuggerGDB::OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event)
 
 void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
 {
+    RunMacEnableDebuggingRepair(false);
+}
+
+void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
+{
     if (!platform::macosx)
         return;
 
@@ -2354,22 +2441,25 @@ void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
         return;
     }
 
-    wxString prompt =
-        _("Code::Blocks can repair signing of the bundled debugger on this Mac.\n\n");
-    if (probe.SigningDefective())
-        prompt += _("Tier 1: restore ad-hoc signature and debugger entitlement.\n");
-    if (forceTier2 || (!probe.SigningDefective() && probe.session.taskPortOrTaskgated))
-        prompt += _("Tier 2: sign with a local trusted identity in the System keychain "
-                    "(macOS will ask for an administrator password to install it, "
-                    "then again to trust it for code signing).\n");
-    prompt += _("\nContinue?");
-
-    AnnoyingDialog dlg(_("Enable debugging on this Mac"), prompt,
-                       wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtYES);
-    if (dlg.ShowModal() != AnnoyingDialog::rtYES)
+    if (!alreadyConsented)
     {
-        Log(_("Enable debugging: cancelled by user."));
-        return;
+        wxString prompt =
+            _("Code::Blocks can repair signing of the bundled debugger on this Mac.\n\n");
+        if (probe.SigningDefective())
+            prompt += _("Tier 1: restore ad-hoc signature and debugger entitlement.\n");
+        if (forceTier2 || (!probe.SigningDefective() && probe.session.taskPortOrTaskgated))
+            prompt += _("Tier 2: sign with a local trusted identity in the System keychain "
+                        "(macOS will ask for an administrator password to install it, "
+                        "then again to trust it for code signing).\n");
+        prompt += _("\nContinue?");
+
+        AnnoyingDialog dlg(_("Enable debugging on this Mac"), prompt,
+                           wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtYES);
+        if (dlg.ShowModal() != AnnoyingDialog::rtYES)
+        {
+            Log(_("Enable debugging: cancelled by user."));
+            return;
+        }
     }
 
     ShowLog(false);

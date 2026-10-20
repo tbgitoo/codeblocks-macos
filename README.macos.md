@@ -44,7 +44,7 @@ Code::Blocks is an IDE. A separate debugger is required for debugging C and C++ 
 
 The companion Apple Silicon GDB port is available in the [binutils-gdb repository](https://github.com/tbgitoo/binutils-gdb).
 
-If debugging stops with **No stack** or “Unable to find Mach task port”, GDB is not accepted by macOS as a debugger. See **[code_signing.md](code_signing.md)** for the symptom, certificate setup, and `codesign` commands for a working local signature (including the `com.apple.security.cs.debugger` entitlement).
+If debugging stops because the bundled debugger is not allowed to attach (**No stack** together with a Mach task-port / `taskgated` message, or a missing signature or entitlement), Code::Blocks asks whether to **Enable debugging on this Mac**. That repair runs only after you agree. **Don't ask again** turns later automatic questions off; turn them back on under **Settings → Debugger → GDB/CDB debugger**. **Debug → Enable debugging on this Mac…** stays available either way. Opening the app (Gatekeeper **Open Anyway**) is separate and does not require this repair. Manual certificate and `codesign` steps in **[code_signing.md](code_signing.md)** are advanced recovery only.
 
 ### Code::Blocks v1.0 and v1.1
 
