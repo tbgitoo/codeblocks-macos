@@ -2115,6 +2115,19 @@ void DebuggerGDB::ResetMacGdbSigningDiagnosis()
     // Keep m_macEnableDebuggingSuggested across a new Debug attempt until repair or healthy.
 }
 
+bool DebuggerGDB::MacEnableDebuggingMenuWanted()
+{
+    if (!platform::macosx)
+        return false;
+    // Confirmed bundled signing / task-port failure from a Debug attempt.
+    // A bare "No stack", a missing debugger, or a healthy session does not qualify.
+    if (m_macEnableDebuggingSuggested)
+        return true;
+    // Lab only: the force switch is how Tier 2 is reached when attach already works.
+    return IsMacGdbForceTier2FromEnv()
+        || GetActiveConfigEx().GetFlag(DebuggerConfiguration::ForceMacGdbTier2);
+}
+
 void DebuggerGDB::EnsureMacEnableDebuggingMenuItem()
 {
     if (!platform::macosx)
@@ -2125,15 +2138,23 @@ void DebuggerGDB::EnsureMacEnableDebuggingMenuItem()
     wxMenuBar *mbar = frame->GetMenuBar();
     if (!mbar)
         return;
-    // Anchor on Attach: insert Enable debugging just above it on the Debug menu.
+    // Anchor on Attach: the item sits just above it on the Debug menu.
     wxMenuItem *attach = mbar->FindItem(XRCID("idDebuggerMenuAttachToProcess"));
     if (!attach)
         return;
     wxMenu *debugMenu = attach->GetMenu();
     if (!debugMenu)
         return;
-    if (debugMenu->FindItem(idMenuEnableDebuggingMac))
-        return; // already installed
+
+    wxMenuItem *existing = debugMenu->FindItem(idMenuEnableDebuggingMac);
+    if (!MacEnableDebuggingMenuWanted())
+    {
+        if (existing)
+            debugMenu->Delete(idMenuEnableDebuggingMac);
+        return;
+    }
+    if (existing)
+        return;
 
     size_t pos = 0;
     for (; pos < debugMenu->GetMenuItemCount(); ++pos)
@@ -2165,12 +2186,11 @@ void DebuggerGDB::LogMacGdbSigningDiagnosisOnce(const wxString &reason)
         return;
     m_macGdbSigningDiagnosisLogged = true;
 
-    EnsureMacEnableDebuggingMenuItem();
-
     const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
     const GdbMacSigningDiagnosis diag = DiagnoseMacGdbSigning(exe, m_macGdbSessionEvidence);
-    // Offer the Debug-menu repair only when diagnosis says it would help (not always when stopped).
+    // Show the Debug-menu item only for a confirmed signing / task-port failure.
     m_macEnableDebuggingSuggested = diag.WouldOfferEnableDebugging();
+    EnsureMacEnableDebuggingMenuItem();
 
     DebugLog(wxString::Format(_("macOS GDB signing diagnosis trigger: %s"), reason));
     // Split multi-line summary so the debugger log stays readable.
@@ -2373,14 +2393,9 @@ void DebuggerGDB::OnCatchThrow(wxCommandEvent &event)
 
 void DebuggerGDB::OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event)
 {
-    // Keep the menu item present (menus may be rebuilt; insert is idempotent).
-    EnsureMacEnableDebuggingMenuItem();
-
-    // Enabled when diagnosis suggested repair, or lab force Tier 2 is on.
-    const bool force = platform::macosx
-                       && (IsMacGdbForceTier2FromEnv()
-                           || GetActiveConfigEx().GetFlag(DebuggerConfiguration::ForceMacGdbTier2));
-    event.Enable(platform::macosx && (m_macEnableDebuggingSuggested || force));
+    // Presence is decided in Ensure (idle / after diagnosis). Do not delete the
+    // item from inside its own update event.
+    event.Enable(MacEnableDebuggingMenuWanted());
 }
 
 void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
@@ -2423,6 +2438,7 @@ void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
         || probe.pathKind == GdbMacPathKind::NotOnMac)
     {
         m_macEnableDebuggingSuggested = false;
+        EnsureMacEnableDebuggingMenuItem();
         const wxString msg = (probe.pathKind == GdbMacPathKind::NotBundled)
             ? _("Enable debugging only applies to the debugger bundled inside Code::Blocks.\n"
                 "Your configured debugger path is elsewhere and will not be modified.")
@@ -2437,6 +2453,7 @@ void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
         && !probe.session.taskPortOrTaskgated)
     {
         m_macEnableDebuggingSuggested = false;
+        EnsureMacEnableDebuggingMenuItem();
         Log(_("Enable debugging: bundled GDB already looks healthy (no change)."));
         cbMessageBox(_("The bundled debugger already looks correctly signed.\n"
                        "No repair was needed."),
@@ -2492,6 +2509,7 @@ void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
     if (ok)
     {
         m_macEnableDebuggingSuggested = false;
+        EnsureMacEnableDebuggingMenuItem();
         cbMessageBox(_("Debugger signing repair finished.\n"
                        "Try Debug again."),
                      _("Enable debugging"), wxOK | wxICON_INFORMATION);
