@@ -31,6 +31,7 @@ libdebugger_la_SOURCES = cdb_driver.cpp \
 			editwatchdlg.cpp \
 			gdb_driver.cpp \
 			gdbmacossigningdiagnose.cpp \
+			gdbmacprovision.cpp \
 			nativewatchsummary.cpp \
 			parsewatchvalue.cpp
 
@@ -48,6 +49,7 @@ noinst_HEADERS = cdb_commands.h \
 			gdb_commands.h \
 			gdb_driver.h \
 			gdbmacossigningdiagnose.h \
+			gdbmacprovision.h \
 			nativewatchsummary.h \
 			parsewatchvalue.h \
 			remotedebugging.h

@@ -3,8 +3,7 @@
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
  * v2.3 M2: macOS bundled-GDB signing / task-port diagnosis.
- * v2.3 M3: Tier 1 ad-hoc + cs.debugger restoration (bundled only).
- * v2.3 M4: Tier 2 local trusted identity + force injection.
+ * v2.3 M3–M5: tier decisions used by the UI. Provisioning lives in gdbmacprovision.
  */
 
 #ifndef GDBMACOSSIGNINGDIAGNOSE_H
@@ -95,38 +94,13 @@ enum class GdbMacTier1Decision
 
 GdbMacTier1Decision DecideMacGdbTier1(const GdbMacSigningDiagnosis &d);
 
-enum class GdbMacTier1ResultKind
-{
-    Refused,
-    SkippedAlreadyValid,
-    Restored,
-    Failed
-};
-
-struct GdbMacTier1Result
-{
-    GdbMacTier1ResultKind kind = GdbMacTier1ResultKind::Refused;
-    wxString message;
-    GdbMacSigningDiagnosis before;
-    GdbMacSigningDiagnosis after;
-};
-
 /**
  * Bundled debugger entitlements plist shipped next to bin/
  * (Resources/debugger/gdb.entitlements). Empty if missing.
  */
 wxString GetMacBundledGdbEntitlementsPath();
 
-/**
- * Tier 1: restore ad-hoc signature + com.apple.security.cs.debugger on the
- * bundled gdb only. Skips when already valid. Never touches custom paths.
- * May shell out to codesign on macOS.
- */
-GdbMacTier1Result TryMacGdbTier1Restore(const wxString &configuredDebuggerPath);
-
-wxString FormatGdbMacTier1ResultForLog(const GdbMacTier1Result &r);
-
-// --- v2.3 M4: Tier 2 local trusted identity + force injection ---------------
+// --- v2.3 M4: Tier 2 decision (policy only; provisioning is macOS-gated) ----
 
 /** Deterministic product identity Common Name (System keychain). */
 wxString GetMacGdbTier2IdentityName();
@@ -146,48 +120,5 @@ enum class GdbMacTier2Decision
 };
 
 GdbMacTier2Decision DecideMacGdbTier2(const GdbMacSigningDiagnosis &d, bool forceTier2);
-
-enum class GdbMacTier2ResultKind
-{
-    Refused,
-    SkippedNotNeeded,
-    SkippedAlreadyNamed,
-    Restored,
-    Failed
-};
-
-struct GdbMacTier2Result
-{
-    GdbMacTier2ResultKind kind = GdbMacTier2ResultKind::Refused;
-    wxString message;
-    wxString identityName;
-    bool createdNewIdentity = false;
-    GdbMacSigningDiagnosis before;
-    GdbMacSigningDiagnosis after;
-};
-
-/**
- * Ensure System-keychain identity exists (create if missing), then codesign
- * bundled gdb (+ companion dylibs) with that identity and cs.debugger.
- * taskgated does not honor a login-keychain-only identity.
- */
-GdbMacTier2Result TryMacGdbTier2Restore(const wxString &configuredDebuggerPath,
-                                         const GdbMacSessionEvidence &session,
-                                         bool forceTier2);
-
-wxString FormatGdbMacTier2ResultForLog(const GdbMacTier2Result &r);
-
-struct GdbMacEnableRepairResult
-{
-    GdbMacTier1Result tier1;
-    GdbMacTier2Result tier2;
-    bool attemptedTier1 = false;
-    bool attemptedTier2 = false;
-};
-
-/** Tier 1 if defective, then Tier 2 if force / task-port evidence. */
-GdbMacEnableRepairResult TryMacGdbEnableDebuggingRepair(const wxString &configuredDebuggerPath,
-                                                       const GdbMacSessionEvidence &session,
-                                                       bool forceTier2);
 
 #endif // GDBMACOSSIGNINGDIAGNOSE_H

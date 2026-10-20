@@ -1,3 +1,14 @@
+2026-10-20 20:10  tbgitoo
+
+v2.3 M6 (tree): unofficial Apple Silicon macOS port
+	  * Move Tier 1 / Tier 2 signing, certificate, keychain, and trust
+	    into an in-process macOS component (gdbmacprovision).
+	    Diagnosis, consent, and tier choice stay where they were.
+	  * The provisioning API is compiled only with __WXMAC__.
+	    There is no separate helper program.
+	  * Bundled GDB only; a path that resolves outside
+	    Resources/debugger/ is refused before any signing change.
+
 2026-10-20 18:50  tbgitoo
 
 v2.3 M5 (tree): unofficial Apple Silicon macOS port
