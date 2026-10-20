@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: M1–M5 DONE in tree. M6 planned (not started).** Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
+**Status: M1–M5 DONE in tree. M6 planned (not started).** Does not reopen v2.2 M1–M6.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -34,8 +34,7 @@ Repair path (only if needed):
   Debug hits confirmed task-port / signing failure
   → prompt: Enable debugging? (consent required — repair does not auto-run)
        ├─ Decline / “don’t ask again” → silence future prompts (re-enable in Debugger prefs)
-       └─ Consent → IDE chooses the tier → cb-gdb-setup runs Tier 1 / Tier 2
-            → IDE re-diagnoses (helper report is not success) → user retries Debug
+       └─ Consent → diagnose → Tier 1 / Tier 2 inside the IDE → user retries Debug
   → Menu “Enable debugging…” also available for manual repair
 ```
 
@@ -46,7 +45,6 @@ Repair path (only if needed):
 | **Default ship format** | **Same as now:** release DMG / app bundle ships bundled `gdb` **ad-hoc signed** with `com.apple.security.cs.debugger`. That is the happy path. |
 | **Helper role** | **Repair only.** Not the default install; not required when Debug already works. |
 | **User invariant** | Authorise macOS security changes; **no** Keychain Assistant / terminal `codesign` as the primary path. |
-| **Apple Developer Program** | **Out of scope** — no Developer ID, no notarization requirement. |
 | **Gatekeeper vs debugger** | Separate. Open Anyway = run the app. Debugger attach = `taskgated` + nested `gdb` signature/entitlements. Do not conflate in UI or docs. |
 | **What we ship** | Release bundles keep nested `gdb` **ad-hoc signed** with `com.apple.security.cs.debugger` (`make_cb_app_bundle.sh`, default **on**). Lab “sign off” exists only to inject repair scenarios. |
 | **Repair scope** | Helper may modify **only** the bundled Code::Blocks `Resources/debugger/bin/gdb` (and its companion signed dylibs if required). **Never** resign arbitrary custom debugger paths. |
@@ -54,7 +52,7 @@ Repair path (only if needed):
 | **Prompt on confirmed failure** | **REQUIRED.** On first **confirmed** task-port / signing authorization failure, offer Enable debugging. **Not** when `gdb` is missing / not found. **Not** for bare “No stack” without signing evidence. |
 | **Consent before repair** | Repair **never** proceeds automatically. The user must explicitly consent. After consent, Tier 1/Tier 2 selection runs without asking the user to choose a tier. |
 | **Silence / re-offer** | At the prompt, the user may allow asking again on later failures, or silence future automatic offers. If silenced, **Debugger preferences** must expose a control to re-enable automatic offers. Manual **Enable debugging…** remains available regardless (unless a later UX finding says otherwise — default: keep menu). |
-| **Orchestration** | The IDE owns diagnosis, consent, and tier choice. After consent, certificate, keychain, trust, and `codesign` run in the short-lived **`cb-gdb-setup`** helper (M6), not in the IDE process. Not a persistent privileged service. The IDE declares success only after its own diagnosis. |
+| **Orchestration** | The IDE owns diagnosis, consent, tier choice, and the repair. M6 keeps that repair **in-process**, in a macOS-only component. No separate executable. |
 | **Manual docs** | `code_signing.md` remains **advanced / recovery** only. |
 | **Sister `binutils-gdb`** | Signing policy unchanged; bundle script remains the product signing locus. |
 
@@ -153,7 +151,7 @@ Mode is recorded in `Resources/debugger/.cb_gdb_sign_lab`. Details: `code_signin
 
 **Lab may prove (M5):** auto-offer consent/silence; Debugger pref re-enables offers; menu remains; S1–S10.
 
-**Lab may prove (M6):** the same S1–S10 outcomes after the IDE no longer signs; helper refuses paths and out-of-bundle copies; IDE success follows its own diagnosis.
+**Lab may prove (M6):** S1–S11 unchanged in behaviour after provisioning lives in the macOS-only component; a custom debugger path is still refused; Linux and Windows builds compile with that API omitted.
 
 **Lab must not claim:** that unsigned or entitlement-stripped `gdb` faithfully reproduces  
 `valid ad-hoc + valid entitlement + taskgated refusal on another Mac`.  
@@ -166,7 +164,7 @@ Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2
 | Doc | Direction |
 |-----|-----------|
 | `README.macos.md` | Keep Gatekeeper / Open Anyway. Point Debug signing failures to Enable debugging (not manual codesign). |
-| `code_signing.md` | Advanced / recovery only; clarify ad-hoc vs cert; product path is Enable debugging. M6 notes that provisioning runs in `cb-gdb-setup`. |
+| `code_signing.md` | Advanced / recovery only; clarify ad-hoc vs cert; product path is Enable debugging. |
 
 ### Milestones
 
@@ -177,108 +175,71 @@ Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2
 | **M3** | **DONE** (tree) | Tier 1 restore (`TryMacGdbTier1Restore`); skip if valid; bundled-only; ships `Resources/debugger/gdb.entitlements`; **Debug → Enable debugging on this Mac…** enabled only after diagnosis suggests repair and debugger is stopped (auto-offer remains M5). |
 | **M4** | **DONE** (tree) | Tier 2 (`codeblocks-gdb` in the **System** keychain; admin prompt; login copy removed); force via env/`ForceMacGdbTier2`; Enable debugging runs Tier 1 then Tier 2 when needed. |
 | **M5** | **DONE** (tree) | Consent prompt on confirmed failure (**Enable debugging** / **Not now** / **Don't ask again**); Debugger pref re-enables offers; menu remains; README + `code_signing.md`. |
-| **M6** | **PLANNED** | Extract the working provisioning machinery into `cb-gdb-setup`. Same Tier 1 / Tier 2 behaviour. IDE keeps diagnosis, consent, and the post-run check. |
+| **M6** | **PLANNED** | Isolate Tier 1 / Tier 2 provisioning in a macOS-only in-process component. Same behaviour. `#if` gate; no Windows/Linux stubs; no separate executable. |
 
-### M6 — `cb-gdb-setup` (planned, not started)
+### M6 — in-process macOS provisioning component (planned, not started)
 
-M6 does **not** redesign Tier 1, Tier 2, the certificate, the System keychain, or the admin prompts. It moves the working mutation out of the IDE process into a short-lived macOS-only helper that ships inside this repository and inside `CodeBlocks.app`.
+M6 does **not** change what the user sees and does **not** redesign Tier 1, Tier 2, the certificate, the System keychain, or the admin prompts. It separates the macOS provisioning code from diagnosis and UI, and leaves that code inside the IDE process Gatekeeper has already allowed to run.
+
+A separate executable is out of scope for v2.3. This distribution is ad-hoc only. On the development system used for v2.3 testing, when the .app retains com.apple.quarantine, launching a nested ad-hoc Mach-O has been observed to terminate with SIGKILL without presenting a second Open Anyway dialog. The repair therefore stays in the existing codeblocks process rather than introducing a separate executable with its own launch and code-signing considerations.
 
 ```text
-Code::Blocks IDE
-  detects a bundled-GDB setup problem
-  decides whether setup is appropriate
-  asks the user
-  invokes cb-gdb-setup
+diagnosis / UI (policy)
+  session evidence, offer, menu, DecideMacGdbTier1 / DecideMacGdbTier2
+        |
+        |  after consent; macOS call site only
+        v
+provisioning component (same process)
+  performs the mutation it was asked to perform
+  post-provisioning verification of that mutation
+  reports what happened
         |
         v
-cb-gdb-setup
-  validates its own bundle layout
-  Tier 1 and/or Tier 2, bundled GDB only
-        |
-        v
-IDE runs DiagnoseMacGdbSigning again
-  helper stdout is not enough to declare success
+caller
+  logs, existing dialogs, manual Debug retry
+  does not ask the component what the product should do
 ```
 
-**Stays in the IDE:** session evidence; task-port classification; bundled vs external; offer / silence / menu; tier choice; locating and launching the helper; interpreting its result; independent diagnosis. Debug retry stays manual.
+**Stays with diagnosis and UI** (`gdbmacossigningdiagnose`, `debuggergdb`): session evidence; task-port / `taskgated` classification; bundled vs external; `WouldOfferEnableDebugging`; consent, silence, and the menu; `DecideMacGdbTier1` / `DecideMacGdbTier2`; whether the original Debug failure counts as repaired; whether the user should retry Debug. Debug retry stays manual.
 
-**Moves to the helper:** bundle-layout check; certificate and key creation; System-keychain import; login-copy removal; trust setting; temp secrets; companion-dylib signing; bundled GDB signing; the helper's own post-sign check. Both tiers live entirely in the helper. The IDE still decides whether Tier 2 is indicated.
+**Moves into the macOS-only component:** certificate and key creation; System-keychain import; login-copy removal; trust setting; temp secrets; companion-dylib signing; bundled GDB signing. Both tier mechanisms live there. The caller decides whether Tier 2 is indicated (`taskPortOrTaskgated` or the lab force flag) and passes that in. The component does not receive `GdbMacSessionEvidence` and does not re-classify the debugger session.
 
-Do **not** put the provisioning code in a library the plugin links. That would load it back into the IDE.
+**Platform gate.** Declarations, definitions, and call sites are all inside `#if defined(__WXMAC__)`. On any other build there is no provisioning API, no provisioning implementation, and no provisioning call site. The header exposes provisioning declarations only inside that gate. The `.cpp` may stay on the ordinary plugin source list; the preprocessor is the platform boundary. Do not add Windows or Linux stubs, fake non-macOS return values, a stub `.cpp`, or a `configure` source swap. The moved repair entry points must not remain on the ungated diagnosis header with a “not built for macOS” result. Diagnosis and policy declarations that already exist for every platform stay where they are; M6 does not wrap those in a new cross-platform abstraction.
 
-**Privilege model:** extract what works today. User-session OpenSSL, `sudo -A` with the `osascript` askpass and `script(1)`, then `SecTrustSettingsSetTrustSettings` via `dlopen` of Security.framework (not linked), then `codesign`. No `SMAppService`, `SMJobBless`, XPC, launchd job, or installer. First Tier 2 run must confirm the trust panel still appears when the caller is the helper; if it does not, stop and report that. Do not invent a new privilege design in that case.
+**Inputs.** No path, entitlement, keychain, or identity parameters. The component uses the bundled `Resources/debugger/bin/gdb` and `gdb.entitlements` only, and the fixed name `codeblocks-gdb`. The caller passes only the mechanism switches it has already decided: whether to run Tier 2, and whether lab force must resign even when that identity is already in use. A configured debugger that is missing or outside the bundle never reaches it (`GdbMacPathKind` is checked first, as today).
 
-**Location and lifetime**
+**Result.** A small mechanism-level result so the caller can tell these outcomes apart:
 
-| Item | Choice |
-|------|--------|
-| Source | `src/tools/MacGdbSetup/` |
-| Name | `cb-gdb-setup` |
-| `make install` | `libexec_PROGRAMS` → `$(libexecdir)/cb-gdb-setup` (not `bindir`, not `PATH`) |
-| Bundle | `CodeBlocks.app/Contents/MacOS/cb-gdb-setup`, next to `codeblocks` |
-| Lookup | `ConfigManager::GetExecutableFolder()`, never `PATH` |
-| Process | One synchronous run per consented repair |
-| Link | C++17. No wx. No Security.framework. UI stays `osascript` plus the Security trust panel. |
+- already healthy, nothing mutated;
+- Tier 1 restored;
+- Tier 2 provisioned;
+- refused by a safety check (containment, missing `gdb` or entitlements, not the bundled payload);
+- cancelled, only where the current code already recognises a cancel (trust panel `OSStatus` -60006 or -128);
+- provisioning failed.
 
-A copy run from `libexec` or from anywhere outside `Contents/MacOS/` fails the layout check and signs nothing.
+Exact type and function names are chosen at implementation time to match the tree. The result may include text for the existing debugger log, as `FormatGdbMacTier1ResultForLog` / `FormatGdbMacTier2ResultForLog` do now. It does **not** report whether Enable debugging should be offered, whether Tier 2 is indicated, whether offers should be silenced, whether a task-port failure was confirmed, or whether Debug should be retried. The caller keeps today’s dialogs: a recognised cancel is still “repair did not finish,” not a new dialog.
 
-**Command line** (nothing else is accepted):
+**Post-provisioning verification** (owned by the component) confirms only the mutation just performed:
 
-```text
-cb-gdb-setup [--tier2] [--force-tier2]
-```
+- `codesign` verification succeeds for that tier;
+- `com.apple.security.cs.debugger` is present on bundled `gdb`;
+- Tier 1 ends as a valid ad-hoc signature, Tier 2 as the named `codeblocks-gdb` signature;
+- every resolved or mutated file stays under `Resources/debugger/`.
 
-No `install` subcommand: there is only one operation. No path, entitlement, keychain, or identity arguments. The helper ignores `CB_FORCE_GDB_TIER2`; the IDE reads that env var and the lab checkbox and passes `--force-tier2`.
+That is the same post-sign bar as today’s “post-sign verify still defective” / “expected named + cs.debugger” checks. It is not debugger-session diagnosis. `WouldOfferEnableDebugging`, task-port classification, and `DecideMacGdbTier*` stay outside.
 
-| Invocation | Meaning (same rules as M3–M5) |
-|------------|--------------------------------|
-| `cb-gdb-setup` | Tier 1 only if signature or entitlement is defective. Already valid → no change. |
-| `--tier2` | After Tier 1 if needed, Tier 2 unless already signed by `codeblocks-gdb` with the entitlement. This is the task-port case. The helper cannot see GDB output, so the IDE must pass this. |
-| `--force-tier2` | Tier 2 even when that identity is already in use. Implies `--tier2`. |
+**Fail closed.** `realpath` of `gdb`, the entitlements file, and each companion `lib/*.dylib` must stay under `Resources/debugger/`. A symlink or `..` that escapes is a refusal, before `openssl`, `security`, or `codesign`. Missing `gdb` or entitlements is a refusal.
 
-The IDE launches the helper only after consent, and only when diagnosis says the configured executable **is** the bundled GDB. A custom path never reaches the helper.
+**Unchanged mechanism.** User-session OpenSSL; `sudo -A` with the `osascript` askpass and `script(1)`; `SecTrustSettingsSetTrustSettings` via `dlopen` of Security.framework (not linked); then `codesign`. Temp directory stays `mkdtemp` of `cb-gdb-cert-XXXXXX`, mode 0700, the same seven named files, then `rmdir`. No recursive delete. No `SMAppService`, `SMJobBless`, XPC, launchd job, or installer. Re-signing nested `gdb` may leave the outer ad-hoc bundle seal invalid, as it already can after the bundle script’s second `gdb` signature. M6 does not resign `CodeBlocks.app` and does not change `make_cb_app_bundle.sh`. S11 checks that the app still launches, not that `codesign --verify --deep` on the whole app passes.
 
-**Stdout** is one JSON object and nothing else. No PEM, keys, or passwords in `message`.
-
-```json
-{"protocol":1,"result":"success","stage":"complete","message":"Bundled GDB debugging enabled"}
-```
-
-- `protocol` is `1`.
-- `result`: `success`, `skipped`, `failed`, `refused`, `cancelled`.
-- `stage`: `arguments`, `layout`, `tier1`, `identity`, `keychain`, `trust`, `sign-dylib`, `sign-gdb`, `verify`, `complete`.
-
-Stderr may carry the existing `codesign` / `openssl` text and must not contain secret file contents. Exit `0` = success or skipped, `2` = cancelled (askpass dismissed, or trust status -60006 or -128), `1` = failed or refused. Any other exit, a signal, extra stdout, or an unknown protocol is abnormal: the IDE does not show success and still diagnoses. Exit 0 alone is not success.
-
-**Layout check (fail closed).** From `_NSGetExecutablePath` and `realpath`:
-
-1. Resolved path ends with `/Contents/MacOS/cb-gdb-setup`, and `../MacOS/codeblocks` exists in that bundle.
-2. Mutable targets are only `Contents/Resources/debugger/bin/gdb`, reading `gdb.entitlements`, and regular `Contents/Resources/debugger/lib/*.dylib`.
-3. `realpath` of each target stays under `realpath(Contents/Resources/debugger/)`. Symlinks, `..`, and aliases that escape are refusals. Missing `gdb` or entitlements is a refusal.
-4. Any other argv token is a refusal, before `openssl`, `security`, or `codesign`.
-
-Temp files stay the current `mkdtemp` `cb-gdb-cert-XXXXXX` directory, mode 0700, seven named files, then `rmdir`. No recursive delete.
-
-**Bundle signature.** Re-signing nested `gdb` already breaks the outer ad-hoc seal (the bundle script signs the app `--deep`, then signs `gdb` again). M6 does not move GDB out of the app. Before acceptance, record before and after a Tier 1 repair and a Tier 2 repair:
-
-```text
-codesign --verify --deep --strict --verbose=4 CodeBlocks.app
-codesign -dv --verbose=4 CodeBlocks.app/Contents/MacOS/cb-gdb-setup
-codesign -d --entitlements :- CodeBlocks.app/Contents/Resources/debugger/bin/gdb
-spctl --assess --type execute --verbose=4 CodeBlocks.app
-```
-
-Acceptable: outer verify fails after `gdb` or a dylib is re-signed, and the IDE still launches. Not acceptable: helper missing, helper carrying `cs.debugger`, or Tier 1 dropping that entitlement from `gdb`.
-
-**Build touch list:** `configure.ac` (`CODEBLOCKS_DARWIN`, `AC_CONFIG_FILES`), `src/tools/Makefile.am`, new `src/tools/MacGdbSetup/`, `gdbmacossigningdiagnose.*`, `debuggergdb.cpp`, `make_cb_app_bundle.sh`, `README.macos.md`, `code_signing.md`, `ChangeLog`, this plan. Unchanged: `osx/gdb.entitlements`, sister `binutils-gdb`, the M5 dialogs, certificate shape, and where `Resources/debugger/` sits.
+**Build touch list:** new macOS-gated sources next to the debugger plugin (header plus one `.cpp`), and the existing repair call sites so they call the component from inside `#if defined(__WXMAC__)`. No `configure.ac` Darwin target, no `src/tools` program, no `make_cb_app_bundle.sh` change, no new bundle path. Unchanged: `osx/gdb.entitlements`, sister `binutils-gdb`, the M5 dialogs, certificate shape, and where `Resources/debugger/` sits.
 
 **M6 acceptance**
 
-- After consent, the IDE process does not run `openssl`, `security import`, `SecTrustSettingsSetTrustSettings`, or `codesign` on GDB. The helper does, with the same prompts and the same tier outcomes.
-- S1–S10 still hold.
-- Helper copied outside the bundle, or given a path argument, refuses and signs nothing.
-- Missing helper, bad JSON, unknown protocol, crash, or cancel: no success dialog; diagnosis still runs.
-- Linux and Windows builds do not produce `cb-gdb-setup`.
+- S1–S11 still hold, with the same prompts and the same tier outcomes.
+- Repair still runs only after consent, only for the bundled GDB, and only inside the IDE process.
+- On non-macOS builds the provisioning declarations, implementation, and call sites are gone. No stub returns a fake result.
+- No `cb-gdb-setup` binary is built or packaged.
 
 ### Acceptance matrix
 
@@ -294,16 +255,16 @@ Acceptable: outer verify fails after `gdb` or a dylib is re-signed, and the IDE 
 | **S8** | Repeat Enable debugging after fix | Idempotent; no duplicate certs; no damage. |
 | **S9** | Custom debugger path outside the bundle | Helper refuses to modify it; no false Enable debugging as if bundled. |
 | **S10** | Gatekeeper-only launch | Open Anyway still sufficient to **launch**; Enable debugging not required merely to open the IDE. |
+| **S11** | After a successful Tier 1, quit and relaunch the same bundle; repeat separately after a successful Tier 2 | The app still launches. Bundled `gdb` still has `com.apple.security.cs.debugger` and the signature just provisioned (ad-hoc after Tier 1; `codeblocks-gdb` after Tier 2). Debug still works, and provisioning does not run again just because the app was relaunched. |
 
-**Residual limitation (documented, not a fail):** this one-Mac environment cannot validate every security decision macOS may make on an unrelated downloaded installation (including valid ad-hoc+entitlement refused by `taskgated` elsewhere).
+**Residual limitation (documented, not a fail):** this one-Mac environment cannot validate every security decision macOS may make on an unrelated downloaded installation (including valid ad-hoc+entitlement refused by `taskgated` elsewhere). S11 does not change that. It checks persistence on this Mac only, and it does not require the outer app seal to verify.
 
 ### Regression / safety
 
 | Risk | Mitigation |
 |------|------------|
 | Unsigned release | Injection default off; packaging must not ship lab modes. |
-| Wrong binary | Bundled gdb path only. The helper derives that path from its own location and accepts no path arguments. |
-| Helper as a general signer | Unknown argv and any layout escape fail closed, before `codesign`. |
+| Wrong binary | Bundled gdb path only. The macOS provisioning component takes no path argument; a symlink that leaves `Resources/debugger/` is a refusal. |
 | Blind resign / No stack | Evidence-driven diagnosis; Tier 1 skipped when already valid; no prompt without evidence. |
 | Silent repair without consent | Always prompt; never mutate until user consents. |
 | Prompt when gdb missing | Guard: executable must exist / be found first. |
@@ -323,27 +284,25 @@ Acceptable: outer verify fails after `gdb` or a dylib is re-signed, and the IDE 
 7. One-Mac lab: normal / unsigned / no-entitlement + force Tier 2; documented residual limitation.  
 8. Bundled GDB only; custom paths untouched.  
 9. Docs: Gatekeeper ≠ debugger; manual codesign = recovery; happy path = pre-signed DMG.  
-10. No paid Apple membership; no second Mac as acceptance gate.
-11. **M6:** provisioning runs in `cb-gdb-setup` with the contract in the M6 section. Tier 1 / Tier 2 semantics stay as implemented in M3–M5.
+10. No second Mac as acceptance gate.
+11. **M6:** provisioning stays in-process. Its declarations, definitions, and call sites exist only inside `#if defined(__WXMAC__)`. The result reports what the mutation did, not product policy. Tier 1 / Tier 2 semantics stay as implemented in M3–M5. S11 checks that a successful repair is still there after relaunch.
 
 **OPTIONAL**
 
-- None for M6. A persistent privileged helper is not an optional upgrade of this milestone.
+- None for M6.
 
 **OUT OF SCOPE**
 
 - Making the helper part of default install or a mandatory post-install step.  
 - Replacing the shipped ad-hoc+entitlement `gdb` with “users must run Enable debugging first.”  
 - Fully automatic repair with no consent dialog.  
-- Developer ID / notarization / Program fee.  
-- Distributing private keys.  
+- Distributing private keys.
 - Second Mac / VM as required validation.  
 - Claiming Tier 1 fixes valid-ad-hoc-rejected-by-taskgated.  
 - LLDB / DAP; sister-repo codesign requirement; replacing Open Anyway; v2.2 reopen.
+- A separate repair executable (`cb-gdb-setup` or otherwise).
 - `SMAppService`, `SMJobBless`, XPC, launchd, or an installer package.
-- Moving `Resources/debugger` outside `CodeBlocks.app` so repair does not affect the outer signature.
-- `remove` / `uninstall`, certificate listing, identity management, or signing a caller-supplied path.
-- Linking Security.framework, or a shared signing library loaded by the IDE.
+- Windows/Linux stub implementations of the macOS provisioning component.
 
 ### Interaction with prior versions
 
@@ -355,4 +314,4 @@ Acceptable: outer verify fails after `gdb` or a dylib is re-signed, and the IDE 
 
 ### Outcome (when done)
 
-**Happy path:** users install the DMG with the same ad-hoc signed + entitled bundled `gdb` as today; after Open Anyway, Debug works without the helper when macOS accepts that signature. **Repair path:** on confirmed debugger authorization failure, Code::Blocks offers Enable debugging; repair runs only after consent, with tiers chosen automatically. **M6 (when implemented):** that repair runs in `cb-gdb-setup`, and the IDE still checks the result itself. Users can silence or re-enable those offers in Debugger preferences. They authorize macOS when asked; they do not run manual codesign as the normal path. This Mac’s lab covers injection, both tiers, consent/silence, and idempotence; residual cross-Mac `taskgated` behaviour stays an explicit limitation. No paid Apple Program.
+**Happy path:** users install the DMG with the same ad-hoc signed + entitled bundled `gdb` as today; after Open Anyway, Debug works without the helper when macOS accepts that signature. **Repair path:** on confirmed debugger authorization failure, Code::Blocks offers Enable debugging; repair runs only after consent, with tiers chosen automatically, inside the IDE process. **M6** only isolates that macOS code; it does not add a program to the bundle. Users can silence or re-enable those offers in Debugger preferences. They authorize macOS when asked; they do not run manual codesign as the normal path. This Mac’s lab covers injection, both tiers, consent/silence, and idempotence; residual cross-Mac `taskgated` behaviour stays an explicit limitation.
