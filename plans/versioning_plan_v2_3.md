@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: M1–M6 DONE in tree.** Does not reopen v2.2 M1–M6.
+**Status: complete. M1–M6 DONE in tree.** Does not reopen v2.2 M1–M6.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -35,7 +35,7 @@ Repair path (only if needed):
   → prompt: Enable debugging? (consent required — repair does not auto-run)
        ├─ Decline / “don’t ask again” → silence future prompts (re-enable in Debugger prefs)
        └─ Consent → diagnose → Tier 1 / Tier 2 inside the IDE → user retries Debug
-  → Menu “Enable debugging…” also available for manual repair
+  → Debug menu item appears only after that confirmed failure (not while Debug works)
 ```
 
 ### Product decisions (locked)
@@ -51,7 +51,7 @@ Repair path (only if needed):
 | **Ad-hoc vs certificate** | Alternatives, not a chain. Ad-hoc needs no certificate. Local trusted identity is **Tier 2 escalation**, not the default ship format. |
 | **Prompt on confirmed failure** | **REQUIRED.** On first **confirmed** task-port / signing authorization failure, offer Enable debugging. **Not** when `gdb` is missing / not found. **Not** for bare “No stack” without signing evidence. |
 | **Consent before repair** | Repair **never** proceeds automatically. The user must explicitly consent. After consent, Tier 1/Tier 2 selection runs without asking the user to choose a tier. |
-| **Silence / re-offer** | At the prompt, the user may allow asking again on later failures, or silence future automatic offers. If silenced, **Debugger preferences** must expose a control to re-enable automatic offers. Manual **Enable debugging…** remains available regardless (unless a later UX finding says otherwise — default: keep menu). |
+| **Silence / re-offer** | **Don't ask again** silences only the automatic prompt. **Settings → Debugger → GDB/CDB debugger** (not Common) turns it back on. The Debug menu item is not a permanent or greyed entry: it appears after a confirmed signing or task-port failure, including when automatic offers are off, and it is removed when repair succeeds. Lab force Tier 2 is the exception that shows the item while attach already works. |
 | **Orchestration** | The IDE owns diagnosis, consent, tier choice, and the repair. M6 keeps that repair **in-process**, in a macOS-only component. No separate executable. |
 | **Manual docs** | `code_signing.md` remains **advanced / recovery** only. |
 | **Sister `binutils-gdb`** | Signing policy unchanged; bundle script remains the product signing locus. |
@@ -110,11 +110,11 @@ Entered when diagnosis shows valid ad-hoc+entitlement **and** confirmed debugger
 
 Product surface (illustrative):
 
-- Dialog on confirmed task-port failure: explain briefly; **Enable** / **Not now**; option to **don’t ask again** (silence automatic offers).
+- Dialog on confirmed task-port failure: explain briefly; **Enable** / **Not now**; option to **don’t ask again** (silence automatic offers). Custom dialog — not `AnnoyingDialog`, whose saved answer would repair without a new consent.
 - After **Enable**, show plain-language progress while tiers run; no cert names or shell recipes.
-- Menu: **Enable debugging on this Mac…** (manual entry).
-- **Settings → Debugger** (or equivalent): preference to re-enable automatic offers after silence.
-- Idempotent repair after consent.
+- **Debug → Enable debugging on this Mac…** sits above **Attach to process…**. It is omitted until a Debug attempt fails for signing or task-port reasons. Not under **Debug → Information** (that submenu is disabled unless a session is running).
+- **Settings → Debugger → GDB/CDB debugger**: re-enable automatic offers; lab force Tier 2 lives on that same page. The controls are in `debugger.zip`.
+- Idempotent repair after consent. The user starts Debug again; repair does not retry it.
 
 ### Tier 2 identity lifecycle (M4 decisions)
 
@@ -122,7 +122,7 @@ Product surface (illustrative):
 |----------|------------------|
 | Identity name | `codeblocks-gdb` (CN) |
 | Keychain | **System** keychain (`/Library/Keychains/System.keychain`); login-only trust is not enough for `taskgated` |
-| Create/reuse | `security find-identity`; create via openssl + `security import` only if missing |
+| Create/reuse | `openssl req -x509` (not OpenSSL 3 PKCS#12), then `security add-certificates` and `security import -A` into the System keychain. `wxExecute` does not run a shell, so `SUDO_ASKPASS` is exported from `launch.sh` and `script(1)` supplies sudo’s tty. |
 | Trust | Admin-domain code-signing trust via `SecTrustSettingsSetTrustSettings` in the user process (second admin panel). `authorizationdb write` is not used (denied on this OS). |
 | Expiry | 10-year self-signed; recreate if missing from keychain |
 | Scope | Bundled `gdb` (+ companion dylibs) only |
@@ -279,7 +279,7 @@ That is the same post-sign bar as today’s “post-sign verify still defective�
 2. Enablement path satisfying the user invariant when repair is needed.  
 3. On **confirmed** task-port / signing failure: **offer** Enable debugging (consent required before any repair).  
 4. Do **not** offer when `gdb` is not found; do **not** repair on bare No stack without signing evidence.  
-5. User may silence future automatic offers; Debugger preferences can re-enable them; menu entry remains.  
+5. User may silence future automatic offers; Debugger preferences can re-enable them. The Debug menu item appears for a confirmed signing or task-port failure (including when offers are silenced) and is not shown while Debug works.  
 6. After consent: evidence-driven Tier 1 then Tier 2 (user does not pick the tier).  
 7. One-Mac lab: normal / unsigned / no-entitlement + force Tier 2; documented residual limitation.  
 8. Bundled GDB only; custom paths untouched.  
@@ -304,6 +304,22 @@ That is the same post-sign bar as today’s “post-sign verify still defective�
 - `SMAppService`, `SMJobBless`, XPC, launchd, or an installer package.
 - Windows/Linux stub implementations of the macOS provisioning component.
 
+### Learnings (locked at completion)
+
+These were established while building M1–M6. They override earlier wording that left a greyed menu item in place, or that treated a separate executable as the repair boundary.
+
+| Topic | What holds |
+|-------|------------|
+| **Menu** | Hidden while Debug works. Shown after a Debug attempt fails with a signing defect or task-port / `taskgated` evidence. Bare “No stack”, a missing debugger, and other debugger failures do not add it. Removed again after a successful repair. |
+| **Lab force** | `CB_FORCE_GDB_TIER2` or the GDB/CDB checkbox still shows the menu when this Mac accepts ad-hoc, so Tier 2 can be exercised. That is not the normal product path. |
+| **Where the controls are** | Automatic-offer and lab-force checkboxes are on **GDB/CDB debugger**, not Common. Changing the XRC requires rebuilding `debugger.zip`. |
+| **System keychain** | A login-keychain identity is not enough for `taskgated`. The working install is a self-signed root (`CA:TRUE`, code-signing EKU, SHA-512, RSA 2048, 3650 days) into `/Library/Keychains/System.keychain`. |
+| **Two admin prompts** | `sudo -A` (askpass) to import the key, then `SecTrustSettingsSetTrustSettings` from the IDE process for the admin trust panel. `authorizationdb write` returns -60005 on this OS even under sudo, so it is not the trust path. |
+| **No second executable** | This distribution is ad-hoc. A `com.apple.quarantine` attribute on the `.app` was observed to SIGKILL a nested ad-hoc Mach-O with no second **Open Anyway** dialog. `spctl --assess` also rejects ad-hoc binaries that still run when the bundle is not quarantined. Provisioning stays inside `codeblocks`, behind `#if defined(__WXMAC__)`, with no Windows/Linux stub. |
+| **Outer app seal** | Re-signing nested `gdb` can make `codesign --verify --deep` on `CodeBlocks.app` fail. The app still launches. Repair does not resign the outer bundle. Running `make_cb_app_bundle.sh` again re-signs `gdb` ad-hoc and replaces a working Tier 2 signature. |
+| **Plugin install** | A raw copy of `libdebugger.dylib` that still points at `_cb_install` loads a second `libcodeblocks` and crashes while the plugin is opening. The app copy needs the same `@loader_path` / `@rpath` rewrite as the other plugins, then an ad-hoc signature on that dylib only. |
+| **One-Mac limit** | Unsigned and no-entitlement lab bundles, plus force Tier 2, do not reproduce “valid ad-hoc + entitlement refused by `taskgated` on another Mac.” That remains a documented residual, not an open milestone. |
+
 ### Interaction with prior versions
 
 | Version | Relationship |
@@ -314,4 +330,4 @@ That is the same post-sign bar as today’s “post-sign verify still defective�
 
 ### Outcome (when done)
 
-**Happy path:** users install the DMG with the same ad-hoc signed + entitled bundled `gdb` as today; after Open Anyway, Debug works without the helper when macOS accepts that signature. **Repair path:** on confirmed debugger authorization failure, Code::Blocks offers Enable debugging; repair runs only after consent, with tiers chosen automatically, inside the IDE process. **M6** only isolates that macOS code; it does not add a program to the bundle. Users can silence or re-enable those offers in Debugger preferences. They authorize macOS when asked; they do not run manual codesign as the normal path. This Mac’s lab covers injection, both tiers, consent/silence, and idempotence; residual cross-Mac `taskgated` behaviour stays an explicit limitation.
+**Happy path:** users install the DMG with the same ad-hoc signed + entitled bundled `gdb` as today; after Open Anyway, Debug works without a repair when macOS accepts that signature, and the Debug menu does not offer Enable debugging. **Repair path:** on a confirmed debugger authorization failure, Code::Blocks offers Enable debugging; repair runs only after consent, with tiers chosen automatically, inside the IDE process. Users can silence or re-enable those automatic offers under **Settings → Debugger → GDB/CDB debugger**. They authorize macOS when asked; they do not run manual codesign as the normal path. This Mac’s lab covers injection, both tiers, consent/silence, and idempotence; residual cross-Mac `taskgated` behaviour stays an explicit limitation.

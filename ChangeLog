@@ -1,70 +1,26 @@
-2026-10-20 20:10  tbgitoo
+2026-10-20 21:00  tbgitoo
 
-v2.3 M6 (tree): unofficial Apple Silicon macOS port
-	  * Move Tier 1 / Tier 2 signing, certificate, keychain, and trust
-	    into an in-process macOS component (gdbmacprovision).
-	    Diagnosis, consent, and tier choice stay where they were.
-	  * The provisioning API is compiled only with __WXMAC__.
-	    There is no separate helper program.
-	  * Bundled GDB only; a path that resolves outside
-	    Resources/debugger/ is refused before any signing change.
+v2.3  Aim: Make macOS debugging recoverable from within Code::Blocks when system signing prevents GDB from starting
 
-2026-10-20 18:50  tbgitoo
+v2.3 DONE (tree, M1–M6): unofficial Apple Silicon macOS port
+      * Detect bundled-GDB signing and macOS task-port failures
+        without treating ordinary debugger failures as signing problems
+      * After a confirmed signing failure, offer to enable debugging
+        directly from Code::Blocks; never modify custom debuggers
+      * Tier 1: restore the bundled GDB's ad-hoc signature and
+        debugger entitlement
+      * Tier 2: when required by macOS, create and trust a dedicated
+        "codeblocks-gdb" signing identity in the System keychain
+      * Repair is explicit and consent-based; successful repair removes
+        the Enable debugging command when it is no longer needed
+      * Provisioning is built into the macOS Code::Blocks application;
+        no separate helper program
+      * Release packaging remains unchanged: bundled GDB ships
+        ad-hoc signed with the debugger entitlement
+      * Lab signing modes retained for testing the recovery paths
 
-v2.3 M5 (tree): unofficial Apple Silicon macOS port
-	  * On a confirmed bundled-GDB signing or task-port failure, ask
-	    whether to enable debugging (Enable debugging / Not now /
-	    Don't ask again). Repair still waits for consent.
-	  * Settings → Debugger → GDB/CDB debugger can turn those automatic
-	    offers back on. Debug → Enable debugging on this Mac… stays available.
-	  * Bare "No stack", a missing debugger, and a custom debugger path
-	    do not prompt and are not modified.
-
-2026-10-19 23:10  tbgitoo
-
-v2.3 M4 (tree): unofficial Apple Silicon macOS port
-	  * Tier 2: create/reuse System-keychain identity "codeblocks-gdb"
-	    (login keychain is not enough for taskgated);
-	    codesign bundled gdb + dylibs with cs.debugger
-	  * Force injection: CB_FORCE_GDB_TIER2=1 and Debugger option
-	    "Lab: force Tier 2 debugger signing (macOS)"
-	  * Enable debugging orchestrates Tier 1 then Tier 2 when needed
-	  * Tier 2 installs the System identity the way LLDB's
-	    macos-setup-codesign.sh does (trust the cert, import the key
-	    with -A, restart taskgated)
-
-2026-10-19 22:45  tbgitoo
-
-v2.3 M3 (tree): unofficial Apple Silicon macOS port
-	  * Tier 1 restore: ad-hoc codesign + cs.debugger on bundled gdb only;
-	    skip when already valid; refuse custom paths
-	  * Ships Resources/debugger/gdb.entitlements for in-app restore
-	  * Debug → Enable debugging on this Mac… (enabled after diagnosis
-	    suggests repair and debugger is stopped; auto-offer is M5)
-
-2026-10-19 22:30  tbgitoo
-
-v2.3 M2 (tree): unofficial Apple Silicon macOS port
-	  * gdbmacossigningdiagnose: bundled-path gate; codesign verify;
-	    cs.debugger entitlement; quarantine noted separately
-	  * Session classifiers: bare "No stack" vs Mach task port /
-	    taskgated; WouldOfferEnableDebugging for later M5 (no UI yet)
-	  * Debugger log: one diagnosis dump per unhealthy session
-	    (launch fail / No stack / task-port / non-zero exit)
-
-2026-10-19 17:55  tbgitoo
-
-v2.3 M1 (tree): unofficial Apple Silicon macOS port
-	  * make_cb_app_bundle.sh: --gdb-sign=normal|unsigned|no-entitlement
-	    (default normal = release ad-hoc + cs.debugger; lab modes
-	    warn loudly; never ship; no env var)
-	  * Resources/debugger/.cb_gdb_sign_lab records the mode
-	  * code_signing.md / README / plans: lab proves packaging
-	    injection only; not a stand-in for foreign-Mac taskgated
-	    refusal; force Tier 2 deferred to M4 runtime
 
 2026-10-18 22:42  tbgitoo
-
 
 v2.2  Aim: Make standalone workflows behave consistently, facilitate access for beginners
 v2.2 DONE (tree, M1–M6): unofficial Apple Silicon macOS port
