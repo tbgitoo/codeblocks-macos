@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: M1–M5 DONE in tree. M6 planned (not started).** Does not reopen v2.2 M1–M6.
+**Status: M1–M6 DONE in tree.** Does not reopen v2.2 M1–M6.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -175,9 +175,9 @@ Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2
 | **M3** | **DONE** (tree) | Tier 1 restore (`TryMacGdbTier1Restore`); skip if valid; bundled-only; ships `Resources/debugger/gdb.entitlements`; **Debug → Enable debugging on this Mac…** enabled only after diagnosis suggests repair and debugger is stopped (auto-offer remains M5). |
 | **M4** | **DONE** (tree) | Tier 2 (`codeblocks-gdb` in the **System** keychain; admin prompt; login copy removed); force via env/`ForceMacGdbTier2`; Enable debugging runs Tier 1 then Tier 2 when needed. |
 | **M5** | **DONE** (tree) | Consent prompt on confirmed failure (**Enable debugging** / **Not now** / **Don't ask again**); Debugger pref re-enables offers; menu remains; README + `code_signing.md`. |
-| **M6** | **PLANNED** | Isolate Tier 1 / Tier 2 provisioning in a macOS-only in-process component. Same behaviour. `#if` gate; no Windows/Linux stubs; no separate executable. |
+| **M6** | **DONE** (tree) | Isolate Tier 1 / Tier 2 provisioning in a macOS-only in-process component (`gdbmacprovision`). Same behaviour. `#if` gate; no Windows/Linux stubs; no separate executable. |
 
-### M6 — in-process macOS provisioning component (planned, not started)
+### M6 — in-process macOS provisioning component (DONE in tree)
 
 M6 does **not** change what the user sees and does **not** redesign Tier 1, Tier 2, the certificate, the System keychain, or the admin prompts. It separates the macOS provisioning code from diagnosis and UI, and leaves that code inside the IDE process Gatekeeper has already allowed to run.
 

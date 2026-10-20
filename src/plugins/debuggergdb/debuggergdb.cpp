@@ -52,6 +52,9 @@
 #include "programconsole.h"
 #include "debuggerdriver.h"
 #include "debuggergdb.h"
+#if defined(__WXMAC__)
+#include "gdbmacprovision.h"
+#endif
 #include "debuggeroptionsdlg.h"
 #include "debuggeroptionsprjdlg.h"
 #include "editwatchdlg.h"
@@ -2467,39 +2470,26 @@ void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
     if (forceTier2)
         Log(_("Enable debugging: force Tier 2 is ON (lab)."));
 
-    const GdbMacEnableRepairResult repair =
-        TryMacGdbEnableDebuggingRepair(exe, m_macGdbSessionEvidence, forceTier2);
-
-    if (repair.attemptedTier1 || repair.tier1.kind != GdbMacTier1ResultKind::SkippedAlreadyValid)
+#if !defined(__WXMAC__)
+    return;
+#else
+    // Tier 2 is indicated by task-port evidence or the lab force switch.
+    // The component does not see the debugger session.
+    const bool runTier2 = forceTier2 || probe.session.taskPortOrTaskgated;
+    const GdbMacProvisionResult repair = ProvisionMacBundledGdb(runTier2, forceTier2);
+    if (!repair.log.empty())
     {
-        const wxString s1 = FormatGdbMacTier1ResultForLog(repair.tier1);
-        wxStringTokenizer tok(s1, "\n", wxTOKEN_RET_EMPTY_ALL);
+        wxStringTokenizer tok(repair.log, "\n", wxTOKEN_RET_EMPTY_ALL);
         while (tok.HasMoreTokens())
             Log(tok.GetNextToken());
     }
-    if (repair.attemptedTier2
-        || repair.tier2.kind == GdbMacTier2ResultKind::Restored
-        || repair.tier2.kind == GdbMacTier2ResultKind::Failed)
-    {
-        const wxString s2 = FormatGdbMacTier2ResultForLog(repair.tier2);
-        wxStringTokenizer tok(s2, "\n", wxTOKEN_RET_EMPTY_ALL);
-        while (tok.HasMoreTokens())
-            Log(tok.GetNextToken());
-    }
-    else if (!repair.attemptedTier2)
-    {
+    if (!repair.tier2Attempted)
         Log(_("Enable debugging: Tier 2 not required."));
-    }
 
-    const bool tier1Ok = !repair.attemptedTier1
-                         || repair.tier1.kind == GdbMacTier1ResultKind::Restored
-                         || repair.tier1.kind == GdbMacTier1ResultKind::SkippedAlreadyValid;
-    const bool tier2Ok = !repair.attemptedTier2
-                         || repair.tier2.kind == GdbMacTier2ResultKind::Restored
-                         || repair.tier2.kind == GdbMacTier2ResultKind::SkippedAlreadyNamed
-                         || repair.tier2.kind == GdbMacTier2ResultKind::SkippedNotNeeded;
-
-    if (tier1Ok && tier2Ok)
+    const bool ok = repair.outcome == GdbMacProvisionOutcome::AlreadyHealthy
+                 || repair.outcome == GdbMacProvisionOutcome::Tier1Restored
+                 || repair.outcome == GdbMacProvisionOutcome::Tier2Provisioned;
+    if (ok)
     {
         m_macEnableDebuggingSuggested = false;
         cbMessageBox(_("Debugger signing repair finished.\n"
@@ -2508,11 +2498,13 @@ void DebuggerGDB::RunMacEnableDebuggingRepair(bool alreadyConsented)
     }
     else
     {
+        // Cancelled trust is still "repair did not finish" — same dialog as a failure.
         cbMessageBox(_("Could not fully repair bundled debugger signing.\n"
                        "See the Debugger log for details.\n"
                        "macOS may have prompted for Keychain or admin access."),
                      _("Enable debugging"), wxOK | wxICON_ERROR);
     }
+#endif
 }
 
 void DebuggerGDB::OnInfoFrame(wxCommandEvent& WXUNUSED(event))
