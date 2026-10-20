@@ -1,3 +1,14 @@
+2026-10-20 18:50  tbgitoo
+
+v2.3 M5 (tree): unofficial Apple Silicon macOS port
+	  * On a confirmed bundled-GDB signing or task-port failure, ask
+	    whether to enable debugging (Enable debugging / Not now /
+	    Don't ask again). Repair still waits for consent.
+	  * Settings → Debugger → GDB/CDB debugger can turn those automatic
+	    offers back on. Debug → Enable debugging on this Mac… stays available.
+	  * Bare "No stack", a missing debugger, and a custom debugger path
+	    do not prompt and are not modified.
+
 2026-10-19 23:10  tbgitoo
 
 v2.3 M4 (tree): unofficial Apple Silicon macOS port

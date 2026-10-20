@@ -198,7 +198,7 @@ The bundle script:
 3. Ad-hoc signs those Mach-Os and attaches `osx/gdb.entitlements` to `debugger/bin/gdb` (**default / release**).
 4. Re-applies the entitlement after `codesign --deep` on the app.
 
-That is the **happy path** shipped in release DMGs. If you still see **No stack** / Mach task port errors after a fresh bundle, the planned v2.3 product path is in-app **Enable debugging** (repair); until then, the optional local-certificate commands above remain advanced recovery.
+That is the **happy path** shipped in release DMGs. If Debug then fails with a confirmed signing or task-port problem, Code::Blocks offers **Enable debugging** and repairs only after you agree. The certificate and `codesign` commands in this file are advanced recovery, not the normal path.
 
 ### Diagnosis (v2.3 M2)
 
@@ -206,7 +206,7 @@ When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgat
 
 ### Tier 1 restore (v2.3 M3)
 
-After diagnosis finds a Tier 1 candidate, the debugger log shows a red **✕** hint, and **Debug → Enable debugging on this Mac…** becomes enabled (even if the failed session is still open — it stops the session first, then restores). Tier 1 re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger`. If ad-hoc is already valid but task-port evidence remains, or lab force Tier 2 is on, Tier 2 creates/reuses a **System** keychain identity named **`codeblocks-gdb`** (macOS asks for an administrator password) and resigns with that identity. A login-keychain copy is not enough for `taskgated`. Custom paths are refused. Automatic dialog-on-failure is later (M5).
+On a confirmed signing or task-port failure, Code::Blocks asks whether to enable debugging (**Enable debugging** / **Not now**, plus **Don't ask again**). Repair does not start until you agree. **Don't ask again** silences later automatic questions; turn them back on with **Settings → Debugger → GDB/CDB debugger → Ask to enable debugging when the bundled debugger cannot attach**. **Debug → Enable debugging on this Mac…** remains available and stops a running session itself before restoring. Tier 1 re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger`. If ad-hoc is already valid but task-port evidence remains, or lab force Tier 2 is on, Tier 2 creates/reuses a **System** keychain identity named **`codeblocks-gdb`** (macOS asks for an administrator password) and resigns with that identity. A login-keychain copy is not enough for `taskgated`. Bare **No stack** without that evidence does not prompt. A missing or custom debugger path does not prompt and is not modified.
 
 ### Force Tier 2 (lab, v2.3 M4)
 

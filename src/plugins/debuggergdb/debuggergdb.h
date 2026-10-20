@@ -202,9 +202,13 @@ class DebuggerGDB : public cbDebuggerPlugin
         void OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event);
         void OnEnableDebuggingMac(wxCommandEvent &event);
 
-        /** Run codesign diagnosis at most once per Debug session; log only. */
+        /** Run codesign diagnosis at most once per Debug session. */
         void LogMacGdbSigningDiagnosisOnce(const wxString &reason);
         void ResetMacGdbSigningDiagnosis();
+        /** Automatic consent prompt after a confirmed signing / task-port failure. */
+        void OfferMacEnableDebugging();
+        /** Manual menu and automatic offer share this repair. alreadyConsented skips the second question. */
+        void RunMacEnableDebuggingRepair(bool alreadyConsented);
         /** Insert Debug-menu item (macOS); safe to call more than once. */
         void EnsureMacEnableDebuggingMenuItem();
     private:
@@ -256,6 +260,8 @@ class DebuggerGDB : public cbDebuggerPlugin
         bool m_macGdbSigningDiagnosisLogged;
         /** True after diagnosis that WouldOfferEnableDebugging (menu on Debug, not Information). */
         bool m_macEnableDebuggingSuggested;
+        /** True while an automatic offer is queued, so one failure does not stack dialogs. */
+        bool m_macEnableDebuggingOfferScheduled;
 
         DECLARE_EVENT_TABLE()
 };

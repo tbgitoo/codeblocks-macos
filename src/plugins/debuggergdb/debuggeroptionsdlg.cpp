@@ -171,6 +171,9 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
         wxCheckBox *forceT2 = XRCCTRL(*panel, "chkForceMacGdbTier2", wxCheckBox);
         if (forceT2)
             forceT2->SetValue(GetFlag(ForceMacGdbTier2));
+        wxCheckBox *offer = XRCCTRL(*panel, "chkOfferMacEnableDebugging", wxCheckBox);
+        if (offer)
+            offer->SetValue(GetFlag(OfferMacEnableDebugging));
     }
 #else
     {
@@ -180,6 +183,9 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
         wxWindow *forceT2 = panel->FindWindow(XRCID("chkForceMacGdbTier2"));
         if (forceT2)
             forceT2->Show(false);
+        wxWindow *offer = panel->FindWindow(XRCID("chkOfferMacEnableDebugging"));
+        if (offer)
+            offer->Show(false);
     }
 #endif
     XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->SetSelection(m_config.ReadInt("disassembly_flavor", 0));
@@ -210,6 +216,10 @@ bool DebuggerConfiguration::SaveChanges(wxPanel *panel)
         if (forceT2)
             m_config.Write("force_mac_gdb_tier2",
                            XRCCTRL(*panel, "chkForceMacGdbTier2", wxCheckBox)->GetValue());
+        wxWindow *offer = panel->FindWindow(XRCID("chkOfferMacEnableDebugging"));
+        if (offer)
+            m_config.Write("offer_mac_enable_debugging",
+                           XRCCTRL(*panel, "chkOfferMacEnableDebugging", wxCheckBox)->GetValue());
     }
 #endif
     m_config.Write("disassembly_flavor",    XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->GetSelection());
@@ -241,6 +251,8 @@ bool DebuggerConfiguration::GetFlag(Flags flag)
             return m_config.ReadBool("unbuffer_stdio", true);
         case ForceMacGdbTier2:
             return m_config.ReadBool("force_mac_gdb_tier2", false);
+        case OfferMacEnableDebugging:
+            return m_config.ReadBool("offer_mac_enable_debugging", true);
         default:
             return false;
     }
@@ -275,6 +287,9 @@ void DebuggerConfiguration::SetFlag(Flags flag, bool value)
             break;
         case ForceMacGdbTier2:
             m_config.Write("force_mac_gdb_tier2", value);
+            break;
+        case OfferMacEnableDebugging:
+            m_config.Write("offer_mac_enable_debugging", value);
             break;
         default:
             ;

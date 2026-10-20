@@ -29,7 +29,8 @@ class DebuggerConfiguration : public cbDebuggerConfiguration
             AddOtherProjectDirs,
             DoNotRun,
             UnbufferStdio,      // macOS Debug: companion GDB unbuffers inferior stdout
-            ForceMacGdbTier2    // macOS lab: force Tier 2 named-identity resign
+            ForceMacGdbTier2,   // macOS lab: force Tier 2 named-identity resign
+            OfferMacEnableDebugging // macOS: automatic Enable debugging offer (M5)
         };
 
         bool GetFlag(Flags flag);

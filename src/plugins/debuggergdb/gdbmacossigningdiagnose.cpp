@@ -655,7 +655,7 @@ wxString FormatGdbMacSigningDiagnosisForLog(const GdbMacSigningDiagnosis &d)
       << "; task-port/taskgated=" << (d.session.taskPortOrTaskgated ? "yes" : "no")
       << "; launch failed=" << (d.session.launchFailed ? "yes" : "no") << '\n';
     s << "  signing defective (Tier 1 candidate): " << (d.SigningDefective() ? "yes" : "no") << '\n';
-    s << "  would offer Enable debugging (M5 later): "
+    s << "  would offer Enable debugging: "
       << (d.WouldOfferEnableDebugging() ? "yes" : "no");
     if (d.session.bareNoStack && !d.WouldOfferEnableDebugging() && !d.SigningDefective())
         s << "\n  note: bare \"No stack\" alone is not enough without signing or task-port evidence";
