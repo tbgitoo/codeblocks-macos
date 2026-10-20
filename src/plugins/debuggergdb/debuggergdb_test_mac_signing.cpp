@@ -141,4 +141,51 @@ TEST(Tier1DecideRefuseMissing)
     CHECK_EQUAL(GdbMacTier1Decision::RefuseMissing, DecideMacGdbTier1(d));
 }
 
+TEST(Tier2DecideSkipNotNeededWhenHealthy)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidAdhoc;
+    d.hasDebuggerEntitlement = true;
+    CHECK_EQUAL(GdbMacTier2Decision::SkipNotNeeded, DecideMacGdbTier2(d, false));
+}
+
+TEST(Tier2DecideShouldRunWhenForce)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidAdhoc;
+    d.hasDebuggerEntitlement = true;
+    CHECK_EQUAL(GdbMacTier2Decision::ShouldRun, DecideMacGdbTier2(d, true));
+}
+
+TEST(Tier2DecideShouldRunWhenTaskPort)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidAdhoc;
+    d.hasDebuggerEntitlement = true;
+    d.session.taskPortOrTaskgated = true;
+    CHECK_EQUAL(GdbMacTier2Decision::ShouldRun, DecideMacGdbTier2(d, false));
+}
+
+TEST(Tier2DecideRefuseIfStillDefective)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::MissingOrInvalid;
+    CHECK_EQUAL(GdbMacTier2Decision::RefuseSigningStillDefective, DecideMacGdbTier2(d, true));
+}
+
+TEST(Tier2DecideSkipAlreadyNamed)
+{
+    GdbMacSigningDiagnosis d;
+    d.pathKind = GdbMacPathKind::Bundled;
+    d.signature = GdbMacSignatureState::ValidNamed;
+    d.hasDebuggerEntitlement = true;
+    d.authority = wxT("codeblocks-gdb");
+    CHECK_EQUAL(GdbMacTier2Decision::SkipAlreadyNamed, DecideMacGdbTier2(d, false));
+    CHECK_EQUAL(GdbMacTier2Decision::ShouldRun, DecideMacGdbTier2(d, true));
+}
+
 } // SUITE

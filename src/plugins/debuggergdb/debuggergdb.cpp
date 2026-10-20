@@ -337,7 +337,9 @@ void DebuggerGDB::OnAttachReal()
     // register event sink
     Manager::Get()->RegisterEventSink(cbEVT_BUILDTARGET_SELECTED, new cbEventFunctor<DebuggerGDB, CodeBlocksEvent>(this, &DebuggerGDB::OnBuildTargetSelected));
 
+    // Menu bar may not be ready yet; retry after the event loop runs.
     EnsureMacEnableDebuggingMenuItem();
+    CallAfter([this] { EnsureMacEnableDebuggingMenuItem(); });
 }
 
 void DebuggerGDB::OnReleaseReal(cb_unused bool appShutDown)
@@ -2286,9 +2288,14 @@ void DebuggerGDB::OnCatchThrow(wxCommandEvent &event)
 
 void DebuggerGDB::OnUpdateEnableDebuggingMac(wxUpdateUIEvent &event)
 {
-    // Main Debug menu: enabled when diagnosis suggested a repair (even if a
-    // failed session is still active — Enable debugging will stop it first).
-    event.Enable(platform::macosx && m_macEnableDebuggingSuggested);
+    // Keep the menu item present (menus may be rebuilt; insert is idempotent).
+    EnsureMacEnableDebuggingMenuItem();
+
+    // Enabled when diagnosis suggested repair, or lab force Tier 2 is on.
+    const bool force = platform::macosx
+                       && (IsMacGdbForceTier2FromEnv()
+                           || GetActiveConfigEx().GetFlag(DebuggerConfiguration::ForceMacGdbTier2));
+    event.Enable(platform::macosx && (m_macEnableDebuggingSuggested || force));
 }
 
 void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
@@ -2296,14 +2303,14 @@ void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
     if (!platform::macosx)
         return;
 
-    // Capture path before Stop(); config is unchanged, but be explicit.
     const wxString exe = GetActiveConfigEx().GetDebuggerExecutable();
+    const bool forceTier2 = IsMacGdbForceTier2FromEnv()
+                            || GetActiveConfigEx().GetFlag(DebuggerConfiguration::ForceMacGdbTier2);
 
     if (IsRunning())
     {
         Log(_("Enable debugging: stopping the current debugger session…"));
         Stop();
-        // Wait for GDB to terminate so we can re-sign the binary safely.
         int wait = 200; // ~2s
         while (IsRunning() && wait-- > 0)
         {
@@ -2320,24 +2327,13 @@ void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
         Log(_("Enable debugging: debugger stopped."));
     }
 
-    const GdbMacSigningDiagnosis before = DiagnoseMacGdbSigning(exe, GdbMacSessionEvidence());
-    const GdbMacTier1Decision decision = DecideMacGdbTier1(before);
-
-    if (decision == GdbMacTier1Decision::SkipAlreadyValid)
+    const GdbMacSigningDiagnosis probe = DiagnoseMacGdbSigning(exe, m_macGdbSessionEvidence);
+    if (probe.pathKind == GdbMacPathKind::Missing
+        || probe.pathKind == GdbMacPathKind::NotBundled
+        || probe.pathKind == GdbMacPathKind::NotOnMac)
     {
         m_macEnableDebuggingSuggested = false;
-        Log(_("Enable debugging: bundled GDB signature and entitlement already look valid (no change)."));
-        cbMessageBox(_("The bundled debugger already has a valid signature and "
-                       "debugger entitlement. No repair was needed."),
-                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
-        return;
-    }
-    if (decision == GdbMacTier1Decision::RefuseMissing
-        || decision == GdbMacTier1Decision::RefuseNotBundled
-        || decision == GdbMacTier1Decision::RefuseNotOnMac)
-    {
-        m_macEnableDebuggingSuggested = false;
-        const wxString msg = (decision == GdbMacTier1Decision::RefuseNotBundled)
+        const wxString msg = (probe.pathKind == GdbMacPathKind::NotBundled)
             ? _("Enable debugging only applies to the debugger bundled inside Code::Blocks.\n"
                 "Your configured debugger path is elsewhere and will not be modified.")
             : _("The bundled debugger was not found. Enable debugging cannot run.");
@@ -2346,10 +2342,29 @@ void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
         return;
     }
 
-    AnnoyingDialog dlg(_("Enable debugging on this Mac"),
-                       _("Code::Blocks can restore the ad-hoc signature and debugger "
-                         "entitlement on the bundled GDB (Tier 1).\n\n"
-                         "This does not create a certificate. Continue?"),
+    // Healthy ad-hoc and not forcing Tier 2 and no repair suggested → no-op.
+    if (!forceTier2 && !probe.SigningDefective() && !m_macEnableDebuggingSuggested
+        && !probe.session.taskPortOrTaskgated)
+    {
+        m_macEnableDebuggingSuggested = false;
+        Log(_("Enable debugging: bundled GDB already looks healthy (no change)."));
+        cbMessageBox(_("The bundled debugger already looks correctly signed.\n"
+                       "No repair was needed."),
+                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    wxString prompt =
+        _("Code::Blocks can repair signing of the bundled debugger on this Mac.\n\n");
+    if (probe.SigningDefective())
+        prompt += _("Tier 1: restore ad-hoc signature and debugger entitlement.\n");
+    if (forceTier2 || (!probe.SigningDefective() && probe.session.taskPortOrTaskgated))
+        prompt += _("Tier 2: sign with a local trusted identity in the System keychain "
+                    "(macOS will ask for an administrator password to install it, "
+                    "then again to trust it for code signing).\n");
+    prompt += _("\nContinue?");
+
+    AnnoyingDialog dlg(_("Enable debugging on this Mac"), prompt,
                        wxART_QUESTION, AnnoyingDialog::YES_NO, AnnoyingDialog::rtYES);
     if (dlg.ShowModal() != AnnoyingDialog::rtYES)
     {
@@ -2357,30 +2372,55 @@ void DebuggerGDB::OnEnableDebuggingMac(cb_unused wxCommandEvent &event)
         return;
     }
 
-    Log(_("Enable debugging: running Tier 1 restore…"));
-    const GdbMacTier1Result result = TryMacGdbTier1Restore(exe);
-    const wxString summary = FormatGdbMacTier1ResultForLog(result);
-    wxStringTokenizer tok(summary, "\n", wxTOKEN_RET_EMPTY_ALL);
-    while (tok.HasMoreTokens())
-        Log(tok.GetNextToken());
+    ShowLog(false);
+    Log(_("Enable debugging: running repair (Tier 1 / Tier 2 as needed)…"));
+    if (forceTier2)
+        Log(_("Enable debugging: force Tier 2 is ON (lab)."));
 
-    if (result.kind == GdbMacTier1ResultKind::Restored)
+    const GdbMacEnableRepairResult repair =
+        TryMacGdbEnableDebuggingRepair(exe, m_macGdbSessionEvidence, forceTier2);
+
+    if (repair.attemptedTier1 || repair.tier1.kind != GdbMacTier1ResultKind::SkippedAlreadyValid)
     {
-        m_macEnableDebuggingSuggested = false;
-        cbMessageBox(_("Bundled debugger signing was restored.\n"
-                       "Try Debug again."),
-                     _("Enable debugging"), wxOK | wxICON_INFORMATION);
+        const wxString s1 = FormatGdbMacTier1ResultForLog(repair.tier1);
+        wxStringTokenizer tok(s1, "\n", wxTOKEN_RET_EMPTY_ALL);
+        while (tok.HasMoreTokens())
+            Log(tok.GetNextToken());
     }
-    else if (result.kind == GdbMacTier1ResultKind::SkippedAlreadyValid)
+    if (repair.attemptedTier2
+        || repair.tier2.kind == GdbMacTier2ResultKind::Restored
+        || repair.tier2.kind == GdbMacTier2ResultKind::Failed)
+    {
+        const wxString s2 = FormatGdbMacTier2ResultForLog(repair.tier2);
+        wxStringTokenizer tok(s2, "\n", wxTOKEN_RET_EMPTY_ALL);
+        while (tok.HasMoreTokens())
+            Log(tok.GetNextToken());
+    }
+    else if (!repair.attemptedTier2)
+    {
+        Log(_("Enable debugging: Tier 2 not required."));
+    }
+
+    const bool tier1Ok = !repair.attemptedTier1
+                         || repair.tier1.kind == GdbMacTier1ResultKind::Restored
+                         || repair.tier1.kind == GdbMacTier1ResultKind::SkippedAlreadyValid;
+    const bool tier2Ok = !repair.attemptedTier2
+                         || repair.tier2.kind == GdbMacTier2ResultKind::Restored
+                         || repair.tier2.kind == GdbMacTier2ResultKind::SkippedAlreadyNamed
+                         || repair.tier2.kind == GdbMacTier2ResultKind::SkippedNotNeeded;
+
+    if (tier1Ok && tier2Ok)
     {
         m_macEnableDebuggingSuggested = false;
-        cbMessageBox(_("No change was required."),
+        cbMessageBox(_("Debugger signing repair finished.\n"
+                       "Try Debug again."),
                      _("Enable debugging"), wxOK | wxICON_INFORMATION);
     }
     else
     {
-        cbMessageBox(_("Could not restore bundled debugger signing.\n"
-                       "See the debugger log for details."),
+        cbMessageBox(_("Could not fully repair bundled debugger signing.\n"
+                       "See the Debugger log for details.\n"
+                       "macOS may have prompted for Keychain or admin access."),
                      _("Enable debugging"), wxOK | wxICON_ERROR);
     }
 }
@@ -2623,6 +2663,9 @@ void DebuggerGDB::CleanupWhenProjectClosed(cbProject *project)
 
 void DebuggerGDB::OnIdle(wxIdleEvent& event)
 {
+    // Re-insert if the Debug menu was rebuilt without our item (macOS only).
+    EnsureMacEnableDebuggingMenuItem();
+
     if (m_pProcess && ((PipedProcess*)m_pProcess)->HasInput())
         event.RequestMore();
     event.Skip();

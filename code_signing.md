@@ -206,7 +206,17 @@ When Debug fails on macOS (launch failure, **No stack**, or task-port / `taskgat
 
 ### Tier 1 restore (v2.3 M3)
 
-After diagnosis finds a Tier 1 candidate, the debugger log shows a red **✕** hint, and **Debug → Enable debugging on this Mac…** becomes enabled (even if the failed session is still open — it stops the session first, then restores). It re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger` on the **bundled** `gdb` only. Custom paths are refused. Automatic dialog-on-failure is later (M5). Tier 2 is later (M4).
+After diagnosis finds a Tier 1 candidate, the debugger log shows a red **✕** hint, and **Debug → Enable debugging on this Mac…** becomes enabled (even if the failed session is still open — it stops the session first, then restores). Tier 1 re-applies an **ad-hoc** signature plus `com.apple.security.cs.debugger`. If ad-hoc is already valid but task-port evidence remains, or lab force Tier 2 is on, Tier 2 creates/reuses a **System** keychain identity named **`codeblocks-gdb`** (macOS asks for an administrator password) and resigns with that identity. A login-keychain copy is not enough for `taskgated`. Custom paths are refused. Automatic dialog-on-failure is later (M5).
+
+### Force Tier 2 (lab, v2.3 M4)
+
+Because this development Mac often accepts ad-hoc signing, Tier 2 is hard to hit naturally. Force it with either:
+
+```bash
+CB_FORCE_GDB_TIER2=1 open /Applications/CodeBlocks.app
+```
+
+or **Settings → Debugger → Lab: force Tier 2 debugger signing (macOS)**, then **Debug → Enable debugging on this Mac…**. Repeat Enable debugging should **reuse** the same identity (no duplicate cert spam).
 
 ### Developer lab: `--gdb-sign` (v2.3 M1)
 
