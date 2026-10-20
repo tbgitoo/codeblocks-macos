@@ -1,3 +1,16 @@
+2026-10-19 23:10  tbgitoo
+
+v2.3 M4 (tree): unofficial Apple Silicon macOS port
+	  * Tier 2: create/reuse System-keychain identity "codeblocks-gdb"
+	    (login keychain is not enough for taskgated);
+	    codesign bundled gdb + dylibs with cs.debugger
+	  * Force injection: CB_FORCE_GDB_TIER2=1 and Debugger option
+	    "Lab: force Tier 2 debugger signing (macOS)"
+	  * Enable debugging orchestrates Tier 1 then Tier 2 when needed
+	  * Tier 2 installs the System identity the way LLDB's
+	    macos-setup-codesign.sh does (trust the cert, import the key
+	    with -A, restart taskgated)
+
 2026-10-19 22:45  tbgitoo
 
 v2.3 M3 (tree): unofficial Apple Silicon macOS port

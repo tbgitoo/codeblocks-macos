@@ -28,7 +28,8 @@ class DebuggerConfiguration : public cbDebuggerConfiguration
             EvalExpression,
             AddOtherProjectDirs,
             DoNotRun,
-            UnbufferStdio   // macOS Debug: companion GDB unbuffers inferior stdout
+            UnbufferStdio,      // macOS Debug: companion GDB unbuffers inferior stdout
+            ForceMacGdbTier2    // macOS lab: force Tier 2 named-identity resign
         };
 
         bool GetFlag(Flags flag);

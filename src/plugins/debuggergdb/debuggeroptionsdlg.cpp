@@ -168,12 +168,18 @@ wxPanel* DebuggerConfiguration::MakePanel(wxWindow *parent)
         wxCheckBox *unbuf = XRCCTRL(*panel, "chkUnbufferStdio", wxCheckBox);
         if (unbuf)
             unbuf->SetValue(GetFlag(UnbufferStdio));
+        wxCheckBox *forceT2 = XRCCTRL(*panel, "chkForceMacGdbTier2", wxCheckBox);
+        if (forceT2)
+            forceT2->SetValue(GetFlag(ForceMacGdbTier2));
     }
 #else
     {
         wxWindow *unbuf = panel->FindWindow(XRCID("chkUnbufferStdio"));
         if (unbuf)
             unbuf->Show(false);
+        wxWindow *forceT2 = panel->FindWindow(XRCID("chkForceMacGdbTier2"));
+        if (forceT2)
+            forceT2->Show(false);
     }
 #endif
     XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->SetSelection(m_config.ReadInt("disassembly_flavor", 0));
@@ -200,6 +206,10 @@ bool DebuggerConfiguration::SaveChanges(wxPanel *panel)
         if (unbuf)
             m_config.Write("unbuffer_stdio",
                            XRCCTRL(*panel, "chkUnbufferStdio", wxCheckBox)->GetValue());
+        wxWindow *forceT2 = panel->FindWindow(XRCID("chkForceMacGdbTier2"));
+        if (forceT2)
+            m_config.Write("force_mac_gdb_tier2",
+                           XRCCTRL(*panel, "chkForceMacGdbTier2", wxCheckBox)->GetValue());
     }
 #endif
     m_config.Write("disassembly_flavor",    XRCCTRL(*panel, "choDisassemblyFlavor", wxChoice)->GetSelection());
@@ -229,6 +239,8 @@ bool DebuggerConfiguration::GetFlag(Flags flag)
         case UnbufferStdio:
             // macOS Debug default on; companion GDB probes before set.
             return m_config.ReadBool("unbuffer_stdio", true);
+        case ForceMacGdbTier2:
+            return m_config.ReadBool("force_mac_gdb_tier2", false);
         default:
             return false;
     }
@@ -260,6 +272,9 @@ void DebuggerConfiguration::SetFlag(Flags flag, bool value)
             break;
         case UnbufferStdio:
             m_config.Write("unbuffer_stdio", value);
+            break;
+        case ForceMacGdbTier2:
+            m_config.Write("force_mac_gdb_tier2", value);
             break;
         default:
             ;

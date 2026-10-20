@@ -4,7 +4,7 @@ Detail plan for this version. Overview and status table: [versioning_plan.md](ve
 
 ---
 
-**Status: In progress (M1–M3 DONE in tree).** M4–M5 remain planned. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
+**Status: In progress (M1–M4 DONE in tree).** M5 remains planned. Does not reopen v2.2 M1–M6. Does not require a paid Apple Developer Program membership.
 
 **Depends on:** v1.2+ bundled Darwin GDB; v2.2 Gatekeeper first-launch docs in `README.macos.md`.
 
@@ -117,20 +117,17 @@ Product surface (illustrative):
 - **Settings → Debugger** (or equivalent): preference to re-enable automatic offers after silence.
 - Idempotent repair after consent.
 
-### Tier 2 identity lifecycle (implementation questions)
+### Tier 2 identity lifecycle (M4 decisions)
 
-Resolve experimentally at implement time; mark as acceptance items, do not invent answers now:
-
-- Deterministic product-specific identity name  
-- Keychain / storage location  
-- Certificate and private-key ownership  
-- Detect and reuse an existing valid identity (no duplicate spam)  
-- Trust settings and required macOS authorisation  
-- Expiry / recovery  
-- Upgrades / re-signing after app updates  
-- Multi-user implications if relevant  
-- Restriction to bundled GDB  
-- Partial-failure handling (trust set but sign failed, etc.)
+| Question | Decision in tree |
+|----------|------------------|
+| Identity name | `codeblocks-gdb` (CN) |
+| Keychain | **System** keychain (`/Library/Keychains/System.keychain`); login-only trust is not enough for `taskgated` |
+| Create/reuse | `security find-identity`; create via openssl + `security import` only if missing |
+| Trust | Best-effort `add-trusted-cert -p codeSign` (may prompt) |
+| Expiry | 10-year self-signed; recreate if missing from keychain |
+| Scope | Bundled `gdb` (+ companion dylibs) only |
+| Force lab | `CB_FORCE_GDB_TIER2` / Debugger “Lab: force Tier 2…” |
 
 ### Developer lab (this Mac only)
 
@@ -141,7 +138,7 @@ Injectable states via **`--gdb-sign=`** on `make_cb_app_bundle.sh` (default **`n
 | **normal** | `--gdb-sign=normal` (default / omit) | Ad-hoc + debugger entitlement (happy path / ship) |
 | **unsigned** | `--gdb-sign=unsigned` | Missing signature |
 | **no-entitlement** | `--gdb-sign=no-entitlement` | Signed but `cs.debugger` absent |
-| **force Tier 2** | Runtime injection later (M4) — **not** a bundle sign flag | Exercise Tier 2 when this Mac accepts ad-hoc — **not** natural `taskgated` rejection |
+| **force Tier 2** | `CB_FORCE_GDB_TIER2=1` and/or Debugger option “Lab: force Tier 2…” | Exercise Tier 2 when this Mac accepts ad-hoc — **not** natural `taskgated` rejection |
 
 Mode is recorded in `Resources/debugger/.cb_gdb_sign_lab`. Details: `code_signing.md` (Developer lab).
 
@@ -151,7 +148,9 @@ Mode is recorded in `Resources/debugger/.cb_gdb_sign_lab`. Details: `code_signin
 
 **Lab may prove (M3):** Tier 1 restore via menu when defective; skip when already valid; bundled-only refuse; post-sign verify.
 
-**Lab may prove (later M4–M5):** Tier 2; auto-offer consent/silence; full S1–S10.
+**Lab may prove (M4):** Tier 2 `codeblocks-gdb` identity create/reuse; force injection; Enable debugging orchestrates Tier 1 then Tier 2.
+
+**Lab may prove (later M5):** auto-offer consent/silence; full S1–S10.
 
 **Lab must not claim:** that unsigned or entitlement-stripped `gdb` faithfully reproduces  
 `valid ad-hoc + valid entitlement + taskgated refusal on another Mac`.  
@@ -173,7 +172,7 @@ Never ship a release DMG with `unsigned` / `no-entitlement` or with force-Tier-2
 | **M1** | **DONE** (tree) | `--gdb-sign=` = `normal` / `unsigned` / `no-entitlement`; lab marker + docs; force Tier 2 deferred to M4 runtime. |
 | **M2** | **DONE** (tree) | `gdbmacossigningdiagnose`: bundled path only; `codesign` verify + `cs.debugger`; session classifiers (bare No stack vs task-port/taskgated); quarantine noted separately; logs evidence only (no prompt / no repair). |
 | **M3** | **DONE** (tree) | Tier 1 restore (`TryMacGdbTier1Restore`); skip if valid; bundled-only; ships `Resources/debugger/gdb.entitlements`; **Debug → Enable debugging on this Mac…** enabled only after diagnosis suggests repair and debugger is stopped (auto-offer remains M5). |
-| **M4** | Planned | Tier 2 path + force-injection; resolve identity lifecycle questions enough to ship safely; idempotent. |
+| **M4** | **DONE** (tree) | Tier 2 (`codeblocks-gdb` in the **System** keychain; admin prompt; login copy removed); force via env/`ForceMacGdbTier2`; Enable debugging runs Tier 1 then Tier 2 when needed. |
 | **M5** | Planned | Consent prompt on confirmed failure; silence + Debugger pref to re-enable; menu; README + `code_signing.md`; acceptance S1–S10. |
 
 ### Acceptance matrix

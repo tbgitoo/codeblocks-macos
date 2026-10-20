@@ -141,6 +141,13 @@
 						<flag>wxALIGN_LEFT</flag>
 					</object>
 					<object class="sizeritem">
+						<object class="wxCheckBox" name="chkForceMacGdbTier2">
+							<label>Lab: force Tier 2 debugger signing (macOS)</label>
+							<tooltip>When Enable debugging runs, always resign the bundled GDB with the local codeblocks-gdb identity (even if ad-hoc signing already works). For testing only; also set CB_FORCE_GDB_TIER2=1.</tooltip>
+						</object>
+						<flag>wxALIGN_LEFT</flag>
+					</object>
+					<object class="sizeritem">
 						<object class="wxCheckBox" name="chkTooltipEval">
 							<label>Evaluate expression under cursor</label>
 							<tooltip>While debugging, leaving the mouse over a variable (or the selection) evaluates it in a tooltip</tooltip>
