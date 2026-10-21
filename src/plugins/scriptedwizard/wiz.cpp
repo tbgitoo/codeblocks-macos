@@ -1953,6 +1953,16 @@ SQInteger Wiz_MacBrewChoice(HSQUIRRELVM v)
     sq_pushinteger(v, MacBrewChoice(*extractor.p1, *extractor.p2, *extractor.p3));
     return 1;
 }
+
+SQInteger Wiz_MacBrewInstall(HSQUIRRELVM v)
+{
+    // this, formula, explanation, confirmLabel
+    ExtractParams4<Wiz*, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::MacBrewInstall"))
+        return extractor.ErrorMessage();
+    const MacBrewInstallResult result = InstallMacBrewFormula(*extractor.p1, *extractor.p2, *extractor.p3);
+    return ConstructAndReturnInstance(v, FormatMacBrewInstall(result));
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2256,6 +2266,7 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacBrewFormula"), Wiz_MacBrewFormula, _SC("Wiz::MacBrewFormula"));
         BindMethod(v, _SC("MacBrewTry"), Wiz_MacBrewTry, _SC("Wiz::MacBrewTry"));
         BindMethod(v, _SC("MacBrewChoice"), Wiz_MacBrewChoice, _SC("Wiz::MacBrewChoice"));
+        BindMethod(v, _SC("MacBrewInstall"), Wiz_MacBrewInstall, _SC("Wiz::MacBrewInstall"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);

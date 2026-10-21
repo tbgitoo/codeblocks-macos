@@ -43,7 +43,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
 | **v2.3** | **Complete** (tree) — M1–M6. Tag/release when ready. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
-| **v3.0** | **M5 DONE** (tree). M6+ not started. SFML wizard diagnostic page. Locate stores a brew executable only after `--version`. No install button yet. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
+| **v3.0** | **M6 DONE** (tree). M7+ not started. Install SFML only after the labeled button. Cancel before that does not start Homebrew. SFML itself was not installed by the check. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
 
 ### One-line outcomes
 

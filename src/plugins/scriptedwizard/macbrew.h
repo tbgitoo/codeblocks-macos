@@ -2,9 +2,9 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v3.0 M2–M5: locate Homebrew, revalidate one executable, read its prefix,
- * query one formula, and show a two-button dialog.
- * No install. The helper does not know SFML headers, library names, or SFML 2 versus 3.
+ * v3.0 M2–M6: locate Homebrew, revalidate one executable, read its prefix,
+ * query one formula, show a two-button dialog, and install one formula after consent.
+ * The helper does not know SFML headers, library names, or SFML 2 versus 3.
  */
 
 #ifndef MACBREW_H
@@ -84,6 +84,33 @@ struct MacBrewFormulaQuery
 MacBrewFormulaQuery QueryMacBrewFormula(const wxString& formula);
 
 wxString FormatMacBrewFormula(const MacBrewFormulaQuery& query);
+
+// One formula, after the caller-supplied button. Not a general brew command.
+struct MacBrewInstallResult
+{
+    bool launched;
+    bool cancelled;
+    bool passwordPrompt;
+    long exitCode;
+    bool success;
+    wxString output;
+
+    MacBrewInstallResult()
+        : launched(false),
+          cancelled(false),
+          passwordPrompt(false),
+          exitCode(-1),
+          success(false)
+    {}
+};
+
+// Consent first. Cancel before launch does not start brew.
+// Success is only a finished process whose exit code is 0.
+MacBrewInstallResult InstallMacBrewFormula(const wxString& formula,
+                                           const wxString& explanation,
+                                           const wxString& confirmLabel);
+
+wxString FormatMacBrewInstall(const MacBrewInstallResult& result);
 
 #endif // __WXMAC__
 

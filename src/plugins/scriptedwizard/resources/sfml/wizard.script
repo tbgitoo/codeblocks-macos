@@ -274,7 +274,11 @@ function SfmlMacPageText(reason)
         text = text + reason + _("\n\n");
 
     text = text + _("No project is created from this page.\n");
-    if (SFMLMacAccess.Matches(_T("works")))
+    if (SFMLMacState.Matches(_T("missing")))
+        text = text + _("Press Next to install the sfml formula with Homebrew.\n") +
+                      _("Cancel on that dialog does not start the install.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    else if (SFMLMacAccess.Matches(_T("works")))
         text = text + _("Use Cancel to close the wizard.\n");
     else
         text = text + _("Press Next to choose an existing brew executable, or to open https://brew.sh.\n") +
@@ -298,6 +302,39 @@ function SfmlMacConsiderBrew(path)
     return _("That file did not pass brew --version, so it was not remembered.") +
            _("\n\n") + SfmlReportField(report, _T("executable")) +
            _("\n") + SfmlReportField(report, _T("version"));
+}
+
+function SfmlMacOfferInstall()
+{
+    local explanation = _("This project needs SFML.\n\n") +
+                        _("Code::Blocks will ask Homebrew to install the formula \"sfml\".\n") +
+                        _("Nothing is installed until you choose Install SFML using Homebrew.\n") +
+                        _("Cancel on this dialog does not start Homebrew.");
+    local report = Wizard.MacBrewInstall(_T("sfml"), explanation, _("Install SFML using Homebrew"));
+    if (SfmlReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = SfmlMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowMessage(SfmlMacPageText(reason));
+        return false;
+    }
+    if (SfmlReportField(report, _T("password")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
+        return false;
+    }
+    if (SfmlReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
+        return false;
+    }
+    if (SfmlReportField(report, _T("launched")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew did not finish successfully. SFML was not marked installed. No project was created.\n\n") +
+                  SfmlReportField(report, _T("output")));
+    }
+    return false;
 }
 
 function OnLeave_SFMLMacDiag(fwd)
@@ -327,6 +364,8 @@ function OnLeave_SFMLMacDiag(fwd)
             return true;
         return false;
     }
+    if (SFMLMacState.Matches(_T("missing")))
+        return SfmlMacOfferInstall();
     return false;
 }
 
