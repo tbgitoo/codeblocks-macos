@@ -1089,7 +1089,10 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
 
         if (!path.empty())
         {
-            ConvertToGDBDirectory(path);
+            // This path is the debugger process's working directory, not a GDB
+            // command. ConvertToGDBDirectory quotes names that contain spaces,
+            // and wxSetWorkingDirectory then fails, so the debuggee starts in
+            // the IDE's directory instead of the project.
             if (path != ".") // avoid silly message "changing to ."
             {
                 Log(_("Changing directory to: ") + path);
