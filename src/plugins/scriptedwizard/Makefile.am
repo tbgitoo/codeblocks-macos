@@ -21,7 +21,8 @@ libscriptedwizard_la_SOURCES = buildtargetpanel.cpp \
 								genericsinglechoicelist.cpp \
 								projectpathpanel.cpp \
 								wiz.cpp \
-								wizpage.cpp
+								wizpage.cpp \
+								macbrew.cpp
 
 noinst_HEADERS = buildtargetpanel.h \
                     compilerpanel.h \
@@ -31,4 +32,5 @@ noinst_HEADERS = buildtargetpanel.h \
 					genericsinglechoicelist.h \
 					projectpathpanel.h \
 					wiz.h \
-					wizpage.h
+					wizpage.h \
+					macbrew.h

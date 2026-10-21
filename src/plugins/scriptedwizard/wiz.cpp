@@ -45,6 +45,7 @@
 
 #include "wiz.h"
 #include "wizpage.h"
+#include "macbrew.h"
 
 #include "scripting/bindings/sc_utils.h"
 #include "scripting/bindings/sc_typeinfo_all.h"
@@ -1912,6 +1913,18 @@ SQInteger Wiz_SetSpinControlValue(HSQUIRRELVM v)
     return 0;
 }
 
+#if defined(__WXMAC__)
+SQInteger Wiz_MacBrewProbe(HSQUIRRELVM v)
+{
+    // this, wantPrefix
+    ExtractParams2<Wiz*, bool> extractor(v);
+    if (!extractor.Process("Wiz::MacBrewProbe"))
+        return extractor.ErrorMessage();
+    const MacBrewProbe probe = ProbeMacBrew(extractor.p1);
+    return ConstructAndReturnInstance(v, FormatMacBrewProbe(probe));
+}
+#endif
+
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
 {
     // this, name
@@ -2204,6 +2217,12 @@ void Wiz::RegisterWizard()
 
         // Return the name only of the current wizard folder (this is not a path)
         BindMethod(v, _SC("GetWizardScriptFolder"), Wiz_GetString<&Wiz::GetWizardScriptFolder>, _SC("Wiz::GetWizardScriptFolder"));
+
+#if defined(__WXMAC__)
+        // v3.0 M2. Locate, revalidate, and optionally read the Homebrew prefix.
+        // Not a general brew argv binding. Formula query and install are later milestones.
+        BindMethod(v, _SC("MacBrewProbe"), Wiz_MacBrewProbe, _SC("Wiz::MacBrewProbe"));
+#endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);
         // Put the class in the root table. This must be last!
