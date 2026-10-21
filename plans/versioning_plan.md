@@ -12,6 +12,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v2.1 (Debug single open file, no project)
   → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug; tab Rename; readable Watches)
   → v2.3 (Enable debugging — repair-only, in-process; no manual codesign)
+  → v3.0 (existing SFML project wizard usable on Apple Silicon)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -42,6 +43,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
 | **v2.3** | **Complete** (tree) — M1–M6. Tag/release when ready. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
+| **v3.0** | **Planning** — make the existing SFML project wizard produce a working Apple Silicon project. No new wizard. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
 
 ### One-line outcomes
 
@@ -54,6 +56,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.1** | Debug / Step Into a single saved C/C++ file with no project (always rebuild for debug). |
 | **v2.2** | Active-source ownership + PREPARE→COMMIT for Build/Run/Debug; Save As C/C++ split; tab Rename; unbuffered Debug stdout; human-readable Apple-libc++ `std::string` Watches. |
 | **v2.3** | DMG still ships ad-hoc+entitled gdb. Enable debugging appears only after a confirmed signing or task-port failure; repair stays in-process and waits for consent. |
+| **v3.0** | File → New → Project → SFML project → Build and Run yields a native window. A small shared Homebrew helper serves wizards; SFML is the only client. Install is explicit. Homebrew itself is not installed by the IDE. SFML stays out of the DMG. |
 
 ---
 
