@@ -1923,6 +1923,16 @@ SQInteger Wiz_MacBrewProbe(HSQUIRRELVM v)
     const MacBrewProbe probe = ProbeMacBrew(extractor.p1);
     return ConstructAndReturnInstance(v, FormatMacBrewProbe(probe));
 }
+
+SQInteger Wiz_MacBrewFormula(HSQUIRRELVM v)
+{
+    // this, formula
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::MacBrewFormula"))
+        return extractor.ErrorMessage();
+    const MacBrewFormulaQuery query = QueryMacBrewFormula(*extractor.p1);
+    return ConstructAndReturnInstance(v, FormatMacBrewFormula(query));
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2219,9 +2229,10 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("GetWizardScriptFolder"), Wiz_GetString<&Wiz::GetWizardScriptFolder>, _SC("Wiz::GetWizardScriptFolder"));
 
 #if defined(__WXMAC__)
-        // v3.0 M2. Locate, revalidate, and optionally read the Homebrew prefix.
-        // Not a general brew argv binding. Formula query and install are later milestones.
+        // v3.0 M2–M3. Locate, revalidate, optional Homebrew prefix, and one formula query.
+        // Not a general brew argv binding. Install is a later milestone.
         BindMethod(v, _SC("MacBrewProbe"), Wiz_MacBrewProbe, _SC("Wiz::MacBrewProbe"));
+        BindMethod(v, _SC("MacBrewFormula"), Wiz_MacBrewFormula, _SC("Wiz::MacBrewFormula"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);
