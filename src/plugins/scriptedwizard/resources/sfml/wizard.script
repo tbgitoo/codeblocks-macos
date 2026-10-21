@@ -13,6 +13,10 @@ SFMLPathDefault    <- _T("$(#sfml)");
 SFMLPathDefaultInc <- _T("$(#sfml.include)");
 SFMLPathDefaultLib <- _T("$(#sfml.lib)");
 SFMLPath           <- _T("");
+// macOS: filled only after the installed SFML tree is accepted
+SFMLMacPrefix  <- _T("");
+SFMLMacInclude <- _T("");
+SFMLMacLib     <- _T("");
 
 function BeginWizard()
 {
@@ -21,7 +25,9 @@ function BeginWizard()
                       _("When you're ready to proceed, please click \"Next\"...");
 
     Wizard.AddInfoPage(_T("SFMLIntro"), intro_msg);
-    Wizard.AddGenericSingleChoiceListPage(_T("SFMLVersionPage"), _("Please select the SFML version you want to use."), _T("SFML 1.6;SFML 2.0"), SFMLVersion);
+    // macOS reads SFML_VERSION_MAJOR from the installed headers. Do not ask 1.6 versus 2.0.
+    if (PLATFORM != PLATFORM_MAC)
+        Wizard.AddGenericSingleChoiceListPage(_T("SFMLVersionPage"), _("Please select the SFML version you want to use."), _T("SFML 1.6;SFML 2.0"), SFMLVersion);
     if (PLATFORM == PLATFORM_MSW)
         Wizard.AddGenericSingleChoiceListPage(_T("SFMLLinkPage"), _("Please choose the kind of library you want to link to."), _("Static Library;Dynamic Link Library"), SFMLLinkType);
 
@@ -112,6 +118,154 @@ function OnLeave_SFMLPath(fwd)
     return true;
 }
 
+function SfmlReportField(report, key)
+{
+    local needle = key + _T("=");
+    local at = report.Find(needle);
+    if (at == -1)
+        return _T("");
+    local from = at + needle.Length();
+    local rest = report.Mid(from, report.Length() - from);
+    local nl = rest.Find(_T("\n"));
+    if (nl == -1)
+        return rest;
+    return rest.Mid(0, nl);
+}
+
+// Reads the number after the first SFML_VERSION_MAJOR on its own line.
+// Returns 1, 2, 3, or -1 when the macro is missing or not one of those majors.
+function SfmlMajorFromConfig(configText)
+{
+    local key = _T("SFML_VERSION_MAJOR");
+    local at = configText.Find(key);
+    if (at == -1)
+        return -1;
+    local from = at + key.Length();
+    local rest = configText.Mid(from, configText.Length() - from);
+    local i = 0;
+    local n = rest.Length();
+    while (i < n)
+    {
+        local ch = rest.Mid(i, 1);
+        if (ch.Matches(_T("\n")) || ch.Matches(_T("\r")))
+            return -1;
+        if (ch.Matches(_T(" ")) || ch.Matches(_T("\t")))
+        {
+            i = i + 1;
+            continue;
+        }
+        break;
+    }
+    local digits = _T("");
+    while (i < n)
+    {
+        local ch = rest.Mid(i, 1);
+        if (_T("0123456789").Find(ch) == -1)
+            break;
+        digits = digits + ch;
+        i = i + 1;
+    }
+    if (digits.Matches(_T("1")))
+        return 1;
+    if (digits.Matches(_T("2")))
+        return 2;
+    if (digits.Matches(_T("3")))
+        return 3;
+    return -1;
+}
+
+function SfmlMacClear()
+{
+    SFMLMacPrefix = _T("");
+    SFMLMacInclude = _T("");
+    SFMLMacLib = _T("");
+}
+
+// Empty string: this prefix may be written into the project.
+// Anything else: do not create a project.
+function SfmlMacPrefixDecision(prefix)
+{
+    SfmlMacClear();
+    if (prefix.IsEmpty() || (prefix.Find(_T("/")) != 0))
+        return _("SFML's prefix is not a directory. No project was created.");
+
+    local includeDir = prefix + _T("/include");
+    local libDir = prefix + _T("/lib");
+    local config = includeDir + _T("/SFML/Config.hpp");
+    local graphics = includeDir + _T("/SFML/Graphics.hpp");
+    if (!IO.FileExists(graphics))
+        return _("SFML was found, but include/SFML/Graphics.hpp is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(config))
+        return _("SFML was found, but include/SFML/Config.hpp is not under ") + prefix + _(". No project was created.");
+    if (   !IO.FileExists(libDir + _T("/libsfml-graphics.dylib"))
+        || !IO.FileExists(libDir + _T("/libsfml-window.dylib"))
+        || !IO.FileExists(libDir + _T("/libsfml-system.dylib")) )
+    {
+        return _("SFML was found, but libsfml-graphics, libsfml-window, or libsfml-system is not under ") + prefix + _("/lib. No project was created.");
+    }
+
+    local major = SfmlMajorFromConfig(IO.ReadFileContents(config));
+    if (major == 2)
+    {
+        SFMLVersion = 1; // existing sfml/sfml2 sample
+        SFMLMacPrefix = prefix;
+        SFMLMacInclude = includeDir;
+        SFMLMacLib = libDir;
+        return _T("");
+    }
+    if (major == 3)
+        return _("SFML 3 was found at ") + prefix + _(". This wizard's sample is for SFML 2, and an SFML 3 sample is not included yet. No project was created.");
+    if (major == 1)
+        return _("SFML 1 was found at ") + prefix + _(". This wizard does not create an SFML 1 project on macOS. No project was created.");
+    return _("SFML was found at ") + prefix + _(", but SFML_VERSION_MAJOR could not be read from include/SFML/Config.hpp. No project was created.");
+}
+
+function SfmlMacBlockReason()
+{
+    local report = Wizard.MacBrewFormula(_T("sfml"));
+    local state = SfmlReportField(report, _T("state"));
+    if (state.Matches(_T("installed")))
+        return SfmlMacPrefixDecision(SfmlReportField(report, _T("prefix")));
+    SfmlMacClear();
+    if (state.Matches(_T("missing")))
+        return _("Homebrew reports that SFML is not installed. This wizard will not create a project.");
+    if (state.Matches(_T("brew_unavailable")))
+        return _("Homebrew could not be used. This wizard will not create a project.");
+    return _("Homebrew could not be asked about SFML. This wizard will not create a project.");
+}
+
+function SfmlMacAllowForward()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return true;
+    local reason = SfmlMacBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
+function OnLeave_SFMLIntro(fwd)
+{
+    if (fwd)
+        return SfmlMacAllowForward();
+    return true;
+}
+
+function OnLeave_ProjectPathPage(fwd)
+{
+    if (fwd)
+        return SfmlMacAllowForward();
+    return true;
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (fwd)
+        return SfmlMacAllowForward();
+    return true;
+}
+
 function OnEnter_SFMLVersionPage(fwd)
 {
     if (fwd)
@@ -177,8 +331,11 @@ function SetupProject(project)
     }
     else if (PLATFORM == PLATFORM_MAC)
     {
-        //project.AddCompilerOption(_T("-D_GNU_SOURCE=1 -D_THREAD_SAFE"));
-        project.AddLinkerOption(_T("-framework SFML"));
+        // Prefix was accepted on the way through the wizard. No -framework SFML.
+        if (SFMLMacInclude.IsEmpty() || SFMLMacLib.IsEmpty())
+            return false;
+        project.AddIncludeDir(SFMLMacInclude);
+        project.AddLibDir(SFMLMacLib);
     }
     else
     {
