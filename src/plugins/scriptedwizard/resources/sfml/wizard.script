@@ -5,7 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // globals
-SFMLVersion <- 1	// 0 - SFML 1.6, 1 - SFML 2.0
+SFMLVersion <- 1	// 0 - SFML 1.6, 1 - SFML 2.0, 2 - SFML 3 from the installed headers
 SFMLLinkType <- 1	// 0 - static library, 1 - dynamic link library
 SFMLDebugLib <- 0   // 0 - debug libraries are not available, 1 - debug libraries are available
 // windows globals
@@ -226,7 +226,13 @@ function SfmlMacPrefixDecision(prefix)
         return _T("");
     }
     if (major == 3)
-        return _("SFML 3 was found at ") + prefix + _(". This wizard's sample is for SFML 2, and an SFML 3 sample is not included yet. No project was created.");
+    {
+        SFMLVersion = 2; // sfml/sfml3 sample, written from the installed SFML 3 headers
+        SFMLMacPrefix = prefix;
+        SFMLMacInclude = includeDir;
+        SFMLMacLib = libDir;
+        return _T("");
+    }
     if (major == 1)
         return _("SFML 1 was found at ") + prefix + _(". This wizard does not create an SFML 1 project on macOS. No project was created.");
     return _("SFML was found at ") + prefix + _(", but SFML_VERSION_MAJOR could not be read from include/SFML/Config.hpp. No project was created.");
@@ -433,7 +439,9 @@ function OnLeave_SFMLLinkPage(fwd)
 // return the files this project contains
 function GetFilesDir()
 {
-    if(SFMLVersion == 1)
+    if (SFMLVersion == 2)
+        return _T("sfml/sfml3");
+    if (SFMLVersion == 1)
         return _T("sfml/sfml2");
     return _T("sfml/sfml1");
 }
@@ -464,6 +472,8 @@ function SetupProject(project)
             return false;
         project.AddIncludeDir(SFMLMacInclude);
         project.AddLibDir(SFMLMacLib);
+        // Installed SFML 3 headers require C++17.
+        project.AddCompilerOption(_T("-std=c++17"));
     }
     else
     {

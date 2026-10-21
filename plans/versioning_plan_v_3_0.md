@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M6 DONE (tree).** M7+ not started. SFML installs only after **Install SFML using Homebrew**. Cancel before that does not start Homebrew. A non-zero exit is not success. `brew install sfml` was not run.
+**Status: M8 DONE (tree).** M9 not started. The installed dylib ids are absolute, and each dylib carries `LC_RPATH` `@loader_path/../lib`, so the wizard adds no rpath. `bin/Debug/<name>` starts from the project directory and from `bin/Debug` with no `DYLD_LIBRARY_PATH`. SFML installs only after **Install SFML using Homebrew**. Cancel before that does not start Homebrew. A non-zero exit is not success. `brew install sfml` was not run.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -386,6 +386,26 @@ M6 is done in tree. On the missing-SFML page, **Next** opens a dialog whose butt
 3. The missing-SFML page text says **Press Next to install**.
 4. No `brew install` process was running after the check.
 
+M7 is done in tree. Homebrew SFML at `/opt/homebrew/opt/sfml` is 3.0.2 (`SFML_VERSION_MAJOR` is 3). The sample uses the constructors and calls in those headers: `sf::VideoMode({800, 600})`, `sf::RenderWindow`, `texture.loadFromFile("cb.bmp")`, `sf::Sprite(texture)`, and `while (const std::optional event = app.pollEvent())` with `event->is<sf::Event::Closed>()`. `cb.bmp` is the existing sample bitmap. Major 3 sets `SFMLVersion` to 2, which `GetFilesDir` maps to `sfml/sfml3`, and stores `prefix/include` and `prefix/lib`. Major 2 still maps to `sfml/sfml2`. The macOS project adds `-std=c++17` because those headers require it. The three dylib ids are absolute (`libsfml-graphics.3.0.dylib`, `libsfml-window.3.0.dylib`, `libsfml-system.3.0.dylib` under `/opt/homebrew/opt/sfml/lib`), so no rpath was added.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21).
+
+1. `clang++ -std=c++17` against that prefix compiled and linked `sfml3/main.cpp`. `otool -L` shows the three absolute SFML 3.0.2 dylibs.
+2. Run from the sample directory, the process stayed up. A failed `cb.bmp` load returns immediately, so the window was created and the bitmap loaded. The process was then stopped.
+3. From the IDE, the prefix decision for `/opt/homebrew/opt/sfml` was empty (accepted), with include `/opt/homebrew/opt/sfml/include`, lib `/opt/homebrew/opt/sfml/lib`, and `GetFilesDir` `sfml/sfml3`.
+
+M8 is done. No rpath was added to `wizard.script`.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21). `otool -D` on the three dylibs:
+
+- `/opt/homebrew/opt/sfml/lib/libsfml-graphics.3.0.dylib`
+- `/opt/homebrew/opt/sfml/lib/libsfml-window.3.0.dylib`
+- `/opt/homebrew/opt/sfml/lib/libsfml-system.3.0.dylib`
+
+`otool -L` on graphics also lists `@rpath/libsfml-window.3.0.dylib` and `@rpath/libsfml-system.3.0.dylib`. Window lists `@rpath/libsfml-system.3.0.dylib`. Each of the three dylibs has `LC_RPATH` `@loader_path/../lib`, which is that same `lib` directory, so those names resolve without an rpath on the executable.
+
+The IDE built a Debug target with `g++ -std=c++17 -Wall -g -I/opt/homebrew/opt/sfml/include` and `g++ -L/opt/homebrew/opt/sfml/lib -o bin/Debug/sfmlm8 … -lsfml-graphics -lsfml-window -lsfml-system`. `otool -L` on that binary lists the three absolute ids. The binary has no `LC_RPATH`. With `DYLD_LIBRARY_PATH` unset, it stayed up when started from the project directory. Started from `bin/Debug`, it reached SFML and exited because `cb.bmp` is not in that directory (`Failed to load image`, absolute path `…/bin/Debug/cb.bmp`). That is the relative filename already recorded above, not a missing library.
+
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
 | M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
@@ -394,8 +414,8 @@ M6 is done in tree. On the missing-SFML page, **Next** opens a dialog whose butt
 | M4 | **DONE** (tree). The SFML wizard validates the prefix and, for major 2, records include and lib dirs. | `sfml/wizard.script` | No install button. No other wizard. No SFML 3 sample. | Met for the decision the project uses. Absent `sfml` does not proceed. Major 2 records `prefix/include`, `prefix/lib`, and `sfml/sfml2`. No `-framework SFML`. | Met. Current Homebrew SFML is 3.0.2 (`#define SFML_VERSION_MAJOR 3`). Major 3 does not record dirs and does not create a project. |
 | M5 | **DONE** (tree). Diagnostic page for Homebrew ok / SFML missing, and for Homebrew missing or `--version` failed. Locate and https://brew.sh. | `sfml/wizard.script`, `macbrew.cpp` dialog and `MacBrewTry`. | No `brew install`. | Met for C, D, and the `--version` half of E. Case A adds no page. A failed file is not stored. | Met. Forward from the diagnostic page does not reach `SetupProject`. |
 | M6 | **DONE** (tree). Explicit install after **Install SFML using Homebrew**, then the same formula and header checks. | `macbrew.cpp` install path, `sfml/wizard.script`. | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Met for the gates that must not start Homebrew. Invalid formula and a failing `--version` return `launched=0` and `success=0`. | `brew install sfml` was not run. A password prompt in a later run stops the process and is not success. |
-| M7 | `sfml3/main.cpp` only if M4/M6 headers are major 3. | `sfml3/main.cpp`, `sfml/Makefile.am` | No new sample artwork. | Build and Run shows the window and `cb.bmp`. | Skip the whole milestone if the headers are major 2. |
-| M8 | `otool -D` and `otool -L` on the three dylibs and the linked binary. | `wizard.script` linker line only if required | No rpath “just in case.” | `bin/Debug/<name>` starts from the IDE and from that directory. | Stop without an rpath if the install names are absolute. |
+| M7 | **DONE** (tree). Major 3 records the same include and lib dirs and selects `sfml/sfml3`. | `sfml3/main.cpp`, `sfml3/cb.bmp` (the existing bitmap), `sfml/Makefile.am`, `sfml/wizard.script` | No new sample artwork. No rpath. | Met. The sample compiled and linked against `/opt/homebrew/opt/sfml`. The process stayed up, so the window opened and `cb.bmp` loaded. The IDE accepted that prefix and `GetFilesDir` returned `sfml/sfml3`. | Not skipped. Installed headers are major 3. |
+| M8 | **DONE** (tree). No linker line. The three install names are absolute, and the dylibs' own `@loader_path/../lib` resolves their `@rpath` dependencies. | No change to `wizard.script`. | No rpath “just in case.” | Met. The IDE link line is `-L<prefix>/lib` and the three `-l` names. `bin/Debug/sfmlm8` has no `LC_RPATH`. It stays up from the project directory. From `bin/Debug` it starts and SFML runs; `cb.bmp` is missing there, which is the existing relative-path case. | Stop condition met. Install names are absolute. |
 | M9 | `README.macos.md`: New → SFML project, what the diagnostic means, Homebrew is installed by the user from Homebrew’s site. | `README.macos.md` | No search-path tutorial. | A reader is not told to type include flags. | |
 
 ---

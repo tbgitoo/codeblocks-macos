@@ -13,3 +13,8 @@ sfml2filesdir = $(pkgdatadir)/sfml2
 
 dist_sfml2files_DATA = sfml2/cb.bmp \
 			sfml2/main.cpp
+
+sfml3filesdir = $(pkgdatadir)/sfml3
+
+dist_sfml3files_DATA = sfml3/cb.bmp \
+			sfml3/main.cpp
