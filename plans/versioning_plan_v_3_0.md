@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: planning.** No implementation in this document.
+**Status: M2 DONE (tree).** M3+ not started. Locate, `--version`, and `--prefix` only. No formula query, no install, no SFML page.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -328,12 +328,22 @@ Not modified: `config.script`, other wizards, `common_functions.script`, `src/te
 
 ## 8. Milestones
 
-M1 is this document. No code.
+M1 is this document. No code. It is done: sections 3–7 record the process, config, and URL mechanisms that were checked in `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and `pipedprocess.cpp`, and the Homebrew 7.0.9 commands checked with local `brew help` (`--version`, `--prefix`, `--prefix --installed`). The later corrections (saved path first, revalidate every session, cancel-before versus cancel-during, narrow API) are part of that same plan.
+
+M2 is done in tree. `macbrew.cpp` locates one executable, revalidates it with `{brew,"--version"}`, and runs `{brew,"--prefix"}` only after that succeeds. `Wizard.MacBrewProbe` returns one report string. There is no formula query and no install.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21). The installed app was started with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and no `HOMEBREW_*`. `which brew` cannot see Homebrew on that path. `Wizard.MacBrewProbe` from the IDE:
+
+1. No saved path, prefix requested: `access=works`, executable `/opt/homebrew/bin/brew`, `version_exit=0`, `version=Homebrew 7.0.9`, `prefix=/opt/homebrew`, `saved_missing=0`.
+2. Saved `/no/such/brew`: `saved_missing=1`, then the same `/opt/homebrew/bin/brew` with `access=works`. Prefix was not requested, so `prefix_exit=-1`.
+3. Saved `/bin/echo`, prefix requested: `access=present_unusable`, executable stayed `/bin/echo`, `version_exit=0`, first line `--version` (no `Homebrew`), `prefix_exit=-1`. The standard locations were not tried.
+
+The saved key was cleared in the throwaway `--user-data-dir` afterwards. The real `~/Library/Application Support/codeblocks/default.conf` was not modified.
 
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
-| M1 | Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Done when this plan matches those sources. |
-| M2 | Tests 1–3 inside the helper, from the IDE. | `macbrew.cpp`, `Makefile.am`, `wiz.cpp` bindings. | No formula query, no install, no SFML page. No general argv binding. | Saved path first, then the two standard paths. `--version` on every use. A saved file that fails is not replaced. A missing saved file falls through. `--prefix` when the client needs it. | Stop if `--version` cannot be run from a Finder-launched app with the absolute path. |
+| M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
+| M2 | **DONE** (tree). Tests 1–3 inside the helper, from the IDE. | `macbrew.cpp`, `macbrew.h`, `Makefile.am`, `wiz.cpp` `MacBrewProbe`. | No formula query, no install, no SFML page. No general argv binding. | Met. Saved path first, then the two standard paths. `--version` on every use. `/bin/echo` stayed unusable and was not replaced. Missing `/no/such/brew` fell through. `--prefix` only after a good `--version`. | Met. Absolute `/opt/homebrew/bin/brew --version` returned Homebrew 7.0.9 while `PATH` was `/usr/bin:/bin:/usr/sbin:/sbin`. |
 | M3 | Test 4–5 for the literal `sfml`. | `macbrew.cpp` | No header check, no install. | Installed and not-installed are different results. `--prefix` without `--installed` is not used as the installed test. | Stop if exit 0 is reported while the formula is absent. |
 | M4 | SFML wizard validates the prefix and writes the `.cbp` when SFML is already installed. Stays before M6 so a bad project is not confused with a bad install. | `sfml/wizard.script` | No install button. No other wizard. | Tests 6 and the generated include/lib dirs. No `-framework SFML`. Windows diff empty outside the macOS branch. | Stop if the headers do not match the assumed layout; fix the check from the real tree before generating a project. |
 | M5 | Diagnostic page for “Homebrew ok, SFML missing” versus “Homebrew missing / `--version` failed.” Locate and https://brew.sh. | `wizard.script`, dialog strings from the wizard | No `brew install`. | Cases C, D, E. Case A still has no page. | Stop if Cancel or a failed test still produces a project. |

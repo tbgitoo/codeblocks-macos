@@ -43,7 +43,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
 | **v2.3** | **Complete** (tree) — M1–M6. Tag/release when ready. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
-| **v3.0** | **Planning** — make the existing SFML project wizard produce a working Apple Silicon project. No new wizard. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
+| **v3.0** | **M2 DONE** (tree). M3+ not started. Shared Homebrew locate / `--version` / `--prefix`. SFML is still the only client and is not wired yet. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
 
 ### One-line outcomes
 
