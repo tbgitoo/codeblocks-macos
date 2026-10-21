@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M5 DONE (tree).** M6+ not started. The SFML wizard shows a diagnostic page when Homebrew or SFML is not usable. No install button. Cancel does not create a project.
+**Status: M6 DONE (tree).** M7+ not started. SFML installs only after **Install SFML using Homebrew**. Cancel before that does not start Homebrew. A non-zero exit is not success. `brew install sfml` was not run.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -377,6 +377,15 @@ M5 is done in tree. When the macOS check fails, `BeginWizard` adds one info page
 
 The two-button dialog was not posted during this run, because the live machine has a working Homebrew and the missing-SFML page does not open it.
 
+M6 is done in tree. On the missing-SFML page, **Next** opens a dialog whose button label is **Install SFML using Homebrew**. The text says the project needs SFML, that Homebrew will install the formula `sfml`, and that Cancel does not start Homebrew. `wxExecute` runs only after that button, as `{brew, "install", formula}`, asynchronously, with output in a dialog and no percentage. The child environment is a copy of the current environment plus `NONINTERACTIVE=1` and `HOMEBREW_NO_AUTO_UPDATE=1`. The IDE environment is not changed. Success is recorded only when that process was not cancelled, did not ask for a password, and exited 0. Cancel after launch sends `wxSIGTERM` to that pid only. It does not run `brew uninstall` and does not claim the prefix is unchanged. After a recorded success the same formula query and header check run again. A password prompt stops the process and is not success.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21), from the IDE. `brew install` was not started.
+
+1. Formula `sfml;rm`: `launched=0`, `success=0`, `output=invalid formula`. No dialog.
+2. Saved `/bin/echo`: `launched=0`, `success=0`, `output=brew unavailable`. No dialog. The saved path was then cleared.
+3. The missing-SFML page text says **Press Next to install**.
+4. No `brew install` process was running after the check.
+
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
 | M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
@@ -384,7 +393,7 @@ The two-button dialog was not posted during this run, because the live machine h
 | M3 | **DONE** (tree). Tests 4–5 through one formula query. | `macbrew.cpp`, `macbrew.h`, `wiz.cpp` `MacBrewFormula`. | No header check, no install. | Met. `sfml` absent is `query_exit=1`, `state=missing`, empty prefix. An already-installed formula (`wxwidgets@3.2`) is `query_exit=0` and a directory. `--prefix` without `--installed` is not the query. A name Homebrew does not know is `failed`, not missing. | Met. Absent `sfml` was not reported as exit 0. |
 | M4 | **DONE** (tree). The SFML wizard validates the prefix and, for major 2, records include and lib dirs. | `sfml/wizard.script` | No install button. No other wizard. No SFML 3 sample. | Met for the decision the project uses. Absent `sfml` does not proceed. Major 2 records `prefix/include`, `prefix/lib`, and `sfml/sfml2`. No `-framework SFML`. | Met. Current Homebrew SFML is 3.0.2 (`#define SFML_VERSION_MAJOR 3`). Major 3 does not record dirs and does not create a project. |
 | M5 | **DONE** (tree). Diagnostic page for Homebrew ok / SFML missing, and for Homebrew missing or `--version` failed. Locate and https://brew.sh. | `sfml/wizard.script`, `macbrew.cpp` dialog and `MacBrewTry`. | No `brew install`. | Met for C, D, and the `--version` half of E. Case A adds no page. A failed file is not stored. | Met. Forward from the diagnostic page does not reach `SetupProject`. |
-| M6 | Explicit install, then tests 4–6 again. Still after M4. | `macbrew.cpp` install path | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Case B. IDE stays responsive. No percent. Cancel before launch starts nothing. Cancel after launch kills only that pid, reports no success, creates no project, and the next attempt uses fresh discovery. | Stop on a password prompt, if success is reported when the process exit is non-zero, or if cancel is described as undoing Homebrew’s files. |
+| M6 | **DONE** (tree). Explicit install after **Install SFML using Homebrew**, then the same formula and header checks. | `macbrew.cpp` install path, `sfml/wizard.script`. | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Met for the gates that must not start Homebrew. Invalid formula and a failing `--version` return `launched=0` and `success=0`. | `brew install sfml` was not run. A password prompt in a later run stops the process and is not success. |
 | M7 | `sfml3/main.cpp` only if M4/M6 headers are major 3. | `sfml3/main.cpp`, `sfml/Makefile.am` | No new sample artwork. | Build and Run shows the window and `cb.bmp`. | Skip the whole milestone if the headers are major 2. |
 | M8 | `otool -D` and `otool -L` on the three dylibs and the linked binary. | `wizard.script` linker line only if required | No rpath “just in case.” | `bin/Debug/<name>` starts from the IDE and from that directory. | Stop without an rpath if the install names are absolute. |
 | M9 | `README.macos.md`: New → SFML project, what the diagnostic means, Homebrew is installed by the user from Homebrew’s site. | `README.macos.md` | No search-path tutorial. | A reader is not told to type include flags. | |
