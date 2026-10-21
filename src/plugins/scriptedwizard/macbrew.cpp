@@ -2,7 +2,9 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v3.0 M2. argv execution of a verified brew path. No shell string, no PATH edit.
+ * v3.0 M2–M3. argv execution of a verified brew path.
+ * Formula query is {brew, "--prefix", "--installed", formula} only.
+ * No shell string, no PATH edit, no install.
  */
 
 #include <sdk.h>
@@ -47,21 +49,46 @@ wxString ReadAll(wxInputStream* in)
     return out;
 }
 
-// Runs brew with one or two fixed arguments. Returns false when wxExecute cannot start it.
+// Runs brew with up to three fixed arguments. Returns false when wxExecute cannot start it.
+// arg3 is the formula token for the installed-prefix query. There is no general argv entry.
 bool RunArgv(const wxString& executable, const wxChar* arg1, const wxChar* arg2,
-             long& exitCode, wxString& output, wxString& error)
+             long& exitCode, wxString& output, wxString& error, const wxChar* arg3 = nullptr)
 {
     wxProcess process(wxPROCESS_REDIRECT);
-    const wxChar* argv[4];
-    argv[0] = executable.wx_str();
-    argv[1] = arg1;
-    argv[2] = arg2;
-    argv[3] = nullptr;
+    const wxChar* argv[5];
+    int n = 0;
+    argv[n++] = executable.wx_str();
+    if (arg1)
+        argv[n++] = arg1;
+    if (arg2)
+        argv[n++] = arg2;
+    if (arg3)
+        argv[n++] = arg3;
+    argv[n] = nullptr;
 
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
     output = ReadAll(process.GetInputStream());
     error = ReadAll(process.GetErrorStream());
     return exitCode != -1;
+}
+
+// One token: letters, digits, and . _ + - @ / . Rejected before it is placed in argv.
+bool FormulaTokenOk(const wxString& formula)
+{
+    if (formula.empty())
+        return false;
+    for (size_t i = 0; i < formula.length(); ++i)
+    {
+        const wxChar c = formula[i];
+        const bool ok = (c >= wxT('a') && c <= wxT('z'))
+                     || (c >= wxT('A') && c <= wxT('Z'))
+                     || (c >= wxT('0') && c <= wxT('9'))
+                     || c == wxT('.') || c == wxT('_') || c == wxT('+')
+                     || c == wxT('-') || c == wxT('@') || c == wxT('/');
+        if (!ok)
+            return false;
+    }
+    return true;
 }
 
 wxString FirstLine(const wxString& text)
@@ -155,6 +182,87 @@ wxString FormatMacBrewProbe(const MacBrewProbe& probe)
         probe.prefix,
         probe.savedPathMissing ? 1 : 0,
         FirstLine(probe.errorOutput));
+}
+
+MacBrewFormulaQuery QueryMacBrewFormula(const wxString& formula)
+{
+    MacBrewFormulaQuery query;
+    query.formula = formula;
+    if (!FormulaTokenOk(formula))
+    {
+        query.state = MacBrewFormulaRejected;
+        query.errorOutput = wxT("invalid formula");
+        return query;
+    }
+
+    const MacBrewProbe probe = ProbeMacBrew(false);
+    query.brewAccess = probe.access;
+    query.executable = probe.executable;
+    query.errorOutput = probe.errorOutput;
+    if (probe.access != MacBrewWorks)
+    {
+        query.state = MacBrewFormulaBrewUnavailable;
+        return query;
+    }
+
+    wxString output;
+    wxString error;
+    if (!RunArgv(probe.executable, wxT("--prefix"), wxT("--installed"),
+                 query.queryExit, output, error, formula.wx_str()))
+    {
+        query.state = MacBrewFormulaFailed;
+        if (!error.empty())
+            query.errorOutput = error;
+        return query;
+    }
+    query.errorOutput = error.empty() ? output : error;
+
+    const wxString directory = FirstLine(output);
+    const wxString combined = output + wxT("\n") + error;
+    if (query.queryExit == 0 && directory.StartsWith(wxT("/")))
+    {
+        query.state = MacBrewFormulaInstalled;
+        query.prefix = directory;
+        query.errorOutput = error;
+        return query;
+    }
+    // Exit 1 with Homebrew's "not installed" text is the only missing result.
+    // A different exit, including "no available formula", is a failed query.
+    if (query.queryExit == 1 && combined.Contains(wxT("not installed")))
+    {
+        query.state = MacBrewFormulaMissing;
+        return query;
+    }
+
+    query.state = MacBrewFormulaFailed;
+    return query;
+}
+
+wxString FormatMacBrewFormula(const MacBrewFormulaQuery& query)
+{
+    const wxString access = query.brewAccess == MacBrewWorks
+                          ? wxT("works")
+                          : (query.brewAccess == MacBrewPresentUnusable ? wxT("present_unusable")
+                             : (query.state == MacBrewFormulaRejected ? wxT("not_checked")
+                                                                      : wxT("not_present")));
+    const wxChar* state = wxT("failed");
+    switch (query.state)
+    {
+        case MacBrewFormulaRejected:        state = wxT("rejected"); break;
+        case MacBrewFormulaBrewUnavailable: state = wxT("brew_unavailable"); break;
+        case MacBrewFormulaMissing:         state = wxT("missing"); break;
+        case MacBrewFormulaInstalled:       state = wxT("installed"); break;
+        case MacBrewFormulaFailed:          state = wxT("failed"); break;
+    }
+    return wxString::Format(
+        wxT("access=%s\nexecutable=%s\nformula=%s\nquery_exit=%ld\nstate=%s\nprefix=%s\nerror=%s"),
+        access,
+        query.executable,
+        query.formula,
+        query.queryExit,
+        state,
+        query.prefix,
+        FirstLine(query.errorOutput));
 }
 
 #endif // __WXMAC__

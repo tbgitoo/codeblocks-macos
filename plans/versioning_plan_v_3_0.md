@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M2 DONE (tree).** M3+ not started. Locate, `--version`, and `--prefix` only. No formula query, no install, no SFML page.
+**Status: M3 DONE (tree).** M4+ not started. One formula is queried with `{brew, "--prefix", "--installed", formula}`. No install, no header check, no SFML page.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -330,7 +330,7 @@ Not modified: `config.script`, other wizards, `common_functions.script`, `src/te
 
 M1 is this document. No code. It is done: sections 3–7 record the process, config, and URL mechanisms that were checked in `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and `pipedprocess.cpp`, and the Homebrew 7.0.9 commands checked with local `brew help` (`--version`, `--prefix`, `--prefix --installed`). The later corrections (saved path first, revalidate every session, cancel-before versus cancel-during, narrow API) are part of that same plan.
 
-M2 is done in tree. `macbrew.cpp` locates one executable, revalidates it with `{brew,"--version"}`, and runs `{brew,"--prefix"}` only after that succeeds. `Wizard.MacBrewProbe` returns one report string. There is no formula query and no install.
+M2 is done in tree. `macbrew.cpp` locates one executable, revalidates it with `{brew,"--version"}`, and runs `{brew,"--prefix"}` only after that succeeds. `Wizard.MacBrewProbe` returns one report string. M2 does not query a formula and does not install.
 
 **CONFIRMED FROM LOCAL MACHINE** (2026-10-21). The installed app was started with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and no `HOMEBREW_*`. `which brew` cannot see Homebrew on that path. `Wizard.MacBrewProbe` from the IDE:
 
@@ -340,11 +340,21 @@ M2 is done in tree. `macbrew.cpp` locates one executable, revalidates it with `{
 
 The saved key was cleared in the throwaway `--user-data-dir` afterwards. The real `~/Library/Application Support/codeblocks/default.conf` was not modified.
 
+M3 is done in tree. `Wizard.MacBrewFormula` takes one formula token. The token may contain only letters, digits, and `.` `_` `+` `-` `@` `/`. Anything else is rejected and `brew` is not started. A working `--version` is required first. The query is only `{brew, "--prefix", "--installed", formula}`. Exit 0 and a directory line means installed, and that line is the formula prefix. Exit 1 whose text contains `not installed` means missing. Any other exit is a failed query, not missing. The helper still has no SFML header or library names.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21). Same Finder-like `PATH` as M2. `sfml` is not installed. `brew --prefix sfml` without `--installed` still exits 0 and prints `/opt/homebrew/opt/sfml`; the helper does not run that command.
+
+1. `sfml`: `query_exit=1`, `state=missing`, empty prefix, error `Error: The following formulae are not installed:`.
+2. Already-installed `wxwidgets@3.2`, same function: `query_exit=0`, `state=installed`, prefix `/opt/homebrew/opt/wxwidgets@3.2`. Test 5 for the literal `sfml` still waits until that formula is installed.
+3. `sfml-no-such-formula`: `query_exit=1`, `state=failed` (`No available formula`), not missing.
+4. `sfml;rm` and `not a formula`: `state=rejected`, `query_exit=-1`, `access=not_checked`.
+5. Saved `/bin/echo`, then `sfml`: `state=brew_unavailable`, `query_exit=-1`. Not reported as missing.
+
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
 | M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
 | M2 | **DONE** (tree). Tests 1–3 inside the helper, from the IDE. | `macbrew.cpp`, `macbrew.h`, `Makefile.am`, `wiz.cpp` `MacBrewProbe`. | No formula query, no install, no SFML page. No general argv binding. | Met. Saved path first, then the two standard paths. `--version` on every use. `/bin/echo` stayed unusable and was not replaced. Missing `/no/such/brew` fell through. `--prefix` only after a good `--version`. | Met. Absolute `/opt/homebrew/bin/brew --version` returned Homebrew 7.0.9 while `PATH` was `/usr/bin:/bin:/usr/sbin:/sbin`. |
-| M3 | Test 4–5 for the literal `sfml`. | `macbrew.cpp` | No header check, no install. | Installed and not-installed are different results. `--prefix` without `--installed` is not used as the installed test. | Stop if exit 0 is reported while the formula is absent. |
+| M3 | **DONE** (tree). Tests 4–5 through one formula query. | `macbrew.cpp`, `macbrew.h`, `wiz.cpp` `MacBrewFormula`. | No header check, no install. | Met. `sfml` absent is `query_exit=1`, `state=missing`, empty prefix. An already-installed formula (`wxwidgets@3.2`) is `query_exit=0` and a directory. `--prefix` without `--installed` is not the query. A name Homebrew does not know is `failed`, not missing. | Met. Absent `sfml` was not reported as exit 0. |
 | M4 | SFML wizard validates the prefix and writes the `.cbp` when SFML is already installed. Stays before M6 so a bad project is not confused with a bad install. | `sfml/wizard.script` | No install button. No other wizard. | Tests 6 and the generated include/lib dirs. No `-framework SFML`. Windows diff empty outside the macOS branch. | Stop if the headers do not match the assumed layout; fix the check from the real tree before generating a project. |
 | M5 | Diagnostic page for “Homebrew ok, SFML missing” versus “Homebrew missing / `--version` failed.” Locate and https://brew.sh. | `wizard.script`, dialog strings from the wizard | No `brew install`. | Cases C, D, E. Case A still has no page. | Stop if Cancel or a failed test still produces a project. |
 | M6 | Explicit install, then tests 4–6 again. Still after M4. | `macbrew.cpp` install path | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Case B. IDE stays responsive. No percent. Cancel before launch starts nothing. Cancel after launch kills only that pid, reports no success, creates no project, and the next attempt uses fresh discovery. | Stop on a password prompt, if success is reported when the process exit is non-zero, or if cancel is described as undoing Homebrew’s files. |
