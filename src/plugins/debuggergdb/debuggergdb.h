@@ -178,6 +178,7 @@ class DebuggerGDB : public cbDebuggerPlugin
         void OnGDBTerminated(wxCommandEvent& event);
         void OnIdle(wxIdleEvent& event);
         void OnTimer(wxTimerEvent& event);
+        void OnMacStopWatchdog(wxTimerEvent& event);
         void OnShowFile(wxCommandEvent& event);
         void OnCursorChanged(wxCommandEvent& event);
 
@@ -219,6 +220,11 @@ class DebuggerGDB : public cbDebuggerPlugin
         int m_PidToAttach; // for "attach to process"
         wxRect m_EvalRect;
         wxTimer m_TimerPollDebugger;
+        // Fires if "quit" does not end the session. GDB's wait then never
+        // returns and the debuggee keeps running.
+        wxTimer m_MacStopWatchdog;
+        long m_macStopGdbPid = 0;
+        long m_macStopChildPid = 0;
         bool m_NoDebugInfo;
 
         bool m_StoppedOnSignal;
@@ -237,6 +243,8 @@ class DebuggerGDB : public cbDebuggerPlugin
         int      m_nConsolePid;
         /** macOS Program Console Debug (CB-owned PTY); no Terminal / holder. */
         bool     m_programConsoleDebug;
+        /** One Program Console "Debugger stopped at …" line per session. */
+        bool     m_announcedDebugStop;
 
         bool m_Canceled; // flag to avoid re-entering DoDebug when we shouldn't
 

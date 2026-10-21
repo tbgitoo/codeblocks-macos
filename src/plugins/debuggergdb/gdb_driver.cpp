@@ -69,6 +69,8 @@ static wxRegEx reTempBreakFound("^[Tt]emporary[[:blank:]]breakpoint[[:blank:]]([
 // [Switching to Thread -1234655568 (LWP 18590)]
 // [New Thread -1234655568 (LWP 18590)]
 static wxRegEx reChildPid1("Thread[[:blank:]]+[xA-Fa-f0-9-]+[[:blank:]]+\\(LWP ([0-9]+)\\)]");
+// Darwin: [New Thread 0x1703 of process 65180 (id 2)]
+static wxRegEx reChildPidDarwin("of process ([0-9]+)");
 // MinGW GDB 6.8 and later
 // [New Thread 2684.0xf40] or [New thread 2684.0xf40]
 static wxRegEx reChildPid2("\\[New [tT]hread[[:blank:]]+[0-9]+\\.[xA-Fa-f0-9-]+\\]");
@@ -676,12 +678,26 @@ void GDB_driver::ParseOutput(const wxString& output)
             SetChildPID(pid);
             m_pDBG->Log(wxString::Format(_("Child process PID: %ld"), pid));
         }
+        else if (reChildPidDarwin.Matches(output))
+        {
+            long pid = 0;
+            if (reChildPidDarwin.GetMatch(output, 1).ToLong(&pid) && pid > 0)
+            {
+                SetChildPID(pid);
+                m_pDBG->Log(wxString::Format(_("Child process PID: %ld"), pid));
+            }
+        }
     }
 
-    if (   output.StartsWith("gdb: ")
-        || output.StartsWith("warning: ")
-        || output.StartsWith("Warning: ")
-        || output.StartsWith("ContinueDebugEvent ") )
+    // A chunk that is only a warning is noise. The same read often also
+    // carries the stop line and the prompt; dropping the whole chunk then
+    // leaves "quit" queued forever and the debuggee running.
+    if ((   output.StartsWith("gdb: ")
+         || output.StartsWith("warning: ")
+         || output.StartsWith("Warning: ")
+         || output.StartsWith("ContinueDebugEvent "))
+        && output.Find(GDB_PROMPT) == wxNOT_FOUND
+        && !output.Contains("received signal SIG"))
     {
         return;
     }

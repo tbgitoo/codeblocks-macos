@@ -149,6 +149,15 @@ PipedProcess::~PipedProcess()
 {
     if (m_timerPollProcess.IsRunning())
         m_timerPollProcess.Stop();
+
+    // wxProcess::Init makes this object's next handler the parent plugin.
+    // On quit the plugin can already be destroyed by the time gdb exits, and
+    // ~wxEvtHandler::Unlink would then call into that freed parent.
+    if (Manager::IsAppShuttingDown())
+    {
+        m_nextHandler = nullptr;
+        m_previousHandler = nullptr;
+    }
 }
 
 int PipedProcess::Launch(const wxString& cmd, int flags, int timer /*= 1000*/)

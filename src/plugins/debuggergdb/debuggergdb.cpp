@@ -239,6 +239,7 @@ long idMenuEnableDebuggingMac = wxNewId();
 
 long idGDBProcess = wxNewId();
 long idTimerPollDebugger = wxNewId();
+long idTimerMacStopWatchdog = wxNewId();
 
 long idMenuWatchDereference = wxNewId();
 long idMenuWatchSymbol = wxNewId();
@@ -263,6 +264,7 @@ BEGIN_EVENT_TABLE(DebuggerGDB, cbDebuggerPlugin)
 
     EVT_IDLE(DebuggerGDB::OnIdle)
     EVT_TIMER(idTimerPollDebugger, DebuggerGDB::OnTimer)
+    EVT_TIMER(idTimerMacStopWatchdog, DebuggerGDB::OnMacStopWatchdog)
 
     EVT_COMMAND(-1, DEBUGGER_CURSOR_CHANGED, DebuggerGDB::OnCursorChanged)
     EVT_COMMAND(-1, DEBUGGER_SHOW_FILE_LINE, DebuggerGDB::OnShowFile)
@@ -301,6 +303,7 @@ DebuggerGDB::DebuggerGDB() :
     m_stopDebuggerConsoleClosed(false),
     m_nConsolePid(0),
     m_programConsoleDebug(false),
+    m_announcedDebugStop(false),
     m_TemporaryBreak(false),
     m_printElements(200),
     m_macGdbSigningDiagnosisLogged(false),
@@ -337,6 +340,7 @@ DebuggerGDB::~DebuggerGDB()
 void DebuggerGDB::OnAttachReal()
 {
     m_TimerPollDebugger.SetOwner(this, idTimerPollDebugger);
+    m_MacStopWatchdog.SetOwner(this, idTimerMacStopWatchdog);
 
     // register event sink
     Manager::Get()->RegisterEventSink(cbEVT_BUILDTARGET_SELECTED, new cbEventFunctor<DebuggerGDB, CodeBlocksEvent>(this, &DebuggerGDB::OnBuildTargetSelected));
@@ -346,10 +350,27 @@ void DebuggerGDB::OnAttachReal()
     CallAfter([this] { EnsureMacEnableDebuggingMenuItem(); });
 }
 
-void DebuggerGDB::OnReleaseReal(cb_unused bool appShutDown)
+void DebuggerGDB::OnReleaseReal(bool appShutDown)
 {
-    //Close debug session when appShutDown
-    if (m_State.HasDriver())
+    // Quit does not wait for a GDB prompt. The pipe's next handler is this
+    // plugin; unlink it while this object is still alive, then kill gdb.
+    // Otherwise the child-exit destructor runs after the plugin is gone.
+    if (appShutDown && m_pProcess)
+    {
+        m_MacStopWatchdog.Stop();
+        const long gdbPid = m_Pid;
+        const long childPid = m_State.HasDriver() ? m_State.GetDriver()->GetChildPID() : 0;
+        m_pProcess->Detach();
+        if (gdbPid > 0 && wxProcess::Exists(gdbPid))
+            wxKill(gdbPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
+        if (childPid > 0 && childPid != gdbPid && wxProcess::Exists(childPid))
+        {
+            kill(static_cast<pid_t>(childPid), SIGCONT);
+            wxKill(childPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
+        }
+        wxYieldIfNeeded();
+    }
+    else if (m_State.HasDriver())
     {
         Stop();
         wxYieldIfNeeded();
@@ -813,6 +834,8 @@ bool DebuggerGDB::Debug(bool breakOnEntry)
     // if already running, return
     if (m_pProcess || WaitingCompilerToFinish())
         return false;
+
+    m_announcedDebugStop = false;
 
     m_pProject = nullptr;
     m_NoDebugInfo = false;
@@ -1997,8 +2020,14 @@ void DebuggerGDB::DoBreak(bool temporary)
             DebugLog(wxString::Format(_("Child process (pid:%ld) doesn't exist"), pid), Logger::warning);
             pid = 0;
         }
+#if defined(__WXMAC__)
+        // Always interrupt GDB, not the debuggee. SIGINT to a GUI
+        // program makes GDB suspend it inside a window-server call.
+        pid = m_Pid;
+#else
         if (pid <= 0)
             pid = m_Pid; // try poking gdb directly
+#endif
         // non-windows gdb can interrupt the running process. yay!
         if (pid <= 0) // look out for the "fake" PIDs (killall)
             cbMessageBox(_("Unable to stop the debug process!"), _("Error"), wxOK | wxICON_WARNING);
@@ -2100,6 +2129,34 @@ void DebuggerGDB::Stop()
             Break();
         }
         RunCommand(CMD_STOP);
+#if defined(__WXMAC__)
+        // "quit" is written only once GDB is at a prompt. If that prompt
+        // never comes, the debuggee is still running and the IDE stays
+        // in the debug session. Kill both if the session is still here.
+        m_macStopGdbPid = m_Pid;
+        m_macStopChildPid = m_State.HasDriver() ? m_State.GetDriver()->GetChildPID() : 0;
+        m_MacStopWatchdog.StartOnce(2000);
+#endif
+    }
+}
+
+void DebuggerGDB::OnMacStopWatchdog(wxTimerEvent& event)
+{
+    wxUnusedVar(event);
+    const long gdbPid = m_macStopGdbPid;
+    const long childPid = m_macStopChildPid;
+    m_macStopGdbPid = 0;
+    m_macStopChildPid = 0;
+    if (gdbPid <= 0 || !wxProcess::Exists(gdbPid))
+        return;
+
+    Log(_("The debugger did not stop. Killing it."));
+    wxKill(gdbPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
+    if (childPid > 0 && childPid != gdbPid && wxProcess::Exists(childPid))
+    {
+        // A Mach-suspended debuggee ignores SIGKILL until it is continued.
+        kill(static_cast<pid_t>(childPid), SIGCONT);
+        wxKill(childPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
     }
 }
 
@@ -2579,6 +2636,7 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
     m_PidToAttach = 0;
 
     m_TimerPollDebugger.Stop();
+    m_MacStopWatchdog.Stop();
     m_LastExitCode = event.GetInt();
     //the process deletes itself
 //    m_pProcess = nullptr;
@@ -2832,7 +2890,34 @@ void DebuggerGDB::OnCursorChanged(wxCommandEvent& WXUNUSED(event))
             // update watches
             DebuggerManager *dbg_manager = Manager::Get()->GetDebuggerManager();
 
-            if (IsWindowReallyShown(dbg_manager->GetWatchesDialog()->GetWindow()))
+            const bool readWatches = IsWindowReallyShown(dbg_manager->GetWatchesDialog()->GetWindow());
+            const bool readBacktrace = dbg_manager->UpdateBacktrace()
+                || (cursor.line == -1 && autoSwitch);
+            if (readWatches && readBacktrace)
+                Log(_("Reading local variables and the call stack."));
+            else if (readWatches)
+                Log(_("Reading local variables."));
+            else if (readBacktrace)
+                Log(_("Reading the call stack."));
+
+            if (m_programConsoleDebug && !m_announcedDebugStop)
+            {
+                m_announcedDebugStop = true;
+                wxString where;
+                if (cursor.line != -1)
+                {
+                    where = cursor.file;
+                    const int slash = where.Find('/', true);
+                    if (slash != wxNOT_FOUND)
+                        where = where.Mid(slash + 1);
+                    where = wxString::Format("%s:%ld", where, cursor.line);
+                }
+                else
+                    where = cursor.function;
+                ProgramConsole::AnnounceDebugStopped(where);
+            }
+
+            if (readWatches)
                 DoWatches();
 
             // update CPU registers
