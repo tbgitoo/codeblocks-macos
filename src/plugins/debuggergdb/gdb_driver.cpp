@@ -73,6 +73,11 @@ static wxRegEx reChildPid1("Thread[[:blank:]]+[xA-Fa-f0-9-]+[[:blank:]]+\\(LWP (
 // [New Thread 2684.0xf40] or [New thread 2684.0xf40]
 static wxRegEx reChildPid2("\\[New [tT]hread[[:blank:]]+[0-9]+\\.[xA-Fa-f0-9-]+\\]");
 
+// "Thread 2 received signal SIGINT, Interrupt."
+// Modern GDB, including the macOS port, reports a signal this way.
+// The older line is "Program received signal SIGINT, Interrupt."
+static wxRegEx reThreadSignal("^Thread[[:blank:]]+[0-9]+[[:blank:]]+received signal SIG");
+
 static wxRegEx reInferiorExited("^\\[Inferior[[:blank:]].+[[:blank:]]exited normally\\]$", wxRE_EXTENDED);
 static wxRegEx reInferiorExitedWithCode("^\\[[Ii]nferior[[:blank:]].+[[:blank:]]exited[[:blank:]]with[[:blank:]]code[[:blank:]]([0-9]+)\\]$", wxRE_EXTENDED);
 static wxRegEx reProgramExitedWithCode("^Program exited with code ([0-9]+)\\.?$", wxRE_EXTENDED);
@@ -816,14 +821,15 @@ void GDB_driver::ParseOutput(const wxString& output)
             m_pDBG->Log(lines[i]);
 
         // signal
-        else if (lines[i].StartsWith("Program received signal SIG"))
+        else if (lines[i].StartsWith("Program received signal SIG")
+                 || reThreadSignal.Matches(lines[i]))
         {
             m_ProgramIsStopped = true;
             m_QueueBusy = false;
 
-            if (   lines[i].StartsWith("Program received signal SIGINT")
-                || lines[i].StartsWith("Program received signal SIGTRAP")
-                || lines[i].StartsWith("Program received signal SIGSTOP") )
+            if (   lines[i].Contains("received signal SIGINT")
+                || lines[i].Contains("received signal SIGTRAP")
+                || lines[i].Contains("received signal SIGSTOP") )
             {
                 // these are break/trace signals, just log them
                 Log(lines[i]);
@@ -1082,9 +1088,16 @@ void GDB_driver::ParseOutput(const wxString& output)
     }
     buffer.Clear();
 
-    if (foundPrompt && m_DCmds.empty() && !m_ProgramIsStopped && !m_Cursor.changed)
+    if (foundPrompt && !m_ProgramIsStopped && !m_Cursor.changed)
     {
-        QueueCommand(new GdbCmd_FindCursor(this));
+        // The prompt means the debuggee is stopped. If a Stop was clicked
+        // while it was running, "quit" is already queued. Leaving that
+        // unsent keeps a macOS GUI process task-suspended inside a
+        // window-server call, and the desktop beachballs until the IDE
+        // is force-quit. An unrecognized stop message must still flush
+        // the queue. FindCursor is only needed when nothing else is queued.
+        if (m_DCmds.empty())
+            QueueCommand(new GdbCmd_FindCursor(this));
         m_ProgramIsStopped = true;
     }
 
