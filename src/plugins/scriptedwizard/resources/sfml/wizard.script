@@ -17,6 +17,9 @@ SFMLPath           <- _T("");
 SFMLMacPrefix  <- _T("");
 SFMLMacInclude <- _T("");
 SFMLMacLib     <- _T("");
+SFMLMacState   <- _T("");
+SFMLMacAccess  <- _T("");
+SFMLMacExecutable <- _T("");
 
 function BeginWizard()
 {
@@ -30,6 +33,15 @@ function BeginWizard()
         Wizard.AddGenericSingleChoiceListPage(_T("SFMLVersionPage"), _("Please select the SFML version you want to use."), _T("SFML 1.6;SFML 2.0"), SFMLVersion);
     if (PLATFORM == PLATFORM_MSW)
         Wizard.AddGenericSingleChoiceListPage(_T("SFMLLinkPage"), _("Please choose the kind of library you want to link to."), _("Static Library;Dynamic Link Library"), SFMLLinkType);
+
+    // A suitable SFML install has no dependency page. Anything else stays on this page
+    // until Cancel. Project path is still registered because the wizard requires it.
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        local reason = SfmlMacBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("SFMLMacDiag"), SfmlMacPageText(reason));
+    }
 
     Wizard.AddProjectPathPage();
     if (PLATFORM == PLATFORM_MSW)
@@ -223,15 +235,99 @@ function SfmlMacPrefixDecision(prefix)
 function SfmlMacBlockReason()
 {
     local report = Wizard.MacBrewFormula(_T("sfml"));
-    local state = SfmlReportField(report, _T("state"));
-    if (state.Matches(_T("installed")))
+    SFMLMacState = SfmlReportField(report, _T("state"));
+    SFMLMacAccess = SfmlReportField(report, _T("access"));
+    SFMLMacExecutable = SfmlReportField(report, _T("executable"));
+    if (SFMLMacState.Matches(_T("installed")))
         return SfmlMacPrefixDecision(SfmlReportField(report, _T("prefix")));
     SfmlMacClear();
-    if (state.Matches(_T("missing")))
+    if (SFMLMacState.Matches(_T("missing")))
         return _("Homebrew reports that SFML is not installed. This wizard will not create a project.");
-    if (state.Matches(_T("brew_unavailable")))
+    if (SFMLMacState.Matches(_T("brew_unavailable")))
         return _("Homebrew could not be used. This wizard will not create a project.");
     return _("Homebrew could not be asked about SFML. This wizard will not create a project.");
+}
+
+function SfmlMacPageText(reason)
+{
+    local text = _("Some project templates obtain libraries through Homebrew.\n") +
+                 _("Code::Blocks does not install Homebrew.\n\n");
+    if (SFMLMacAccess.Matches(_T("works")))
+    {
+        text = text + _("Homebrew\n    Found: ") + SFMLMacExecutable +
+               _("\n    Access from Code::Blocks: OK\n\n");
+    }
+    else if (SFMLMacAccess.Matches(_T("present_unusable")))
+    {
+        text = text + _("Homebrew\n    Found: ") + SFMLMacExecutable +
+               _("\n    Access from Code::Blocks: failed\n") +
+               _("That executable was left in place.\n\n");
+    }
+    else
+    {
+        text = text + _("Homebrew\n    Not detected\n\n");
+    }
+
+    if (SFMLMacState.Matches(_T("missing")))
+        text = text + _("SFML\n    Not installed\n\n");
+    else if (SFMLMacAccess.Matches(_T("works")) && !reason.IsEmpty())
+        text = text + reason + _("\n\n");
+
+    text = text + _("No project is created from this page.\n");
+    if (SFMLMacAccess.Matches(_T("works")))
+        text = text + _("Use Cancel to close the wizard.\n");
+    else
+        text = text + _("Press Next to choose an existing brew executable, or to open https://brew.sh.\n") +
+                      _("Use Cancel to close the wizard.\n");
+    return text;
+}
+
+// Empty string: the path passed --version and was stored.
+// A failed file is not stored, and a previous saved path is left as it was.
+function SfmlMacConsiderBrew(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+    local report = Wizard.MacBrewTry(path, true);
+    local access = SfmlReportField(report, _T("access"));
+    if (access.Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
+        return _T("");
+    }
+    return _("That file did not pass brew --version, so it was not remembered.") +
+           _("\n\n") + SfmlReportField(report, _T("executable")) +
+           _("\n") + SfmlReportField(report, _T("version"));
+}
+
+function OnLeave_SFMLMacDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (SfmlMacBlockReason().IsEmpty())
+        return true;
+    if (!SFMLMacAccess.Matches(_T("works")))
+    {
+        local choice = Wizard.MacBrewChoice(
+            _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
+            _("Help me find Homebrew"),
+            _("Installation instructions"));
+        if (choice == 1)
+        {
+            local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
+            local rejected = SfmlMacConsiderBrew(picked);
+            if (!rejected.IsEmpty())
+                ShowError(rejected);
+        }
+        else if (choice == 2)
+        {
+            wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+        }
+        if (SfmlMacBlockReason().IsEmpty())
+            return true;
+        return false;
+    }
+    return false;
 }
 
 function SfmlMacAllowForward()
@@ -243,13 +339,6 @@ function SfmlMacAllowForward()
         return true;
     ShowError(reason);
     return false;
-}
-
-function OnLeave_SFMLIntro(fwd)
-{
-    if (fwd)
-        return SfmlMacAllowForward();
-    return true;
 }
 
 function OnLeave_ProjectPathPage(fwd)

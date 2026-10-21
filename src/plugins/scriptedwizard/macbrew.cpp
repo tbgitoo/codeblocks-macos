@@ -14,8 +14,10 @@
     #include <manager.h>
 #endif
 
-#include <wx/process.h>
-#include <wx/utils.h>
+#include <wx/button.h>
+#include <wx/dialog.h>
+#include <wx/sizer.h>
+#include <wx/stattext.h>
 
 #include "macbrew.h"
 
@@ -100,6 +102,44 @@ wxString FirstLine(const wxString& text)
     return line;
 }
 
+void ApplyVersionAndPrefix(MacBrewProbe& probe, bool wantPrefix)
+{
+    wxString versionError;
+    if (!RunArgv(probe.executable, wxT("--version"), nullptr, probe.versionExit, probe.versionOutput, versionError))
+    {
+        probe.access = MacBrewPresentUnusable;
+        probe.errorOutput = versionError;
+        return;
+    }
+    probe.errorOutput = versionError;
+
+    const bool versionOk = probe.versionExit == 0 && probe.versionOutput.Contains(wxT("Homebrew"));
+    if (!versionOk)
+    {
+        probe.access = MacBrewPresentUnusable;
+        return;
+    }
+
+    probe.access = MacBrewWorks;
+    if (!wantPrefix)
+        return;
+
+    wxString prefixOut;
+    wxString prefixErr;
+    if (!RunArgv(probe.executable, wxT("--prefix"), nullptr, probe.prefixExit, prefixOut, prefixErr))
+    {
+        if (!prefixErr.empty())
+            probe.errorOutput += prefixErr;
+        return;
+    }
+    if (!prefixErr.empty())
+        probe.errorOutput += prefixErr;
+
+    const wxString line = FirstLine(prefixOut);
+    if (probe.prefixExit == 0 && line.StartsWith(wxT("/")))
+        probe.prefix = line;
+}
+
 } // namespace
 
 MacBrewProbe ProbeMacBrew(bool wantPrefix)
@@ -129,40 +169,20 @@ MacBrewProbe ProbeMacBrew(bool wantPrefix)
         return probe;
 
     probe.executable = candidate;
-    wxString versionError;
-    if (!RunArgv(candidate, wxT("--version"), nullptr, probe.versionExit, probe.versionOutput, versionError))
+    ApplyVersionAndPrefix(probe, wantPrefix);
+    return probe;
+}
+
+MacBrewProbe ProbeMacBrewPath(const wxString& executable, bool wantPrefix)
+{
+    MacBrewProbe probe;
+    probe.executable = executable;
+    if (executable.empty() || !wxFileExists(executable))
     {
-        probe.access = MacBrewPresentUnusable;
-        probe.errorOutput = versionError;
+        probe.errorOutput = wxT("file not found");
         return probe;
     }
-    probe.errorOutput = versionError;
-
-    const bool versionOk = probe.versionExit == 0 && probe.versionOutput.Contains(wxT("Homebrew"));
-    if (!versionOk)
-    {
-        probe.access = MacBrewPresentUnusable;
-        return probe;
-    }
-
-    probe.access = MacBrewWorks;
-    if (!wantPrefix)
-        return probe;
-
-    wxString prefixOut;
-    wxString prefixErr;
-    if (!RunArgv(candidate, wxT("--prefix"), nullptr, probe.prefixExit, prefixOut, prefixErr))
-    {
-        if (!prefixErr.empty())
-            probe.errorOutput += prefixErr;
-        return probe;
-    }
-    if (!prefixErr.empty())
-        probe.errorOutput += prefixErr;
-
-    const wxString line = FirstLine(prefixOut);
-    if (probe.prefixExit == 0 && line.StartsWith(wxT("/")))
-        probe.prefix = line;
+    ApplyVersionAndPrefix(probe, wantPrefix);
     return probe;
 }
 
@@ -182,6 +202,34 @@ wxString FormatMacBrewProbe(const MacBrewProbe& probe)
         probe.prefix,
         probe.savedPathMissing ? 1 : 0,
         FirstLine(probe.errorOutput));
+}
+
+int MacBrewChoice(const wxString& message, const wxString& firstLabel, const wxString& secondLabel)
+{
+    wxDialog dlg(Manager::Get()->GetAppWindow(), wxID_ANY, _("Homebrew"),
+                 wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    wxBoxSizer* outer = new wxBoxSizer(wxVERTICAL);
+    wxStaticText* text = new wxStaticText(&dlg, wxID_ANY, message);
+    text->Wrap(440);
+    outer->Add(text, 1, wxALL | wxEXPAND, 12);
+
+    wxBoxSizer* buttons = new wxBoxSizer(wxHORIZONTAL);
+    buttons->AddStretchSpacer();
+    buttons->Add(new wxButton(&dlg, wxID_YES, firstLabel), 0, wxRIGHT, 8);
+    buttons->Add(new wxButton(&dlg, wxID_NO, secondLabel), 0, wxRIGHT, 8);
+    buttons->Add(new wxButton(&dlg, wxID_CANCEL, _("Cancel")), 0);
+    outer->Add(buttons, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 12);
+
+    dlg.SetSizer(outer);
+    dlg.SetInitialSize(wxSize(520, -1));
+    dlg.CentreOnParent();
+
+    const int id = dlg.ShowModal();
+    if (id == wxID_YES)
+        return 1;
+    if (id == wxID_NO)
+        return 2;
+    return 0;
 }
 
 MacBrewFormulaQuery QueryMacBrewFormula(const wxString& formula)
