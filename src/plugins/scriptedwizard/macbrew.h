@@ -2,7 +2,8 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v3.0 M2–M3: locate Homebrew, revalidate it, read its prefix, and query one formula.
+ * v3.0 M2–M5: locate Homebrew, revalidate one executable, read its prefix,
+ * query one formula, and show a two-button dialog.
  * No install. The helper does not know SFML headers, library names, or SFML 2 versus 3.
  */
 
@@ -43,8 +44,14 @@ struct MacBrewProbe
 // wantPrefix runs "brew --prefix" only after --version has succeeded.
 MacBrewProbe ProbeMacBrew(bool wantPrefix);
 
+// Revalidate this executable only. Does not read or write the saved path.
+MacBrewProbe ProbeMacBrewPath(const wxString& executable, bool wantPrefix);
+
 // One report string for the wizard. This is not a general brew command API.
 wxString FormatMacBrewProbe(const MacBrewProbe& probe);
+
+// Two labelled buttons plus Cancel. Returns 1, 2, or 0. Does not run brew.
+int MacBrewChoice(const wxString& message, const wxString& firstLabel, const wxString& secondLabel);
 
 // Result of {brew, "--prefix", "--installed", formula}. Not a general argv result.
 enum MacBrewFormulaState

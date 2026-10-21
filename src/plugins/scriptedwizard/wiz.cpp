@@ -1933,6 +1933,26 @@ SQInteger Wiz_MacBrewFormula(HSQUIRRELVM v)
     const MacBrewFormulaQuery query = QueryMacBrewFormula(*extractor.p1);
     return ConstructAndReturnInstance(v, FormatMacBrewFormula(query));
 }
+
+SQInteger Wiz_MacBrewTry(HSQUIRRELVM v)
+{
+    // this, executable, wantPrefix
+    ExtractParams3<Wiz*, const wxString *, bool> extractor(v);
+    if (!extractor.Process("Wiz::MacBrewTry"))
+        return extractor.ErrorMessage();
+    const MacBrewProbe probe = ProbeMacBrewPath(*extractor.p1, extractor.p2);
+    return ConstructAndReturnInstance(v, FormatMacBrewProbe(probe));
+}
+
+SQInteger Wiz_MacBrewChoice(HSQUIRRELVM v)
+{
+    // this, message, firstLabel, secondLabel
+    ExtractParams4<Wiz*, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::MacBrewChoice"))
+        return extractor.ErrorMessage();
+    sq_pushinteger(v, MacBrewChoice(*extractor.p1, *extractor.p2, *extractor.p3));
+    return 1;
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2229,10 +2249,13 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("GetWizardScriptFolder"), Wiz_GetString<&Wiz::GetWizardScriptFolder>, _SC("Wiz::GetWizardScriptFolder"));
 
 #if defined(__WXMAC__)
-        // v3.0 M2–M3. Locate, revalidate, optional Homebrew prefix, and one formula query.
-        // Not a general brew argv binding. Install is a later milestone.
+        // v3.0 M2–M5. Locate, revalidate one chosen executable, optional prefix,
+        // one formula query, and a two-button dialog. Not a general brew argv binding.
+        // Install is a later milestone.
         BindMethod(v, _SC("MacBrewProbe"), Wiz_MacBrewProbe, _SC("Wiz::MacBrewProbe"));
         BindMethod(v, _SC("MacBrewFormula"), Wiz_MacBrewFormula, _SC("Wiz::MacBrewFormula"));
+        BindMethod(v, _SC("MacBrewTry"), Wiz_MacBrewTry, _SC("Wiz::MacBrewTry"));
+        BindMethod(v, _SC("MacBrewChoice"), Wiz_MacBrewChoice, _SC("Wiz::MacBrewChoice"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);

@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M4 DONE (tree).** M5+ not started. The SFML wizard validates an installed prefix and writes include and lib dirs only for major 2. No install button. No SFML 3 sample.
+**Status: M5 DONE (tree).** M6+ not started. The SFML wizard shows a diagnostic page when Homebrew or SFML is not usable. No install button. Cancel does not create a project.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -364,13 +364,26 @@ M4 is done in tree. On macOS the SFML wizard calls `Wizard.MacBrewFormula(_T("sf
 
 No `.cbp` was written. A real Homebrew install of the current formula is SFML 3, so the wizard will still refuse to create a project until the SFML 3 sample exists.
 
+M5 is done in tree. When the macOS check fails, `BeginWizard` adds one info page before the project path. A passing check adds no page. Leaving that page forward runs the check again. Forward continues only when the check is empty. Otherwise it stays, so Cancel is the way out and `SetupProject` is not called. Homebrew working and SFML missing describes both and does not offer install. Homebrew missing or `--version` failed offers **Help me find Homebrew** and **Installation instructions**. The file dialog asks for the `brew` executable. `MacBrewTry` revalidates that file and does not write the saved path. The path is stored only when `access=works`. A failed choice leaves the previous saved path in place. **Installation instructions** opens `https://brew.sh` and does not run the bootstrap.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21), from the IDE, Finder-like `PATH`:
+
+1. Real missing `sfml`: page text has `Found: /opt/homebrew/bin/brew`, `Access from Code::Blocks: OK`, and `SFML / Not installed`. It says no project is created.
+2. Not-detected text names `https://brew.sh` and does not ask for an include directory.
+3. A present-but-unusable `/bin/echo` says access failed and that the executable was left in place.
+4. `MacBrewTry("/bin/echo")` is `present_unusable` with `prefix_exit=-1` and does not write the saved path.
+5. Remembering `/bin/echo` does not write it. Remembering `/opt/homebrew/bin/brew` does. A later `/bin/echo` does not replace that saved path.
+6. The saved key was cleared in the throwaway user-data dir afterwards.
+
+The two-button dialog was not posted during this run, because the live machine has a working Homebrew and the missing-SFML page does not open it.
+
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
 | M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
 | M2 | **DONE** (tree). Tests 1–3 inside the helper, from the IDE. | `macbrew.cpp`, `macbrew.h`, `Makefile.am`, `wiz.cpp` `MacBrewProbe`. | No formula query, no install, no SFML page. No general argv binding. | Met. Saved path first, then the two standard paths. `--version` on every use. `/bin/echo` stayed unusable and was not replaced. Missing `/no/such/brew` fell through. `--prefix` only after a good `--version`. | Met. Absolute `/opt/homebrew/bin/brew --version` returned Homebrew 7.0.9 while `PATH` was `/usr/bin:/bin:/usr/sbin:/sbin`. |
 | M3 | **DONE** (tree). Tests 4–5 through one formula query. | `macbrew.cpp`, `macbrew.h`, `wiz.cpp` `MacBrewFormula`. | No header check, no install. | Met. `sfml` absent is `query_exit=1`, `state=missing`, empty prefix. An already-installed formula (`wxwidgets@3.2`) is `query_exit=0` and a directory. `--prefix` without `--installed` is not the query. A name Homebrew does not know is `failed`, not missing. | Met. Absent `sfml` was not reported as exit 0. |
 | M4 | **DONE** (tree). The SFML wizard validates the prefix and, for major 2, records include and lib dirs. | `sfml/wizard.script` | No install button. No other wizard. No SFML 3 sample. | Met for the decision the project uses. Absent `sfml` does not proceed. Major 2 records `prefix/include`, `prefix/lib`, and `sfml/sfml2`. No `-framework SFML`. | Met. Current Homebrew SFML is 3.0.2 (`#define SFML_VERSION_MAJOR 3`). Major 3 does not record dirs and does not create a project. |
-| M5 | Diagnostic page for “Homebrew ok, SFML missing” versus “Homebrew missing / `--version` failed.” Locate and https://brew.sh. | `wizard.script`, dialog strings from the wizard | No `brew install`. | Cases C, D, E. Case A still has no page. | Stop if Cancel or a failed test still produces a project. |
+| M5 | **DONE** (tree). Diagnostic page for Homebrew ok / SFML missing, and for Homebrew missing or `--version` failed. Locate and https://brew.sh. | `sfml/wizard.script`, `macbrew.cpp` dialog and `MacBrewTry`. | No `brew install`. | Met for C, D, and the `--version` half of E. Case A adds no page. A failed file is not stored. | Met. Forward from the diagnostic page does not reach `SetupProject`. |
 | M6 | Explicit install, then tests 4–6 again. Still after M4. | `macbrew.cpp` install path | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Case B. IDE stays responsive. No percent. Cancel before launch starts nothing. Cancel after launch kills only that pid, reports no success, creates no project, and the next attempt uses fresh discovery. | Stop on a password prompt, if success is reported when the process exit is non-zero, or if cancel is described as undoing Homebrew’s files. |
 | M7 | `sfml3/main.cpp` only if M4/M6 headers are major 3. | `sfml3/main.cpp`, `sfml/Makefile.am` | No new sample artwork. | Build and Run shows the window and `cb.bmp`. | Skip the whole milestone if the headers are major 2. |
 | M8 | `otool -D` and `otool -L` on the three dylibs and the linked binary. | `wizard.script` linker line only if required | No rpath “just in case.” | `bin/Debug/<name>` starts from the IDE and from that directory. | Stop without an rpath if the install names are absolute. |
