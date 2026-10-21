@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M3 DONE (tree).** M4+ not started. One formula is queried with `{brew, "--prefix", "--installed", formula}`. No install, no header check, no SFML page.
+**Status: M4 DONE (tree).** M5+ not started. The SFML wizard validates an installed prefix and writes include and lib dirs only for major 2. No install button. No SFML 3 sample.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -350,12 +350,26 @@ M3 is done in tree. `Wizard.MacBrewFormula` takes one formula token. The token m
 4. `sfml;rm` and `not a formula`: `state=rejected`, `query_exit=-1`, `access=not_checked`.
 5. Saved `/bin/echo`, then `sfml`: `state=brew_unavailable`, `query_exit=-1`. Not reported as missing.
 
+M4 is done in tree. On macOS the SFML wizard calls `Wizard.MacBrewFormula(_T("sfml"))` before a project can be created. Next is refused, and `SetupProject` is not reached, unless the prefix has `include/SFML/Graphics.hpp`, `include/SFML/Config.hpp`, and `lib/libsfml-graphics.dylib`, `lib/libsfml-window.dylib`, and `lib/libsfml-system.dylib`. Major 2 selects the existing `sfml/sfml2` sample and stores `prefix/include` and `prefix/lib` for `AddIncludeDir` and `AddLibDir`. The macOS branch does not add `-framework SFML`. Major 3, major 1, or an unreadable `SFML_VERSION_MAJOR` stops with a message and does not set those dirs. The version list is not shown on macOS. Windows and the other Unix branch are unchanged.
+
+**CONFIRMED FROM SOURCE** (SFML 3.0.2 `include/SFML/Config.hpp`, the tag in the Homebrew formula): the line is `#define SFML_VERSION_MAJOR 3`. The formula's own test compiles with `-I#{include}/SFML/System` and `-L#{lib}`. SFML is not installed on this machine, so that tree was not read from disk.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21), from the IDE, Finder-like `PATH`:
+
+1. Real `sfml` query: `Homebrew reports that SFML is not installed. This wizard will not create a project.`
+2. The real major-3 line parses as 3. A tree with that line and the three dylib names does not set include or lib dirs.
+3. Major 2, same layout: accepted. Include dir `…/include`, lib dir `…/lib`, files dir `sfml/sfml2`.
+4. A prefix missing `Graphics.hpp` does not set the dirs.
+5. `wxString.Mid` in this binding needs a start and a length. The one-argument call was the script error; both call sites now pass the length.
+
+No `.cbp` was written. A real Homebrew install of the current formula is SFML 3, so the wizard will still refuse to create a project until the SFML 3 sample exists.
+
 | | Objective | Files | Non-goals | Check | Stop |
 |--|-----------|-------|-----------|-------|------|
 | M1 | **DONE** (plan). Record the process, config, and URL mechanisms above, and the Homebrew 7.0.9 commands. | This plan only. | No code, no install. | Review against `sc_io.cpp`, `wiz.cpp`, `compiler.cpp`, and a local `brew help`. | Met. The plan matches those sources. |
 | M2 | **DONE** (tree). Tests 1–3 inside the helper, from the IDE. | `macbrew.cpp`, `macbrew.h`, `Makefile.am`, `wiz.cpp` `MacBrewProbe`. | No formula query, no install, no SFML page. No general argv binding. | Met. Saved path first, then the two standard paths. `--version` on every use. `/bin/echo` stayed unusable and was not replaced. Missing `/no/such/brew` fell through. `--prefix` only after a good `--version`. | Met. Absolute `/opt/homebrew/bin/brew --version` returned Homebrew 7.0.9 while `PATH` was `/usr/bin:/bin:/usr/sbin:/sbin`. |
 | M3 | **DONE** (tree). Tests 4–5 through one formula query. | `macbrew.cpp`, `macbrew.h`, `wiz.cpp` `MacBrewFormula`. | No header check, no install. | Met. `sfml` absent is `query_exit=1`, `state=missing`, empty prefix. An already-installed formula (`wxwidgets@3.2`) is `query_exit=0` and a directory. `--prefix` without `--installed` is not the query. A name Homebrew does not know is `failed`, not missing. | Met. Absent `sfml` was not reported as exit 0. |
-| M4 | SFML wizard validates the prefix and writes the `.cbp` when SFML is already installed. Stays before M6 so a bad project is not confused with a bad install. | `sfml/wizard.script` | No install button. No other wizard. | Tests 6 and the generated include/lib dirs. No `-framework SFML`. Windows diff empty outside the macOS branch. | Stop if the headers do not match the assumed layout; fix the check from the real tree before generating a project. |
+| M4 | **DONE** (tree). The SFML wizard validates the prefix and, for major 2, records include and lib dirs. | `sfml/wizard.script` | No install button. No other wizard. No SFML 3 sample. | Met for the decision the project uses. Absent `sfml` does not proceed. Major 2 records `prefix/include`, `prefix/lib`, and `sfml/sfml2`. No `-framework SFML`. | Met. Current Homebrew SFML is 3.0.2 (`#define SFML_VERSION_MAJOR 3`). Major 3 does not record dirs and does not create a project. |
 | M5 | Diagnostic page for “Homebrew ok, SFML missing” versus “Homebrew missing / `--version` failed.” Locate and https://brew.sh. | `wizard.script`, dialog strings from the wizard | No `brew install`. | Cases C, D, E. Case A still has no page. | Stop if Cancel or a failed test still produces a project. |
 | M6 | Explicit install, then tests 4–6 again. Still after M4. | `macbrew.cpp` install path | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Case B. IDE stays responsive. No percent. Cancel before launch starts nothing. Cancel after launch kills only that pid, reports no success, creates no project, and the next attempt uses fresh discovery. | Stop on a password prompt, if success is reported when the process exit is non-zero, or if cancel is described as undoing Homebrew’s files. |
 | M7 | `sfml3/main.cpp` only if M4/M6 headers are major 3. | `sfml3/main.cpp`, `sfml/Makefile.am` | No new sample artwork. | Build and Run shows the window and `cb.bmp`. | Skip the whole milestone if the headers are major 2. |
