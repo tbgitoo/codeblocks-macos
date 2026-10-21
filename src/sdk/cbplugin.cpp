@@ -632,6 +632,13 @@ bool cbDebuggerPlugin::GetDebuggee(wxString &pathToDebuggee, wxString &workingDi
                 f.MakeAbsolute(target->GetParentProject()->GetBasePath());
                 out = f.GetFullPath();
                 Log(_("Adding file: ") + out);
+                // ConvertDirectory quotes paths that contain spaces, for GDB.
+                // The file check has to use the path before that quoting.
+                if (!wxFileExists(out))
+                {
+                    Log(wxString::Format(_("Debuggee does not exist: '%s'"), out), Logger::error);
+                    return false;
+                }
                 ConvertDirectory(out);
             }
             break;
@@ -658,15 +665,6 @@ bool cbDebuggerPlugin::GetDebuggee(wxString &pathToDebuggee, wxString &workingDi
     if (out.empty())
     {
         Log(_("Couldn't find the path to the debuggee!"), Logger::error);
-        return false;
-    }
-    // Refuse a leftover binary when sources were removed / never built for this target.
-    if ((target->GetTargetType() == ttExecutable
-         || target->GetTargetType() == ttConsoleOnly
-         || target->GetTargetType() == ttNative)
-        && !wxFileExists(out))
-    {
-        Log(wxString::Format(_("Debuggee does not exist: '%s'"), out), Logger::error);
         return false;
     }
 
