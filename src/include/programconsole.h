@@ -63,6 +63,13 @@ namespace ProgramConsole
      */
     DLLIMPORT void AnnounceDebugFinished(int exitCode);
 
+    /**
+     * First stop of a Debug session: one line in the Program Console so the
+     * pane is not blank while the debugger reads variables and the call stack.
+     * @a location is a short place such as "main.cpp:8", or empty.
+     */
+    DLLIMPORT void AnnounceDebugStopped(const wxString& location);
+
     /** True while a Run or Debug session is active on the Program Console PTY. */
     DLLIMPORT bool IsRunSessionActive();
 

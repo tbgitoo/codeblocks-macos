@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.0 — existing SFML wizard on Apple Silicon
 
-**Status: M8 DONE (tree).** M9 not started. The installed dylib ids are absolute, and each dylib carries `LC_RPATH` `@loader_path/../lib`, so the wizard adds no rpath. `bin/Debug/<name>` starts from the project directory and from `bin/Debug` with no `DYLD_LIBRARY_PATH`. SFML installs only after **Install SFML using Homebrew**. Cancel before that does not start Homebrew. A non-zero exit is not success. `brew install sfml` was not run.
+**Status: M8 DONE (tree).** M9 is debugging, not a README announcement. The crashes found while debugging a real SFML 3 project are fixed in this tree and in the GDB fork. What is still open is in section 11: a key while the process is suspended, redraw when switching back to the window, the wait before Step Over enables, and the Stop and Quit checks that have not been repeated since the last fix. The installed dylib ids are absolute, and each dylib carries `LC_RPATH` `@loader_path/../lib`, so the wizard adds no rpath. `bin/Debug/<name>` starts from the project directory and from `bin/Debug` with no `DYLD_LIBRARY_PATH`. SFML installs only after **Install SFML using Homebrew**. Cancel before that does not start Homebrew. A non-zero exit is not success. `brew install sfml` was not run.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SFML project wizard usable in this native Apple Silicon distribution?
 
@@ -8,7 +8,7 @@ Homebrew discovery is not an SFML-only detail. It is a small shared facility for
 
 v3.0 does not add SFML support. The wizard is already registered. v3.0 does not add a second wizard, a game-project type, or a project-system change.
 
-Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**. v2.x console, debugger, standalone-file, and signing behaviour stays as shipped. An SFML project is a normal project.
+Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**. v2.x console, standalone-file, and signing behaviour stays as shipped. An SFML project is a normal project. Debugging it uses the same Debug, Step Into, Step Over, Continue, and Stop commands as any other project. The macOS defects that showed up on a real SFML 3 program are recorded in section 11. They are not an SFML debugger mode.
 
 ---
 
@@ -122,7 +122,7 @@ No `-DSFML_STATIC`, no `sfml-main`, no `-d` suffix, no audio, no network. Compil
 - The exact compiler and linker diagnostics, because the wizard was not run and SFML was not installed.
 - Whether current Homebrew `sfml` is SFML 3. Upstream SFML 3 changed `VideoMode`, `Event`, and `pollEvent`. If the formula is SFML 3, the shipped `sfml2/main.cpp` will not compile against it. Confirm the formula at implementation time. Do not download it for planning.
 - Homebrew dylib install names. **Assumption, typical of Homebrew:** they are absolute (`/opt/homebrew/lib/libsfml-….dylib`), so a successfully linked binary finds them with no rpath, including when started from `bin/Debug`, until that prefix is removed. If an install uses `@rpath` instead, Run from the output directory fails until an rpath is added. Check `otool -D` on the real dylibs before adding any rpath.
-- Whether a release `ttExecutable` target on this port skips Program Console. The debug target is `ttConsoleOnly`, so the v2.0 console path applies to Debug. The sample prints nothing. No SFML-specific console or debugger defect was found.
+- Whether a release `ttExecutable` target on this port skips Program Console. The debug target is `ttConsoleOnly`, so the v2.0 console path applies to Debug. The sample prints nothing. This paragraph is the pre-install reading of the wizard. The defects found later, on a built SFML 3 program, are in section 11.
 - `codesign` / Gatekeeper behaviour of a student SFML binary. Out of scope. Do not reuse GDB signing.
 
 ### v2.x does not already solve this
@@ -304,7 +304,7 @@ Once a prefix is accepted, the macOS branch of `sfml/wizard.script` still does t
 - Keep the shared `AddLinkLib` lines `sfml-graphics`, `sfml-window`, `sfml-system`. Dynamic link stays the default (`SFMLLinkType` is already 1 when the Windows page is skipped).
 - Do not add `-framework SFML` for this dylib prefix.
 - No rpath until `otool -D` / `otool -L` on the installed dylibs shows install names that need one.
-- Windows pages, the commented Unix `pkg-config` lines, `src/templates/common/sfml*`, `common_functions.script`, lib_finder, and v2.x debugger behaviour stay as they are.
+- Windows pages, the commented Unix `pkg-config` lines, `src/templates/common/sfml*`, `common_functions.script`, and lib_finder stay as they are. Debugger changes are only the macOS defects in section 11.
 - Do not bundle SFML in the DMG.
 
 `$(#sfml)` remains a Windows mechanism. **Assumption:** the script may not be able to create that global variable. An absolute prefix in this project is acceptable. It is not a home-directory path.
@@ -320,9 +320,9 @@ Once a prefix is accepted, the macOS branch of `sfml/wizard.script` still does t
 | `src/plugins/scriptedwizard/wiz.cpp` | Bind the methods under `#if defined(__WXMAC__)`. | Scripts need a bridge. The registration block is already here (`BindMethod` … `AddInfoPage`). | Generic bindings. | No current method runs an argv. |
 | `src/plugins/scriptedwizard/resources/sfml/wizard.script` | macOS branch: call the helper, validate headers, choose `sfml2`/`sfml3`, write include and lib dirs, skip `-framework SFML`. | This is the client. | SFML only. | The helper must not learn `Graphics.hpp`. |
 | `sfml/sfml3/main.cpp`, `sfml/Makefile.am` | Only if test 6 shows major 3. | The shipped sample is SFML 2. | SFML only. | |
-| `README.macos.md` | Beginner steps and the diagnostic cases. | Last milestone. | Docs. | |
+| `README.macos.md` | No SFML section. | The wizard is an existing entry. Debugging it is the ordinary debugger. | Docs, unchanged by M9. | |
 
-Not modified: `config.script`, other wizards, `common_functions.script`, `src/templates/common/sfml*`, compiler plugin, lib_finder, debugger, GDB, Program Console, signing, `make_cb_app_bundle.sh`.
+Not modified: `config.script`, other wizards, `common_functions.script`, `src/templates/common/sfml*`, compiler plugin, lib_finder, signing, `README.macos.md`, `make_cb_app_bundle.sh`. Debugger, Program Console, and the GDB fork change only as section 11 says.
 
 ---
 
@@ -416,7 +416,7 @@ The IDE built a Debug target with `g++ -std=c++17 -Wall -g -I/opt/homebrew/opt/s
 | M6 | **DONE** (tree). Explicit install after **Install SFML using Homebrew**, then the same formula and header checks. | `macbrew.cpp` install path, `sfml/wizard.script`. | No uninstall UI, no `brew update`, no bootstrap, no rollback. | Met for the gates that must not start Homebrew. Invalid formula and a failing `--version` return `launched=0` and `success=0`. | `brew install sfml` was not run. A password prompt in a later run stops the process and is not success. |
 | M7 | **DONE** (tree). Major 3 records the same include and lib dirs and selects `sfml/sfml3`. | `sfml3/main.cpp`, `sfml3/cb.bmp` (the existing bitmap), `sfml/Makefile.am`, `sfml/wizard.script` | No new sample artwork. No rpath. | Met. The sample compiled and linked against `/opt/homebrew/opt/sfml`. The process stayed up, so the window opened and `cb.bmp` loaded. The IDE accepted that prefix and `GetFilesDir` returned `sfml/sfml3`. | Not skipped. Installed headers are major 3. |
 | M8 | **DONE** (tree). No linker line. The three install names are absolute, and the dylibs' own `@loader_path/../lib` resolves their `@rpath` dependencies. | No change to `wizard.script`. | No rpath “just in case.” | Met. The IDE link line is `-L<prefix>/lib` and the three `-l` names. `bin/Debug/sfmlm8` has no `LC_RPATH`. It stays up from the project directory. From `bin/Debug` it starts and SFML runs; `cb.bmp` is missing there, which is the existing relative-path case. | Stop condition met. Install names are absolute. |
-| M9 | `README.macos.md`: New → SFML project, what the diagnostic means, Homebrew is installed by the user from Homebrew’s site. | `README.macos.md` | No search-path tutorial. | A reader is not told to type include flags. | |
+| M9 | An SFML project debugs with the ordinary commands. No README announcement. Recorded fixes and the checks still open are in section 11. | This tree: `cbplugin.cpp`, `debuggergdb.cpp`, `pipedprocess.cpp`, `programconsole.cpp`. GDB fork: `darwin-nat.c`, `infrun.c`, `dwarf2/frame.c`, `inferior-stdio-unbuffered.c`, `breakpoint.c`. | No SFML section in `README.macos.md`. No SFML debugger mode. Do not turn automatic shared-library loading off. | Step Into reaches the first executable line. Step Over, Continue, and Stop return. Quit during a session does not crash the IDE. A key pressed while the window is running and focused is an ordinary `KeyPressed` event. | The wait before Step Over enables is still there. A key pressed while the process is suspended does not arrive. Redraw after Command-Tab is unfixed. Stop from a running frame, and Quit during a session, have not been repeated since the last fix. |
 
 ---
 
@@ -429,10 +429,52 @@ The IDE built a Debug target with `g++ -std=c++17 -Wall -g -I/opt/homebrew/opt/s
 - **E.** The executable exists but `--version` fails, or `install` exits non-zero. The failure is visible. The IDE does not say SFML was installed and does not write a project.
 - **F.** Cancel before installation starts performs no package operation. Cancel during installation requests termination of the Homebrew process Code::Blocks launched, does not report success, does not create the project, and causes fresh discovery before any subsequent attempt. Code::Blocks does not claim that cancellation rolls back changes already made by Homebrew.
 
-Windows and non-mac Unix wizard behaviour stay as they are. SFML stays out of the DMG. v2.x debugger, console, and signing behaviour stay as they are.
+Windows and non-mac Unix wizard behaviour stay as they are. SFML stays out of the DMG. v2.x console and signing behaviour stay as they are. `README.macos.md` does not gain an SFML section. Debugging acceptance is section 11.
 
 ---
 
 ## 10. What stays rejected
 
 Bundling SFML in the DMG stays rejected. It grows the image, adds license notices for SFML’s dependencies, and makes projects point inside `CodeBlocks.app`. lib_finder and `` `pkg-config` `` backticks stay rejected: they are not on the New Project path, and a Finder-launched app does not have Homebrew on `PATH`. The shared helper is the discovery path, and it installs a formula only after an explicit button.
+
+An SFML section in `README.macos.md` stays rejected. The wizard is already in File → New → Project. Debugging is the ordinary debugger. Turning off automatic shared-library loading stays rejected: it was tried against a bad `.eh_frame` and removed. The frame is skipped; the libraries still load.
+
+---
+
+## 11. Debugging an SFML project
+
+M9 replaces the README milestone. SFML does not get a special write-up. A project created by the wizard is debugged with Debug, Step Into, Step Over, Continue, and Stop. The session below is the SFML 3 sample (`sfml3/main.cpp`) built as `test4`, in a project directory whose path contains a space. The first executable line is the `sf::RenderWindow` constructor. Line 1 is an `#include` and has no code.
+
+The GDB changes are in the companion fork, not in this repository. The IDE changes are in this tree. Both were copied into the local `CodeBlocks.app` during the session. That copy is not a release.
+
+### What failed, and what is in the tree
+
+**CONFIRMED FROM SOURCE.** `GetDebuggee` (`cbplugin.cpp`) checks `wxFileExists` on the path before `ConvertDirectory`. `ConvertDirectory` quotes a path that contains a space, and the existence check was running on the quoted string, so a real binary was reported as missing. The debugger’s working directory is passed to `wxSetWorkingDirectory` without that quoting. A quoted directory made the call fail and left GDB in the IDE’s directory.
+
+**CONFIRMED FROM SOURCE** (GDB fork, `dwarf2/frame.c`). One bad `.eh_frame` used to abort GDB. It is now reported and skipped (`skipping .eh_frame info of …`). The session hit this on a system image (`ArgumentParserInternal`). Shared libraries still load. `set auto-solib-add off` is not the fix.
+
+**CONFIRMED FROM SOURCE** (GDB fork, `inferior-stdio-unbuffered.c`, `breakpoint.c`). Code::Blocks turns inferior stdio unbuffered on by default. On `run`, the hidden breakpoint’s continue action was a `continue_control` node, which has no command text. The breakpoint checker calls `strstr` on that text. Both sites now require a non-null line, and the action is the ordinary command `continue`. `start` does not use that continue node. The IDE reports an abnormal GDB death as “Debugger finished with status 1”. That wording is not a signing failure. The v2.3 diagnosis correctly said signing was fine and would not have offered Enable debugging.
+
+**CONFIRMED FROM SOURCE** (GDB fork, `infrun.c` `keep_going_stepped_thread`). Step Over of a call resumes every thread. A thread that runs ahead is not an unreported trap. Planting a single-step breakpoint at its new PC fired at once as a SIGTRAP and abandoned the step. If a step-resume breakpoint is still set, GDB continues to that breakpoint instead. This stops the stray SIGTRAP. It does not explain a program whose event loop is still running and still accepting input. That observation means the step did not own the process.
+
+**CONFIRMED FROM SOURCE** (GDB fork, `darwin-nat.c`). Stop sends SIGINT to GDB. The inherited `pass_ctrlc` forwarded that signal to the debuggee. During a shared-library read, GDB then either single-stepped for seconds before reporting SIGINT, which is longer than the IDE’s wait, or deadlocked inside `mach_vm_read` because the same thread cannot answer the exception the signal produces. `pass_ctrlc` and `interrupt` now only set a flag. `wait_1` turns that flag into a stop. A memory read returns an I/O error while the flag is set, so the library walk does not run to the end. `kill` sets a separate flag so a real kill is not reported as that synthetic stop. The IDE still has a fallback (`debuggergdb.cpp`): on macOS, Break interrupts GDB rather than the debuggee, and if GDB is still alive after two seconds, `OnMacStopWatchdog` kills GDB and then continues and kills the debuggee. A Mach-suspended process ignores SIGKILL until it is continued.
+
+**CONFIRMED FROM LOCAL MACHINE** during that GDB work. SIGINT while `start` was reading symbols returned “Thread … received signal SIGINT” in about 0.02s, where the same interrupt had taken about 6s. `quit` then returned in about 0.3s. The same 0.02s stop was measured while the child was running. This was a direct GDB session, not the IDE Stop button.
+
+**CONFIRMED FROM SOURCE** (`programconsole.cpp`, `debuggergdb.cpp`). After the editor shows the first stop, Step Over stays disabled until `IsStopped()` and the command queue is idle. With the Watches window open, that queue is `info locals`, `info args`, and the backtrace. The first stop of a session writes one Program Console line, `Debugger stopped at main.cpp:8` (or `Debugger stopped.` when there is no line). The Debugger log says `Reading local variables and the call stack.` when both reads are queued. The line in the Program Console is once per Debug. The log line is every stop. The wait itself is unchanged.
+
+**CONFIRMED FROM SOURCE** (`pipedprocess.cpp`, `debuggergdb.cpp` `OnReleaseReal`). `wxProcess` links its next handler to the debugger plugin. Quitting while GDB is still running destroys the plugin first. The later child-exit then deletes the pipe, and `~wxEvtHandler::Unlink` calls into the freed plugin. The crash report was `PipedProcess::OnTerminate` → `~PipedProcess` → `~wxEvtHandler`, in the session that was already debugging. On application shutdown the plugin now detaches that pipe while it is still alive, then kills that GDB and, if needed, continues and kills the debuggee. The pipe destructor, during shutdown only, clears its handler links so Unlink does not call them.
+
+**CONFIRMED FROM LOCAL MACHINE** (2026-10-21 17:25) and **CONFIRMED FROM SOURCE** (`darwin-nat.c` `check_new_threads`). Stepping in the event loop after Arrow Up aborted GDB: `delete_thread_1` at `gdb_assert (thr != nullptr)`, called from `check_new_threads` while `wait_1` was reconciling threads. `find_thread` does not return a thread already marked exited, so a Mach port still in GDB’s list had no live `thread_info`. The program then died with SIGTRAP at `main.cpp:28` (`pollEvent`) because the step breakpoint was still planted and GDB was gone. A removed Mach thread is now looked up in the inferior’s thread list, including exited threads. If none matches, the port is dropped and GDB does not abort. The user then continued and the step no longer crashed.
+
+### Still open
+
+These are not implementation tasks in this pass. They are the remainder of “debugs normally.”
+
+1. **A key while the process is suspended does not arrive.** Arrow Up with the debugger stopped on `pollEvent`, then another step, is not a way to deliver the event. The task is suspended, so the window is not reading its queue, and a single step does not run long enough for a key to land. The ordinary path is: breakpoint on the `KeyPressed` test, Continue so the window is drawing, click that window, press Arrow Up once. That path was described and has not been run back. Command-Tab while stopped does not give the window the keyboard.
+
+2. **Redraw when switching back is unfixed.** While a debug session was active, Command-Tab to the SFML window did not redraw it. No change was made for that. It may be the same suspension as item 1. It was not traced.
+
+3. **Step Over stays unavailable after the first line is shown.** The editor reaches the line quickly. The button waits on the locals and backtrace reads. The status lines above are the notice for that wait. The wait was not removed. It is acceptable unless a later session shows the queue never goes idle.
+
+4. **Stop from a running frame, and Quit during a session, are not closed by a repeated check.** The interrupt path was measured outside the IDE. The beachball was the failure before that fix and was not reported again after it. Quit was fixed after the pipe-destructor crash; a live session has not been quit since that install. One Continue in the event loop followed by Stop, and one Quit while stopped at a source line, are the checks that close these two.

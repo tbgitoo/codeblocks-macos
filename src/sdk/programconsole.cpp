@@ -459,6 +459,20 @@ void AnnounceRunFinished(int exitCode)
 #endif
 }
 
+void AnnounceDebugStopped(const wxString& location)
+{
+#if defined(__WXMAC__)
+    if (!g_coord.isDebug || !g_appendOutput || g_coord.currentGeneration == 0)
+        return;
+    const wxString line = location.empty()
+        ? wxString("Debugger stopped.\n")
+        : wxString::Format("Debugger stopped at %s\n", location);
+    g_appendOutput(g_coord.currentGeneration, line);
+#else
+    wxUnusedVar(location);
+#endif
+}
+
 void AnnounceDebugFinished(int exitCode)
 {
 #if defined(__WXMAC__)
