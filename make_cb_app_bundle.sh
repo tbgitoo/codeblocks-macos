@@ -492,6 +492,10 @@ case "$GDB_SIGN_MODE" in
         ;;
 esac
 
+# Record the signing mode before the app seal. A file added afterwards is an
+# unsealed resource; Gatekeeper then reports a quarantined download as damaged.
+printf '%s\n' "$GDB_SIGN_MODE" > "$DBG/.cb_gdb_sign_lab"
+
 codesign --force --deep --sign - "$APP"
 
 case "$GDB_SIGN_MODE" in
@@ -519,8 +523,6 @@ else
     codesign --verify --deep --strict --verbose=2 "$APP"
 fi
 
-# Lab marker for later diagnosis (M2+); always written so tooling can see the mode.
-printf '%s\n' "$GDB_SIGN_MODE" > "$DBG/.cb_gdb_sign_lab"
 case "$GDB_SIGN_MODE" in
     normal)
         codesign --verify --verbose=2 "$DBG/bin/gdb"
