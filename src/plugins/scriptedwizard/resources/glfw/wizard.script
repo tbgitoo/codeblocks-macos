@@ -9,6 +9,13 @@ GlfwPathDefault    <- _T("$(#glfw)");
 GlfwPathDefaultInc <- _T("$(#glfw.include)");
 GlfwPathDefaultLib <- _T("$(#glfw.lib)");
 GlfwPath <- _T("");
+// macOS: filled only after the installed GLFW tree is accepted
+GlfwMacPrefix  <- _T("");
+GlfwMacInclude <- _T("");
+GlfwMacLib     <- _T("");
+GlfwMacState   <- _T("");
+GlfwMacAccess  <- _T("");
+GlfwMacExecutable <- _T("");
 
 function BeginWizard()
 {
@@ -21,13 +28,22 @@ function BeginWizard()
                            _("To help you, this folder must contain the subfolders\n\"include\" and \"lib\".");
 
     Wizard.AddInfoPage(_T("GlfwIntro"), intro_msg);
+    // A suitable GLFW install has no dependency page. Anything else stays on this page
+    // until Cancel. The location page is not registered on macOS, so $(#glfw) is not expanded.
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        local reason = GlfwMacBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("GlfwMacDiag"), GlfwMacPageText(reason));
+    }
     Wizard.AddProjectPathPage();
-    Wizard.AddGenericSelectPathPage(_T("GlfwPath"), glfwpath_descr, _("Please select GLFW's location:"), GlfwPathDefault);
+    if (PLATFORM != PLATFORM_MAC)
+        Wizard.AddGenericSelectPathPage(_T("GlfwPath"), glfwpath_descr, _("Please select GLFW's location:"), GlfwPathDefault);
     Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// GLFW's path page
+// GLFW's path page (Windows and other Unix)
 ////////////////////////////////////////////////////////////////////////////////
 
 function OnLeave_GlfwPath(fwd)
@@ -76,6 +92,210 @@ function OnLeave_GlfwPath(fwd)
     return true;
 }
 
+function GlfwReportField(report, key)
+{
+    local needle = key + _T("=");
+    local at = report.Find(needle);
+    if (at == -1)
+        return _T("");
+    local from = at + needle.Length();
+    local rest = report.Mid(from, report.Length() - from);
+    local nl = rest.Find(_T("\n"));
+    if (nl == -1)
+        return rest;
+    return rest.Mid(0, nl);
+}
+
+function GlfwMacClear()
+{
+    GlfwMacPrefix = _T("");
+    GlfwMacInclude = _T("");
+    GlfwMacLib = _T("");
+}
+
+// Empty string: this prefix may be written into the project.
+// Anything else: do not create a project.
+function GlfwMacPrefixDecision(prefix)
+{
+    GlfwMacClear();
+    if (prefix.IsEmpty() || (prefix.Find(_T("/")) != 0))
+        return _("GLFW's prefix is not a directory. No project was created.");
+
+    local includeDir = prefix + _T("/include");
+    local libDir = prefix + _T("/lib");
+    if (!IO.FileExists(includeDir + _T("/GLFW/glfw3.h")))
+        return _("GLFW was found, but include/GLFW/glfw3.h is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(libDir + _T("/libglfw.dylib")))
+        return _("GLFW was found, but libglfw.dylib is not under ") + prefix + _("/lib. No project was created.");
+
+    GlfwMacPrefix = prefix;
+    GlfwMacInclude = includeDir;
+    GlfwMacLib = libDir;
+    return _T("");
+}
+
+function GlfwMacBlockReason()
+{
+    local report = Wizard.MacBrewFormula(_T("glfw"));
+    GlfwMacState = GlfwReportField(report, _T("state"));
+    GlfwMacAccess = GlfwReportField(report, _T("access"));
+    GlfwMacExecutable = GlfwReportField(report, _T("executable"));
+    if (GlfwMacState.Matches(_T("installed")))
+        return GlfwMacPrefixDecision(GlfwReportField(report, _T("prefix")));
+    GlfwMacClear();
+    if (GlfwMacState.Matches(_T("missing")))
+        return _("Homebrew reports that GLFW is not installed. This wizard will not create a project.");
+    if (GlfwMacState.Matches(_T("brew_unavailable")))
+        return _("Homebrew could not be used. This wizard will not create a project.");
+    return _("Homebrew could not be asked about GLFW. This wizard will not create a project.");
+}
+
+function GlfwMacPageText(reason)
+{
+    local text = _("Some project templates obtain libraries through Homebrew.\n") +
+                 _("Code::Blocks does not install Homebrew.\n\n");
+    if (GlfwMacAccess.Matches(_T("works")))
+    {
+        text = text + _("Homebrew\n    Found: ") + GlfwMacExecutable +
+               _("\n    Access from Code::Blocks: OK\n\n");
+    }
+    else if (GlfwMacAccess.Matches(_T("present_unusable")))
+    {
+        text = text + _("Homebrew\n    Found: ") + GlfwMacExecutable +
+               _("\n    Access from Code::Blocks: failed\n") +
+               _("That executable was left in place.\n\n");
+    }
+    else
+    {
+        text = text + _("Homebrew\n    Not detected\n\n");
+    }
+
+    if (GlfwMacState.Matches(_T("missing")))
+        text = text + _("GLFW\n    Not installed\n\n");
+    else if (GlfwMacAccess.Matches(_T("works")) && !reason.IsEmpty())
+        text = text + reason + _("\n\n");
+
+    text = text + _("No project is created from this page.\n");
+    if (GlfwMacState.Matches(_T("missing")))
+        text = text + _("Press Next to install the glfw formula with Homebrew.\n") +
+                      _("Cancel on that dialog does not start the install.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    else if (GlfwMacAccess.Matches(_T("works")))
+        text = text + _("Use Cancel to close the wizard.\n");
+    else
+        text = text + _("Press Next to choose an existing brew executable, or to open https://brew.sh.\n") +
+                      _("Use Cancel to close the wizard.\n");
+    return text;
+}
+
+// Empty string: the path passed --version and was stored.
+// A failed file is not stored, and a previous saved path is left as it was.
+function GlfwMacConsiderBrew(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+    local report = Wizard.MacBrewTry(path, true);
+    local access = GlfwReportField(report, _T("access"));
+    if (access.Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
+        return _T("");
+    }
+    return _("That file did not pass brew --version, so it was not remembered.") +
+           _("\n\n") + GlfwReportField(report, _T("executable")) +
+           _("\n") + GlfwReportField(report, _T("version"));
+}
+
+function GlfwMacOfferInstall()
+{
+    local explanation = _("This project needs GLFW.\n\n") +
+                        _("Code::Blocks will ask Homebrew to install the formula \"glfw\".\n") +
+                        _("Nothing is installed until you choose Install GLFW using Homebrew.\n") +
+                        _("Cancel on this dialog does not start Homebrew.");
+    local report = Wizard.MacBrewInstall(_T("glfw"), explanation, _("Install GLFW using Homebrew"));
+    if (GlfwReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = GlfwMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowMessage(GlfwMacPageText(reason));
+        return false;
+    }
+    if (GlfwReportField(report, _T("password")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
+        return false;
+    }
+    if (GlfwReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
+        return false;
+    }
+    if (GlfwReportField(report, _T("launched")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew did not finish successfully. GLFW was not marked installed. No project was created.\n\n") +
+                  GlfwReportField(report, _T("output")));
+    }
+    return false;
+}
+
+function OnLeave_GlfwMacDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (GlfwMacBlockReason().IsEmpty())
+        return true;
+    if (!GlfwMacAccess.Matches(_T("works")))
+    {
+        local choice = Wizard.MacBrewChoice(
+            _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
+            _("Help me find Homebrew"),
+            _("Installation instructions"));
+        if (choice == 1)
+        {
+            local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
+            local rejected = GlfwMacConsiderBrew(picked);
+            if (!rejected.IsEmpty())
+                ShowError(rejected);
+        }
+        else if (choice == 2)
+        {
+            wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+        }
+        if (GlfwMacBlockReason().IsEmpty())
+            return true;
+        return false;
+    }
+    if (GlfwMacState.Matches(_T("missing")))
+        return GlfwMacOfferInstall();
+    return false;
+}
+
+function GlfwMacAllowForward()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return true;
+    local reason = GlfwMacBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
+function OnLeave_ProjectPathPage(fwd)
+{
+    if (fwd)
+        return GlfwMacAllowForward();
+    return true;
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (fwd)
+        return GlfwMacAllowForward();
+    return true;
+}
+
 // return the files this project contains
 function GetFilesDir()
 {
@@ -85,24 +305,38 @@ function GetFilesDir()
 // setup the already created project
 function SetupProject(project)
 {
-    // set project options
-    project.AddIncludeDir(GlfwPathDefaultInc);
-    project.AddLibDir(GlfwPathDefaultLib);
-
-    // add link libraries
-    project.AddLinkLib(_T("glfw3"));
-    if (PLATFORM == PLATFORM_MSW)
+    if (PLATFORM == PLATFORM_MAC)
     {
-        project.AddLinkLib(_T("opengl32"));
-        project.AddLinkLib(_T("glu32"));
-        project.AddLinkLib(_T("gdi32"));
+        // Prefix was accepted on the way through the wizard. No $(#glfw).
+        if (GlfwMacInclude.IsEmpty() || GlfwMacLib.IsEmpty())
+            return false;
+        project.AddIncludeDir(GlfwMacInclude);
+        project.AddLibDir(GlfwMacLib);
+        project.AddLinkLib(_T("glfw"));
+        // Proposed until a real link of the generated program confirms it.
+        project.AddLinkerOption(_T("-framework OpenGL"));
     }
     else
     {
-        project.AddLinkLib(_T("GL"));
-        project.AddLinkLib(_T("GLU"));
-        project.AddLinkLib(_T("pthread"));
-        project.AddLinkLib(_T("Xxf86vm"));
+        // set project options
+        project.AddIncludeDir(GlfwPathDefaultInc);
+        project.AddLibDir(GlfwPathDefaultLib);
+
+        // add link libraries
+        project.AddLinkLib(_T("glfw3"));
+        if (PLATFORM == PLATFORM_MSW)
+        {
+            project.AddLinkLib(_T("opengl32"));
+            project.AddLinkLib(_T("glu32"));
+            project.AddLinkLib(_T("gdi32"));
+        }
+        else
+        {
+            project.AddLinkLib(_T("GL"));
+            project.AddLinkLib(_T("GLU"));
+            project.AddLinkLib(_T("pthread"));
+            project.AddLinkLib(_T("Xxf86vm"));
+        }
     }
 
     // enable compiler warnings (project-wide)
@@ -114,7 +348,8 @@ function SetupProject(project)
     {
         target.SetTargetType(ttConsoleOnly); // ttConsoleOnly: console for debugging
         target.SetOutputFilename(Wizard.GetDebugOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        target.SetWorkingDir(GlfwPath + _T("/bin"));
+        if (PLATFORM != PLATFORM_MAC)
+            target.SetWorkingDir(GlfwPath + _T("/bin"));
         // enable generation of debugging symbols for target
         DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
@@ -125,7 +360,8 @@ function SetupProject(project)
     {
         target.SetTargetType(ttExecutable); // ttExecutable: no console
         target.SetOutputFilename(Wizard.GetReleaseOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        target.SetWorkingDir(GlfwPath + _T("/bin"));
+        if (PLATFORM != PLATFORM_MAC)
+            target.SetWorkingDir(GlfwPath + _T("/bin"));
         // enable optimizations for target
         OptimizationsOn(target, Wizard.GetCompilerID());
     }

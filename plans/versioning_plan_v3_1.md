@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.1 — existing GLFW wizard on Apple Silicon
 
-**Status: M1 (this plan). No implementation.**
+**Status: M1 done. The macOS Homebrew client is in `glfw/wizard.script`. The macOS sample is still the historical fixed-function program; replacing that sample is the remaining M2 work. GLFW is not installed.**
 
 **Question this version answers:** what is the smallest coherent change that makes the existing GLFW project wizard usable in this native Apple Silicon distribution, with GLFW discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -89,7 +89,7 @@ Both targets call `SetWorkingDir(GlfwPath + "/bin")`. The script never copies a 
 
 ### Sample
 
-`files/main.cpp` is a GLFW 3 program. It includes `<GLFW/glfw3.h>` and `<vector>` / `<iostream>`. It calls `glfwInit`, `glfwCreateWindow`, `glfwMakeContextCurrent`, `glfwSetKeyCallback`, `glfwWindowShouldClose`, `glfwGetFramebufferSize`, `glfwGetTime`, `glfwSwapBuffers`, `glfwPollEvents`, `glfwDestroyWindow`, `glfwTerminate`. It draws with fixed-function OpenGL: `glViewport`, `glClear`, `glMatrixMode`, `glOrtho`, `glRotatef`, `glBegin` / `glEnd`, `glColor3f`, `glVertex3f`. It sets no `glfwWindowHint`. Escape calls `glfwSetWindowShouldClose(window, GL_TRUE)`. The range-for loop is C++11. There is no GLFW 2 call (`glfwOpenWindow` is absent). **CONFIRMED FROM SOURCE.**
+`files/main.cpp` is the historical sample. It includes `<GLFW/glfw3.h>` and draws with fixed-function OpenGL: `glMatrixMode`, `glOrtho`, `glRotatef`, `glBegin` / `glEnd`, `glColor3f`, `glVertex3f`. It sets no `glfwWindowHint`. **CONFIRMED FROM SOURCE.** That file is not the macOS result. Section 6 records the current macOS sample. `GetFilesDir()` returns `glfw/files` for every platform today, so a macOS-only replacement has to be a second directory selected from `GetFilesDir` when `PLATFORM == PLATFORM_MAC`. The historical file stays the non-mac sample.
 
 ### Older GLFW artifacts that are not this wizard
 
@@ -105,7 +105,7 @@ Leave these alone. They are GLFW 2, and they are not the New Project entry named
 
 ### What must stay unchanged
 
-- The Windows and other-Unix location page, `$(#glfw)` / `$(#glfw.include)` / `$(#glfw.lib)`, and the existing `SetupProject` link list for those platforms.
+- The Windows and other-Unix location page, `$(#glfw)` / `$(#glfw.include)` / `$(#glfw.lib)`, the existing `SetupProject` link list for those platforms, and `glfw/files/main.cpp`.
 - `common_functions.script`.
 - `config.script` registration and the other graphics wizards.
 - The GLFW 2 templates and `lib_finder/glfw.xml`.
@@ -296,19 +296,21 @@ Otherwise, for both targets:
 - `AddIncludeDir` of `prefix/include`.
 - `AddLibDir` of `prefix/lib`.
 - `AddLinkLib("glfw")`, which becomes `-lglfw`, matching the formula test.
-- `AddLinkerOption("-framework OpenGL")`. **PROPOSED DESIGN** until M3 verifies the generated program. The source rationale is that the sample calls `gl*` directly, `glfw3.h` includes `<OpenGL/gl.h>` on Apple in this use, and the GLFW shared library’s CMake link line does not provide those application calls. M3 confirms the complete link line.
+- `AddLinkerOption("-framework OpenGL")`. **PROPOSED DESIGN** until M3 verifies the generated program. The macOS sample calls core-profile entry points exported by `OpenGL.framework`. The shared GLFW library does not provide those calls. M3 confirms the complete link line.
 
-Do not add Cocoa, IOKit, QuartzCore, or CoreFoundation on the application. Those are private link dependencies of `libglfw`, and the formula test executable does not repeat them. If the link fails without one of them, that is a measurement in M3.
+Do not add Cocoa, IOKit, QuartzCore, or CoreFoundation on the application unless M3 shows the link fails without one of them. GLFW’s own command-line example repeats those frameworks even for `libglfw.3.dylib` (`docs/build.md`). The Homebrew formula test links with `-lglfw` only and does not call OpenGL. The sample source does not reference Cocoa, IOKit, QuartzCore, or CoreFoundation symbols, so they are not part of the proposed link line.
 
 Do not add `GL`, `GLU`, `pthread`, or `Xxf86vm` on macOS. Those remain the non-mac `else` branch.
 
 Do not set a working directory on macOS. The sample has no resource file. An empty working directory is resolved from the project directory at Run time. Do not set it to `prefix/bin` or to `/bin`.
 
-Do not add `-std`. Apple clang 21 on this machine defines `__cplusplus` as `201402L` with no `-std` flag (**CONFIRMED FROM LOCAL MACHINE**). The sample’s newest language feature is the C++11 range-for. SFML’s `-std=c++17` came from SFML 3 headers. These headers do not.
+Do not add `-std`. Apple clang 21 on this machine defines `__cplusplus` as `201402L` with no `-std` flag (**CONFIRMED FROM LOCAL MACHINE**). The macOS sample uses no feature past that default. The historical non-mac sample’s range-for is C++11 and already fits that default. SFML’s `-std=c++17` came from SFML 3 headers.
 
 Do not write `$(#glfw)`, `$(#glfw.include)`, or `$(#glfw.lib)` into the macOS project. Do not create or fill a persistent `glfw` global variable.
 
 The non-mac body of `SetupProject` stays the current include/lib/`glfw3`/Windows-or-X11 logic, including `SetWorkingDir(GlfwPath + "/bin")`.
+
+`GetFilesDir` returns `glfw/mac` when `PLATFORM == PLATFORM_MAC` and `glfw/files` otherwise. The macOS directory holds the current sample. The historical sample stays in `glfw/files`.
 
 ### Generated project
 
@@ -320,11 +322,11 @@ A normal Code::Blocks project. Absolute Homebrew prefix paths in the `.cbp` are 
 
 | Item | macOS proposal | Evidence |
 |------|----------------|----------|
-| Source | Keep `files/main.cpp` | Already GLFW 3. Homebrew’s current bottle is 3.5.1. No API break was found in the calls the sample makes. |
+| Source | macOS: new `glfw/mac/main.cpp`. Non-mac: keep `files/main.cpp` | A core-profile triangle is the current macOS example. The historical file stays for Windows and other Unix. |
 | Include | `prefix/include` so `<GLFW/glfw3.h>` resolves | Formula installs `include/GLFW`. Header presence is the suitability check. |
 | Library dir | `prefix/lib` | Same. |
 | GLFW link | `-lglfw` | Formula test. Shared CMake output name `glfw`. |
-| OpenGL | `-framework OpenGL` | **PROPOSED DESIGN** until M3. The sample calls `gl*`, `glfw3.h` includes the Apple OpenGL header in this use, and the shared library does not provide those calls. |
+| OpenGL | `-framework OpenGL` | **PROPOSED DESIGN** until M3. Core entry points used by the triangle are exported by `OpenGL.framework`’s `gl3.h`. `-lGL` is the X11 library and is not the macOS link. |
 | GLU | Omit on macOS | Sample does not call `glu*`. |
 | X11 / pthread | Omit on macOS | Not used by the sample. `Xxf86vm` is the current non-mac branch. |
 | Frameworks inside GLFW | Do not repeat on the executable | CMake links them into the shared library; the formula test does not pass them. |
@@ -333,7 +335,40 @@ A normal Code::Blocks project. Absolute Homebrew prefix paths in the `.cbp` are 
 | Resources | None | The sample loads no file. |
 | Debugger | Ordinary Debug on the generated project | No GLFW debugger mode. |
 
-`glBegin` needs a context that still has the fixed-function pipeline. The sample sets no context hint. Whether GLFW 3.5.1’s default macOS context still accepts that sample is **TO BE MEASURED DURING IMPLEMENTATION** by building and running it. The plan does not rewrite the sample in advance.
+### Current macOS sample
+
+The historical Sierpinski program is not the macOS model. It is shorter because it uses removed OpenGL. The macOS sample is the smallest program that asks GLFW for the current macOS context and draws with that context’s rendering model.
+
+**Context. CONFIRMED FROM SOURCE** of GLFW 3.5.1 `docs/window.md`, `include/GLFW/glfw3.h`, and `src/nsgl_context.m`:
+
+- macOS supports core-profile contexts for OpenGL 3.2 and later. OpenGL 3.0 and 3.1 are rejected. A compatibility profile for version 3 or later is rejected (`"The compatibility profile is not available on macOS"`).
+- Before `glfwCreateWindow` of version 3.2 or later, the profile hint must be set. `NSGL` then selects `NSOpenGLProfileVersion4_1Core` when the major version is at least 4, and `NSOpenGLProfileVersion3_2Core` when it is at least 3.
+- Apple’s SDK header `OpenGL/gl3.h` defines `GL_VERSION_4_1`. **CONFIRMED FROM LOCAL MACHINE** (MacOSX.sdk). 4.1 is the current macOS OpenGL implementation. A 3.2 core context is also non-legacy, and it is not the current one.
+
+**PROPOSED DESIGN**, requested explicitly before `glfwCreateWindow`:
+
+```text
+glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+```
+
+The version and core-profile hints are the ones NSGL and the GLFW macOS remark require. `GLFW_OPENGL_FORWARD_COMPAT` is appropriate: a macOS core context has no compatibility profile, and the hint says removed functionality is not wanted. NSGL does not read that flag when it builds the pixel format (**CONFIRMED FROM SOURCE** of `nsgl_context.m`). M3 checks that the created context is 4.1 core. If creation fails only because of the forward-compat hint, drop that one hint. Do not drop the version or the core profile.
+
+**What the sample draws. PROPOSED DESIGN.** One triangle in clip space. Core profile has no fixed-function vertex processing, so the triangle is a vertex shader, a fragment shader, one vertex-array object, one buffer, and `glDrawArrays`. Positions are three hardcoded clip-space vertices. The fragment shader writes a constant colour. There is no matrix, no uniform, and no texture. That is the machinery the current model requires for one visible primitive, and nothing past it. A clear-colour window would show that GLFW created a context and would skip that model. Escape still calls `glfwSetWindowShouldClose`. The window close flag ends the loop, then the program destroys the window and calls `glfwTerminate`.
+
+The sample defines `GLFW_INCLUDE_GLCOREARB` before including `<GLFW/glfw3.h>`. On Apple that include is `<OpenGL/gl3.h>` (**CONFIRMED FROM SOURCE** of GLFW 3.5.1 `glfw3.h`). The default include is `<OpenGL/gl.h>`, which is the legacy header. Do not use the default.
+
+**Loader. CONFIRMED FROM LOCAL MACHINE** for the header, and **CONFIRMED FROM SOURCE** of that header: `gl3.h` sets `GL3_PROTOTYPES` on Apple and declares `glCreateShader`, `glShaderSource`, `glCompileShader`, `glCreateProgram`, `glAttachShader`, `glLinkProgram`, `glUseProgram`, `glGenBuffers`, `glBindBuffer`, `glBufferData`, `glGenVertexArrays`, `glVertexAttribPointer`, `glEnableVertexAttribArray`, `glDrawArrays`, `glClear`, `glViewport`, and `glClearColor` as ordinary functions. They are marked deprecated by Apple after 10.14 and they are still the exported core entry points. The triangle does not need GLAD, GLEW, or `glfwGetProcAddress`. GLFW’s context guide describes glad as the usual way to load OpenGL when the platform header does not export the calls. That is the Windows case, where `opengl32` exports OpenGL 1.1 and a core-profile triangle does not link. It is not this macOS sample. GLM is not required: the vertices are already in clip space.
+
+**Why the sample is macOS-only.** `GetFilesDir` can select a directory per platform, which is how the SFML wizard selects a sample tree. One shared current sample would be compiled by the Windows wizard as well. That wizard links `opengl32`, and the core entry points above are not part of that import library. A loader would then become a second dependency on every platform so that Windows could build a sample this macOS target does not need. The historical `files/main.cpp` stays the Windows and other-Unix sample, with that path’s existing link line. v3.1 does not modernise those wizards. There is no GLFW version page.
+
+**Language.** No `-std` flag. The triangle can be written with string literals and a plain array. No C++17 feature is required.
+
+**Retina.** GLFW’s macOS remark says a window is not full resolution unless `GLFW_SCALE_FRAMEBUFFER` is true and the application bundle sets `NSHighResolutionCapable`. The wizard does not add an Info.plist. The triangle uses `glfwGetFramebufferSize` for `glViewport`. Whether the window is pixel-doubled is **TO BE MEASURED DURING IMPLEMENTATION**. A visible triangle does not depend on a Retina plist.
+
+**Link, still PROPOSED DESIGN until M3.** `-lglfw` and `-framework OpenGL`. Do not add `GL`, `GLU`, `pthread`, or `Xxf86vm`. Do not add Cocoa, IOKit, QuartzCore, or CoreFoundation unless the real link of this triangle reports an undefined symbol from one of them. No rpath until `otool` of the installed `libglfw.dylib` requires one. No second Homebrew formula.
 
 ---
 
@@ -341,9 +376,10 @@ A normal Code::Blocks project. Absolute Homebrew prefix paths in the `.cbp` are 
 
 | File | Role | v3.1 |
 |------|------|------|
-| `src/plugins/scriptedwizard/resources/glfw/wizard.script` | GLFW client | **Changes.** macOS query, suitability check, dependency page, install labels, skip the location page, write absolute include/lib and the macOS link line. Windows and other Unix stay on the current page and `SetupProject` body. |
-| `src/plugins/scriptedwizard/resources/glfw/files/main.cpp` | Sample | **Unchanged**, unless M3 shows that 3.5.1 rejects it. |
-| `src/plugins/scriptedwizard/resources/glfw/Makefile.am` | Install list | **Unchanged.** No new file. |
+| `src/plugins/scriptedwizard/resources/glfw/wizard.script` | GLFW client | **Changes.** macOS query, suitability check, dependency page, install labels, skip the location page, write absolute include/lib and the macOS link line. `GetFilesDir` returns `glfw/mac` on macOS. Windows and other Unix stay on the current page, `glfw/files`, and `SetupProject` body. The Homebrew client is already in this file. The `GetFilesDir` branch is not. |
+| `src/plugins/scriptedwizard/resources/glfw/mac/main.cpp` | macOS sample | **New.** OpenGL 4.1 core triangle described in section 6. |
+| `src/plugins/scriptedwizard/resources/glfw/files/main.cpp` | Non-mac sample | **Unchanged.** Historical fixed-function program. Windows and other Unix keep it. |
+| `src/plugins/scriptedwizard/resources/glfw/Makefile.am` | Install list | **Changes.** Install `mac/main.cpp` beside `files/main.cpp`, the same way the SFML wizard installs more than one sample tree. |
 | `src/plugins/scriptedwizard/macbrew.cpp` | Generic helper | **Unchanged.** |
 | `src/plugins/scriptedwizard/macbrew.h` | Generic helper | **Unchanged.** |
 | `src/plugins/scriptedwizard/wiz.cpp` | Script bindings | **Unchanged.** `MacBrewFormula`, `MacBrewInstall`, `MacBrewChoice`, and `MacBrewTry` are already bound on macOS. |
@@ -356,7 +392,7 @@ A normal Code::Blocks project. Absolute Homebrew prefix paths in the `.cbp` are 
 | `src/templates/common/glfw*`, `src/templates/unix/glfw-static.cbp`, `src/templates/win32/glfw-static.cbp` | GLFW 2 templates | **Unchanged.** |
 | `src/plugins/contrib/lib_finder/lib_finder/glfw.xml` | lib_finder | **Unchanged.** |
 
-The running IDE loads wizard scripts from the installed data directory, not automatically from this source tree. M2’s check uses the script the IDE actually reads. Copying that one script into the app’s `templates/wizard/glfw/` is an install step, not a source change. A full Code::Blocks rebuild is not required for a script-only edit.
+The running IDE loads wizard scripts and sample files from the installed data directory, not automatically from this source tree. M2’s check uses the copies the IDE actually reads. Copying `wizard.script` and `mac/main.cpp` into the app’s `templates/wizard/glfw/` is an install step, not a source change. A full Code::Blocks rebuild is not required for that copy.
 
 ---
 
@@ -380,11 +416,13 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 
 ### M2 — macOS client
 
-**Objective.** Make the GLFW wizard a second client of the existing helper. On macOS, a suitable prefix skips the location page and the Global Variable Editor. A missing formula uses the existing install dialog under a GLFW label. Windows and other Unix keep `$(#glfw)`.
+**Objective.** Make the GLFW wizard a second client of the existing helper, and make the macOS sample the OpenGL 4.1 core triangle from section 6. On macOS, a suitable prefix skips the location page and the Global Variable Editor. A missing formula uses the existing install dialog under a GLFW label. Windows and other Unix keep `$(#glfw)` and `files/main.cpp`.
 
-**Files.** `glfw/wizard.script` only, unless a check below fails in a way that section 5 did not allow.
+**Files.** `glfw/wizard.script` (`GetFilesDir` and the client already started there), `glfw/Makefile.am`, and new `glfw/mac/main.cpp`.
 
-**Non-goals.** No helper API, no SFML edit, no sample rewrite, no rpath, no global-variable write, no `brew update` / uninstall / bootstrap.
+**Non-goals.** No helper API, no SFML edit, no change to `files/main.cpp`, no GLAD/GLEW/GLM, no rpath, no global-variable write, no `brew update` / uninstall / bootstrap.
+
+**Status.** The Homebrew client is in `wizard.script`. The macOS sample and the `GetFilesDir` branch are not.
 
 **Check.** This machine starts M2 with working Homebrew and GLFW absent. That absence is the first run. Do not install GLFW before the wizard asks.
 
@@ -393,19 +431,19 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 - Cancel once on the consent dialog. No install starts.
 - Then choose **Install GLFW using Homebrew**.
 - After a successful install, the existing formula query and suitability check rediscover the prefix without restarting Code::Blocks.
-- Complete project creation. The `.cbp` contains `prefix/include` and `prefix/lib`, links `-lglfw`, and records the proposed `-framework OpenGL`. It does not contain `$(#glfw)`.
+- Complete project creation. The copied source is `glfw/mac/main.cpp`. It requests OpenGL 4.1 core, sets `GLFW_OPENGL_FORWARD_COMPAT`, and contains no `glBegin`, `glVertex*`, `glColor*`, `glMatrixMode`, `glLoadIdentity`, `glOrtho`, or other fixed-function matrix call. The `.cbp` contains `prefix/include` and `prefix/lib`, links `-lglfw`, and records the proposed `-framework OpenGL`. It does not contain `$(#glfw)`.
 - Start the wizard again. This is the already-installed path: no dependency page, no GLFW location page, no Global Variable Editor.
 - With Homebrew missing or `--version` failing: the page does not call that “GLFW missing”. No project is created. No bootstrap.
 - A non-zero install exit does not create a project.
 - A Windows or other-Unix reading of the same script still registers `GlfwPath` and still links `glfw3` plus that platform’s extra libraries. This can be reviewed from the script when those platforms are not at hand.
 
-**Stop.** Do not add an rpath or a new sample to make this milestone pass. If the prefix check cannot be expressed with the existing report fields, stop and name the missing field. Do not add `ExecuteBrewCommand`.
+**Stop.** Do not add an rpath, a loader, or a third sample to make this milestone pass. If the prefix check cannot be expressed with the existing report fields, stop and name the missing field. Do not add `ExecuteBrewCommand`.
 
 ### M3 — Link and run against the real bottle
 
-**Objective.** Build the generated Debug target, inspect the installed `libglfw.dylib` and the executable, and run the program from Code::Blocks.
+**Objective.** Build the generated Debug target against the real Homebrew GLFW bottle, confirm the 4.1 core context and the triangle, and inspect load commands.
 
-**Files.** None unless the inspection contradicts section 6. A contradicted link line is a one-line change in `glfw/wizard.script`. An rpath is added only when the inspected install name requires it. The sample changes only if 3.5.1 rejects it.
+**Files.** None unless the inspection contradicts section 6. A contradicted link line is a one-line change in `glfw/wizard.script`. An rpath is added only when the inspected install name requires it. The sample changes only when a specific result contradicts section 6.
 
 **Non-goals.** No speculative frameworks. No `DYLD_LIBRARY_PATH`. No debugger work.
 
@@ -414,7 +452,8 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 - `otool -D` and `otool -L` on `prefix/lib/libglfw.dylib`, plus its `LC_RPATH` load commands.
 - The same for `bin/Debug/<name>` after a Code::Blocks build.
 - The executable starts from Code::Blocks with no `DYLD_LIBRARY_PATH`.
-- Verify the complete link line of the generated program, including whether the proposed `-framework OpenGL` was sufficient, and whether the fixed-function sample actually drew.
+- Verify the complete link line. Record whether `-framework OpenGL` was sufficient, and whether Cocoa, IOKit, QuartzCore, or CoreFoundation were required by an undefined symbol.
+- The created context is OpenGL 4.1 core. The triangle is visible. Escape or the window close control ends the loop. `glfwTerminate` runs and the process exits.
 
 **Stop.** If the dylib id is absolute, add no rpath. If the sample fails, classify the failure before editing it.
 
@@ -435,16 +474,16 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 ## 9. Acceptance
 
 1. **macOS, Homebrew works, GLFW absent (M2’s first run).** The wizard does not open the Global Variable Editor and does not require `$(#glfw)`. Nothing is installed before explicit consent. Cancel once on the consent dialog does not start `brew`. **Install GLFW using Homebrew** then installs. The existing formula query and suitability check rediscover the prefix without restarting Code::Blocks. Project creation completes.
-2. **macOS, second wizard start after that install.** No dependency page. No GLFW location page. No Global Variable Editor. No typed paths. The generated project builds.
+2. **macOS, second wizard start after that install.** No dependency page. No GLFW location page. No Global Variable Editor. No typed paths. The generated project is the core-profile triangle and it builds.
 3. **macOS, Homebrew not detected.** The existing locate / instructions path. No bootstrap. No project.
 4. **macOS, Homebrew present but `--version` fails.** The failure is visible and is not reported as “GLFW missing”. No project.
 5. **macOS, `brew install glfw` exits non-zero.** No success claim. No project.
 6. **macOS cancel.** Cancel before launch does not start Homebrew. Cancel after launch does not claim rollback, does not claim success, and does not create a project. A later attempt reads the machine as it is.
 7. **Generated macOS project.** Include directory is `prefix/include`. Library directory is `prefix/lib`. The project records `-lglfw` and the proposed `-framework OpenGL`. M3 verifies the complete link line against the generated program. No `$(#glfw)`. No pkg-config. No `DYLD_LIBRARY_PATH`.
-8. **Runtime.** The project starts from Code::Blocks. Library resolution matches the executable’s load commands.
+8. **Runtime.** The program creates the requested 4.1 core context. The sample contains no legacy fixed-function OpenGL. The triangle appears. Escape and the window close control work. The process exits cleanly. Library resolution matches the executable’s load commands. No GLAD, GLEW, GLM, or second Homebrew formula was added.
 9. **Debugger.** The M4 smoke check passes.
-10. **Windows.** The location page and `$(#glfw)` remain. Extra libraries remain `opengl32`, `glu32`, `gdi32`.
-11. **Other Unix.** The location page, `$(#glfw)`, and `GL` / `GLU` / `pthread` / `Xxf86vm` remain.
+10. **Windows.** The location page and `$(#glfw)` remain. Extra libraries remain `opengl32`, `glu32`, `gdi32`. The copied source remains `files/main.cpp`.
+11. **Other Unix.** The location page, `$(#glfw)`, and `GL` / `GLU` / `pthread` / `Xxf86vm` remain. The copied source remains `files/main.cpp`.
 12. **SFML.** The v3.0 wizard behaviour remains. The helper’s report strings and install rules remain.
 
 ---
@@ -464,6 +503,13 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 - Bundling GLFW in the DMG, editing the shell profile, or setting `DYLD_LIBRARY_PATH`.
 - An rpath added without an `otool` result.
 - A new GLFW sample written only because SFML needed an SFML 3 sample.
+- Preserving `glBegin` / `glEnd` because that sample is shorter.
+- Keeping the historical Sierpinski program on macOS for continuity.
+- A compatibility-profile context chosen so the old sample still runs.
+- A large OpenGL tutorial, a rendering framework, or extra classes around one triangle.
+- GLAD, GLEW, or GLM without a demonstrated need. The macOS triangle does not have that need.
+- A GLFW version-selection page.
+- Modernising the OpenGL wizard, or converting this sample to Metal or Vulkan.
 - A debugger, Program Console, or signing change.
 - A README announcement.
 - Cleanup of the GLFW 2 templates.
@@ -476,6 +522,6 @@ These need a real Homebrew GLFW prefix. They were not settled by installing duri
 
 1. `otool -D`, `otool -L`, and `LC_RPATH` of `prefix/lib/libglfw.dylib` after `brew install glfw`.
 2. The same load commands on the wizard-built executable, and whether it starts with no `DYLD_LIBRARY_PATH` and no extra rpath.
-3. Whether `-lglfw` plus `-framework OpenGL` is a complete link, given that Cocoa, IOKit, QuartzCore, and CoreFoundation are already on the shared library.
-4. Whether the unmodified Sierpinski sample’s `glBegin` path runs under GLFW 3.5.1’s default macOS context.
-5. If that context rejects the sample, the smallest source change that still demonstrates `glfwCreateWindow`. That change is not authorised until this measurement fails.
+3. Whether `-lglfw` plus the proposed `-framework OpenGL` links the triangle. Add Cocoa, IOKit, QuartzCore, or CoreFoundation only if the link reports an undefined symbol from that framework.
+4. The context version and profile `glfwCreateWindow` actually returns for the four hints in section 6, and whether `GLFW_OPENGL_FORWARD_COMPAT` had to be removed for creation to succeed.
+5. That the triangle is visible, that Escape and the close control end the loop, and that the process exits after `glfwTerminate`.
