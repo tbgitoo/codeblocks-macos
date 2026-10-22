@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.1 — existing GLFW wizard on Apple Silicon
 
-**Status: M3 measured.** The wizard project `glfw_test_2` links and runs against Homebrew GLFW 3.5.1 at `/opt/homebrew/opt/glfw`. The dylib id is absolute, so the wizard adds no rpath. `-framework OpenGL` plus `-lglfw` is a complete link. The context is OpenGL 4.1 core and forward-compatible. The triangle colour is in the framebuffer.
+**Status: M4 done.** The wizard Debug binary stops at a breakpoint in `main.cpp`, Continue runs, and SIGINT to the bundled GDB stops every thread. No debugger change.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing GLFW project wizard usable in this native Apple Silicon distribution, with GLFW discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -478,6 +478,14 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 **Check.** Debug build from the wizard. Start under the ordinary debugger. A breakpoint in `main.cpp` is hit. Continue runs. Stop returns through the ordinary path.
 
 **Stop.** One reproducible failure is recorded and classified. It does not by itself expand v3.1.
+
+**Status.** Done. No source change. The bundled GDB at `CodeBlocks.app/Contents/Resources/debugger/bin/gdb` drove `glfw_test_2/bin/Debug/glfw_test_2`.
+
+- A breakpoint at `main.cpp:118` (`while (!glfwWindowShouldClose(window))`) was hit. GDB reported `reason="breakpoint-hit"` in `main`.
+- `-exec-continue` reported `*running`.
+- SIGINT to the GDB process, which is what macOS `DebuggerGDB::DoBreak` sends, stopped every thread: `reason="signal-received"`, `signal-name="SIGINT"`, `stopped-threads="all"`.
+- `-gdb-exit` returned exit 0. No `glfw_test_2` or GDB process was left.
+- The IDE Stop button was not clicked. That button calls `DoBreak`. The .eh_frame warnings seen while libraries loaded did not abort the session.
 
 ---
 
