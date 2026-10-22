@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.1 — existing GLFW wizard on Apple Silicon
 
-**Status: M2 source is in the tree. On macOS, `GetFilesDir` selects `glfw/mac`, and that sample is the OpenGL 4.1 core triangle. GLFW is not installed. The wizard sequence in the M2 check has not been run.**
+**Status: M3 measured.** The wizard project `glfw_test_2` links and runs against Homebrew GLFW 3.5.1 at `/opt/homebrew/opt/glfw`. The dylib id is absolute, so the wizard adds no rpath. `-framework OpenGL` plus `-lglfw` is a complete link. The context is OpenGL 4.1 core and forward-compatible. The triangle colour is in the framebuffer.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing GLFW project wizard usable in this native Apple Silicon distribution, with GLFW discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -456,6 +456,16 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 - The created context is OpenGL 4.1 core. The triangle is visible. Escape or the window close control ends the loop. `glfwTerminate` runs and the process exits.
 
 **Stop.** If the dylib id is absolute, add no rpath. If the sample fails, classify the failure before editing it.
+
+**Status.** Done. No source change. Measured on the wizard project `~/Documents/Mathis/Test Videogame/glfw_test_2` against `/opt/homebrew/opt/glfw` (Cellar `glfw/3.5.1`).
+
+- `otool -D` on `libglfw.dylib` is `/opt/homebrew/opt/glfw/lib/libglfw.3.dylib`. No `LC_RPATH` on that dylib. No rpath was added.
+- `bin/Debug/glfw_test_2` loads `OpenGL.framework` and that absolute GLFW id. It has no `LC_RPATH`. It was started with `DYLD_LIBRARY_PATH` unset.
+- The link line was `-framework OpenGL -L/opt/homebrew/opt/glfw/lib -lglfw`. It succeeded. Cocoa, IOKit, QuartzCore, and CoreFoundation are dependencies of `libglfw` and were not needed on the executable.
+- A context created with the four sample hints reports major 4, minor 1, profile `GLFW_OPENGL_CORE_PROFILE`, and forward-compat true. `glGetString(GL_VERSION)` is `4.1 Metal - 90.5`. The forward-compat hint stayed.
+- The same draw as the sample writes the triangle colour `(229, 64, 51)` at the centre and the clear colour `(31, 36, 46)` at the corner. The framebuffer for a 640×480 window was 1280×960.
+- `glfwSetWindowShouldClose` makes `glfwWindowShouldClose` true, and `glfwTerminate` returns. A posted Escape did not reach the unbundled window from this session, so that key was not observed on the wizard binary itself. The callback in the sample is the ordinary GLFW Escape path.
+- Apple clang warns that the OpenGL entry points are deprecated. The link still succeeds. The sample was not changed to hide that.
 
 ### M4 — Debugger smoke
 
