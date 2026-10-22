@@ -299,6 +299,8 @@ function OnLeave_CompilerPage(fwd)
 // return the files this project contains
 function GetFilesDir()
 {
+    if (PLATFORM == PLATFORM_MAC)
+        return _T("glfw/mac");
     return _T("glfw/files");
 }
 

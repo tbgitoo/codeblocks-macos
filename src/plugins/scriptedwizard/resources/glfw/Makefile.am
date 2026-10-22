@@ -7,3 +7,7 @@ dist_pkgdata_DATA = logo.png \
 glfwfilesdir		= $(pkgdatadir)/files
 
 dist_glfwfiles_DATA	= files/main.cpp
+
+glfwmacdir		= $(pkgdatadir)/mac
+
+dist_glfwmac_DATA	= mac/main.cpp

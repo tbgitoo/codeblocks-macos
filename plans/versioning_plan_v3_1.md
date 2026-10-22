@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.1 — existing GLFW wizard on Apple Silicon
 
-**Status: M1 done. The macOS Homebrew client is in `glfw/wizard.script`. The macOS sample is still the historical fixed-function program; replacing that sample is the remaining M2 work. GLFW is not installed.**
+**Status: M2 source is in the tree. On macOS, `GetFilesDir` selects `glfw/mac`, and that sample is the OpenGL 4.1 core triangle. GLFW is not installed. The wizard sequence in the M2 check has not been run.**
 
 **Question this version answers:** what is the smallest coherent change that makes the existing GLFW project wizard usable in this native Apple Silicon distribution, with GLFW discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -376,7 +376,7 @@ The sample defines `GLFW_INCLUDE_GLCOREARB` before including `<GLFW/glfw3.h>`. O
 
 | File | Role | v3.1 |
 |------|------|------|
-| `src/plugins/scriptedwizard/resources/glfw/wizard.script` | GLFW client | **Changes.** macOS query, suitability check, dependency page, install labels, skip the location page, write absolute include/lib and the macOS link line. `GetFilesDir` returns `glfw/mac` on macOS. Windows and other Unix stay on the current page, `glfw/files`, and `SetupProject` body. The Homebrew client is already in this file. The `GetFilesDir` branch is not. |
+| `src/plugins/scriptedwizard/resources/glfw/wizard.script` | GLFW client | **Changes.** macOS query, suitability check, dependency page, install labels, skip the location page, write absolute include/lib and the macOS link line. `GetFilesDir` returns `glfw/mac` on macOS. Windows and other Unix stay on the current page, `glfw/files`, and `SetupProject` body. The Homebrew client and the `GetFilesDir` branch are in this file. |
 | `src/plugins/scriptedwizard/resources/glfw/mac/main.cpp` | macOS sample | **New.** OpenGL 4.1 core triangle described in section 6. |
 | `src/plugins/scriptedwizard/resources/glfw/files/main.cpp` | Non-mac sample | **Unchanged.** Historical fixed-function program. Windows and other Unix keep it. |
 | `src/plugins/scriptedwizard/resources/glfw/Makefile.am` | Install list | **Changes.** Install `mac/main.cpp` beside `files/main.cpp`, the same way the SFML wizard installs more than one sample tree. |
@@ -422,7 +422,7 @@ v3.0 already built the helper. v3.1 should not grow a parallel M1–M9.
 
 **Non-goals.** No helper API, no SFML edit, no change to `files/main.cpp`, no GLAD/GLEW/GLM, no rpath, no global-variable write, no `brew update` / uninstall / bootstrap.
 
-**Status.** The Homebrew client is in `wizard.script`. The macOS sample and the `GetFilesDir` branch are not.
+**Status.** Source is in the tree, including `GetFilesDir` and `glfw/mac/main.cpp`. The wizard sequence below has not been run. GLFW is not installed.
 
 **Check.** This machine starts M2 with working Homebrew and GLFW absent. That absence is the first run. Do not install GLFW before the wizard asks.
 
