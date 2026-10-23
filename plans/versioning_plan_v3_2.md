@@ -6,6 +6,8 @@
 
 **Product invariant, macOS only:** creating the project must not require the beginner to locate an `SDL2.framework`, to configure `$(#sdl2)` or `$(#sdl3)`, or to use the Global Variable Editor. A validated Homebrew SDL3 prefix supplies the include directory, the library directory, and the link name. Windows keeps a location page, now for SDL3. Other Unix keeps a config-tool line, now for SDL3. The separate SDL 1 wizard stays.
 
+**Windows is not this version.** Automated Windows setup for SDL3 is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.1 (GLFW). The plan is `plans/versioning_plan_v3_3.md`. v3.2 does not implement it. **SDL project** stays registered on Windows.
+
 This wizard is the third client of the v3.0 helper. v3.2 does not add a second SDL wizard beside the SDL2 one. The registered SDL2 entry becomes the SDL3 entry. v3.2 does not change SFML, GLFW, the helper, or the global-variable system.
 
 Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**.
