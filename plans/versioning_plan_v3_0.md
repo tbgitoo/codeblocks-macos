@@ -8,6 +8,8 @@ Homebrew discovery is not an SFML-only detail. It is a small shared facility for
 
 v3.0 does not add SFML support. The wizard is already registered. v3.0 does not add a second wizard, a game-project type, or a project-system change.
 
+**Windows is v3.3 (planning only, section 12).** No Windows code in v3.0, v3.1, or v3.2. v3.3 is one implementation of the Windows side of all three together: SFML (v3.0), GLFW (v3.1), and SDL3 (v3.2). It is not a separate Windows follow-up for each of those versions. The automated Mac path is Homebrew. The Windows counterpart is not winget, MSYS2, or vcpkg. For SFML it is SFML’s own MinGW archive built for the same compiler Code::Blocks uses to build the project: WinLibs GCC 14.2.0 UCRT, 64-bit SEH, which is the MinGW shipped in the official 25.03 installer.
+
 Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**. v2.x console, standalone-file, and signing behaviour stays as shipped. An SFML project is a normal project. Debugging it uses the same Debug, Step Into, Step Over, Continue, and Stop commands as any other project. The macOS defects that showed up on a real SFML 3 program are recorded in section 11. They are not an SFML debugger mode.
 
 ---
@@ -66,7 +68,7 @@ Debug target: `ttConsoleOnly`, output `bin/Debug/<name>`, debug symbols. Release
 
 ### What must stay unchanged
 
-- Windows pages, `$(#sfml)` / `$(#sfml.include)` / `$(#sfml.lib)`, static vs dynamic, `-d` / `-s` names, and Win32 system libs.
+- Windows link lines and the `$(#sfml)` / `$(#sfml.include)` / `$(#sfml.lib)` mechanism, static vs dynamic, and the Win32 system libs. Section 12 may fill that prefix automatically. It does not add a second wizard. Confirm `-d` against the unpacked archive before keeping the debug-lib suffix.
 - The commented Unix `pkg-config` branch. Do not enable it globally. Upstream left it off, and a single `sfml.pc` is not how current SFML ships modules.
 - `config.script` registration and the other graphics wizards (SDL2, GLUT, GLFW, …).
 - `src/templates/common/sfml*`.
@@ -428,7 +430,7 @@ The IDE built a Debug target with `g++ -std=c++17 -Wall -g -I/opt/homebrew/opt/s
 - **E.** The executable exists but `--version` fails, or `install` exits non-zero. The failure is visible. The IDE does not say SFML was installed and does not write a project.
 - **F.** Cancel before installation starts performs no package operation. Cancel during installation requests termination of the Homebrew process Code::Blocks launched, does not report success, does not create the project, and causes fresh discovery before any subsequent attempt. Code::Blocks does not claim that cancellation rolls back changes already made by Homebrew.
 
-Windows and non-mac Unix wizard behaviour stay as they are. SFML stays out of the DMG. v2.x console and signing behaviour stay as they are. `README.macos.md` does not gain an SFML section. Debugging acceptance is section 11.
+The macOS work does not change Windows behaviour. The Windows counterpart of v3.0, v3.1, and v3.2 together is v3.3 (section 12) and is not implemented. Non-mac Unix stays as it is. SFML stays out of the DMG. v2.x console and signing behaviour stay as they are. `README.macos.md` does not gain an SFML section. Debugging acceptance is section 11.
 
 ---
 
@@ -437,6 +439,8 @@ Windows and non-mac Unix wizard behaviour stay as they are. SFML stays out of th
 Bundling SFML in the DMG stays rejected. It grows the image, adds license notices for SFML’s dependencies, and makes projects point inside `CodeBlocks.app`. lib_finder and `` `pkg-config` `` backticks stay rejected: they are not on the New Project path, and a Finder-launched app does not have Homebrew on `PATH`. The shared helper is the discovery path, and it installs a formula only after an explicit button.
 
 An SFML section in `README.macos.md` stays rejected. The wizard is already in File → New → Project. Debugging is the ordinary debugger. Turning off automatic shared-library loading stays rejected: it was tried against a bad `.eh_frame` and removed. The frame is skipped; the libraries still load.
+
+Winget, Chocolatey, Scoop, MSYS2 `pacman`, and vcpkg’s default MSVC triplet stay rejected as the Windows SFML source. So does the Visual Studio build of SFML. Reasons are in section 12.
 
 ---
 
@@ -477,3 +481,71 @@ The GDB changes are in the companion fork, not in this repository. The IDE chang
 4. **Stop from a running frame is in the installed GDB.** **CONFIRMED FROM LOCAL MACHINE** (2026-10-21, the GDB inside `CodeBlocks.app`, direct session). The sample was in its event loop: a breakpoint on the Up line at `main.cpp:42` had not fired. SIGINT to that GDB reported `Thread 3 received signal SIGINT, Interrupt`. `quit` then exited 0 and the sample was gone. The IDE Stop button itself was not clicked in that final verification. The IDE Stop button uses that GDB interrupt path (`DoBreak` on macOS). The earlier measurement of about 0.02s was a different session; this run only confirms that the stop is reported and the process exits.
 
 5. **The active-session Quit fix is implemented and was loaded by the running IDE.** The unlink fix in `OnReleaseReal` and `~PipedProcess` is what the running IDE loaded. Active-session Quit was not repeated in the final pass.
+
+---
+
+## 12. Windows annotations — v3.3 (planning only)
+
+The implementation plan is `plans/versioning_plan_v3_3.md`. This section is the decision that led to it.
+
+No code, no installer, no download. **v3.3** is the Windows implementation, and it covers v3.0, v3.1, and v3.2 jointly. One version, three clients: the SFML wizard, the GLFW wizard, and the SDL3 wizard. There is no Windows v3.0, no Windows v3.1, and no Windows v3.2. Those three stay the macOS plans. v3.3 starts from them as they are and does not reopen their macOS milestones.
+
+| macOS plan | Wizard | What v3.3 adds on Windows |
+|------------|--------|---------------------------|
+| v3.0 | SFML | This section. Download the matching MinGW archive, then the existing include and lib lines. |
+| v3.1 | GLFW | The same compiler gate, consent, and cancel rules. The location page and `$(#glfw)` stay the manual path. v3.1 itself does not automate Windows. |
+| v3.2 | SDL3 | The same. The location page and `$(#sdl3)` stay the manual path. **SDL project** (SDL 1) stays registered on Windows, as v3.2 already decided. v3.2 itself does not automate Windows. |
+
+GLFW and SDL3 use the same rule as SFML: an official build for the Code::Blocks MinGW, not winget, MSYS2, vcpkg, or an MSVC archive. Their archive names are chosen when v3.3 is implemented. They are not locked here. The SFML archive below is locked.
+
+The official 25.03 Windows installer puts **WinLibs GCC 14.2.0, MinGW-w64, UCRT, 64-bit SEH** in `<CodeBlocks>\MinGW`. SFML’s own download page says a MinGW package matches only that compiler, not “any GCC 14”. The archive for that case is the 64-bit GCC 14.2.0 MinGW zip (`SFML-3.0.2-windows-gcc-14.2.0-mingw-64-bit.zip`, also published as `SFML-3.0.2-Windows.MinGW.x64.zip`). A later 3.x archive with the same compiler in the name is the same kind of package. Read `SFML_VERSION_MAJOR` after unpack, as on macOS. The Visual Studio zip is the wrong file.
+
+### What plays the role of Homebrew
+
+Nothing that installs “SFML” as an application. The wizard downloads that one zip, unpacks it under a user-writable directory, and points the existing Windows project settings at `include/` and `lib/`. It does not run `winget`, `choco`, `scoop`, `pacman`, or `vcpkg`.
+
+| Candidate | Why it is not the source |
+|-----------|--------------------------|
+| Winget, Chocolatey, Scoop | They install programs. They do not give a GCC-14.2.0 UCRT prefix the way `brew --prefix sfml` does. |
+| MSYS2 `mingw-w64-ucrt-x86_64-sfml` | Built with MSYS2’s GCC, not with `<CodeBlocks>\MinGW`. A different libstdc++ does not link. |
+| vcpkg default triplet | MSVC. The MinGW triplet is a source build and follows whichever compiler is on `PATH`. |
+| `SFML-*-windows-vc17-*.zip` | Visual C++. The Code::Blocks GCC cannot link it. |
+
+Identify the compiler from Code::Blocks’ selected GCC (its master path), not from the first `gcc` on `PATH`. On this machine that master path is `D:\Program Files\CodeBlocks\MinGW`. An MSYS GCC earlier on `PATH` must not choose the archive. `gcc -dumpversion` and `gcc -dumpmachine` from that master path must be 14.2.0 and `x86_64-w64-mingw32` before the 64-bit SEH zip is used. A 32-bit compiler is the other SFML zip (WinLibs UCRT 14.2.0, DW2), not this one. Any other compiler: do not download. Say the automatic package does not match, and leave the existing location page so the user can point at a tree they built themselves.
+
+### What the wizard writes
+
+The Windows branch of `SetupProject` already adds `$(#sfml.include)`, `$(#sfml.lib)`, `mingw32`, `user32`, `gdi32`, `winmm`, `dxguid`, and `-DSFML_STATIC` when the user chose static. Dynamic links `sfml-graphics`, `sfml-window`, `sfml-system`. Keep those lines.
+
+Automation fills the prefix those lines already use. Set `SFMLPathDefaultInc` and `SFMLPathDefaultLib` from the unpacked tree (`include`, `lib`) before `SetupProject`. Creating the `sfml` global variable is optional. An absolute prefix in the project is enough, as on macOS. Do not ask the beginner for include and library directories when that tree validates.
+
+Header check, same idea as macOS: `include/SFML/Graphics.hpp`, `include/SFML/Config.hpp`, and the three libraries the sample links. Major 3 selects `sfml/sfml3` and `-std=c++17`. Major 2 selects `sfml/sfml2`. Major 1, or an unreadable version, stops. Do not show the 1.6 / 2.0 list once the archive has been identified. Open the existing Windows location page only when detection does not apply (wrong compiler, or the user chooses to locate SFML).
+
+Confirm the archive’s actual library names before keeping `-d` and `-s`. The current script appends `-d` only when a debug library was found, and uses `-s` for static. If this zip has no `-d` files, leave `SFMLDebugLib` unset. Do not invent the suffix.
+
+Dynamic link is not done at link time. The zip’s `bin/` holds `sfml-*.dll` and the DLLs those depend on. A dynamic target must copy the needed DLLs next to the output executable. Static link does not. There is no rpath step: Windows does not use the macOS install names.
+
+Do not unpack SFML into `D:\Program Files\CodeBlocks`. That tree is the official install. Do not bundle SFML in a Code::Blocks installer.
+
+### Consent, cancel, mismatch
+
+Same boundaries as Homebrew, with a download instead of `brew install`.
+
+- Opening the wizard does not download.
+- A prefix that already validates (unpacked tree, or a `$(#sfml)` that passes the header and library check) adds no dependency page.
+- Otherwise one page: compiler identity, and whether a matching SFML tree was found. No include-directory form on that page.
+- **Download SFML** is the only action that fetches the zip. The label names SFML and the compiler the archive was built for. Cancel before the transfer starts does not start it and does not create a project.
+- Cancel after the transfer starts stops that download only. Do not report success, do not call `SetupProject`, and do not claim a partial unpack was removed. The next attempt runs detection again.
+- A non-zero download or a failed unzip is not success.
+- Wrong compiler, or the user declines the download: the existing location page remains the way to set a prefix by hand.
+
+### Acceptance (not run)
+
+| | State | Pass |
+|--|--------|------|
+| WA | Selected GCC is 14.2.0, `x86_64-w64-mingw32`, and a matching tree already validates | No download page. Project include and lib dirs are that tree. Build uses that GCC, not an MSYS `g++` on `PATH`. |
+| WB | Same compiler, SFML absent | Page says so. Nothing is downloaded until **Download SFML**. After a good unpack, the same header check runs and the wizard continues. No IDE restart. |
+| WC | Selected GCC is not that compiler | No zip is fetched. The page says the automatic package does not match. The location page still works. |
+| WD | Dynamic project, run `bin/Debug/<name>` | Process starts. The SFML DLLs it needs are beside the executable, not only in the SDK `bin/` directory. |
+| WE | Cancel before the transfer | No file is fetched. No project is written. |
+| WF | The Visual Studio zip, or an MSYS2 prefix, is what a search would have found | It is not selected. WA–WB still use the GCC 14.2.0 MinGW archive only. |

@@ -6,6 +6,8 @@
 
 **Product invariant, macOS only:** creating a GLFW project must not require the beginner to configure `$(#glfw)` or to use the Global Variable Editor. A validated Homebrew GLFW prefix supplies the include directory, the library directory, and the link name. Windows and other Unix keep the location page and `$(#glfw)`.
 
+**Windows is not this version.** Automated Windows setup for GLFW is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.2 (SDL3). The plan is `plans/versioning_plan_v3_3.md`. v3.1 does not implement it.
+
 GLFW is the second client of the v3.0 helper. v3.1 does not add a GLFW wizard. `config.script` already registers it. v3.1 does not change SFML, the helper, or the global-variable system.
 
 Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**.
@@ -105,7 +107,7 @@ Leave these alone. They are GLFW 2, and they are not the New Project entry named
 
 ### What must stay unchanged
 
-- The Windows and other-Unix location page, `$(#glfw)` / `$(#glfw.include)` / `$(#glfw.lib)`, the existing `SetupProject` link list for those platforms, and `glfw/files/main.cpp`.
+- The Windows and other-Unix location page, `$(#glfw)` / `$(#glfw.include)` / `$(#glfw.lib)`, the existing `SetupProject` link list for those platforms, and `glfw/files/main.cpp`. Windows automation of this wizard is v3.3, not a change inside v3.1.
 - `common_functions.script`.
 - `config.script` registration and the other graphics wizards.
 - The GLFW 2 templates and `lib_finder/glfw.xml`.
