@@ -494,7 +494,7 @@ No code, no installer, no download. **v3.3** is the Windows implementation, and 
 |------------|--------|---------------------------|
 | v3.0 | SFML | This section. Download the matching MinGW archive, then the existing include and lib lines. |
 | v3.1 | GLFW | The same compiler gate, consent, and cancel rules. The location page and `$(#glfw)` stay the manual path. v3.1 itself does not automate Windows. |
-| v3.2 | SDL3 | The same. The location page and `$(#sdl3)` stay the manual path. **SDL project** (SDL 1) stays registered on Windows, as v3.2 already decided. v3.2 itself does not automate Windows. |
+| v3.2 | SDL3 | The same. The location page and `$(#sdl3)` stay the manual path. **SDL project** (SDL 1) is not registered or installed on Windows. It stays on Unix. v3.2 itself does not automate Windows. |
 
 GLFW and SDL3 use the same rule as SFML: an official build for the Code::Blocks MinGW, not winget, MSYS2, vcpkg, or an MSVC archive. Their archive names are chosen when v3.3 is implemented. They are not locked here. The SFML archive below is locked.
 
