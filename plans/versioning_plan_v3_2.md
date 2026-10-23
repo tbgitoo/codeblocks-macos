@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.2 — existing SDL2 wizard becomes SDL3 on Apple Silicon
 
-**Status: M1 done.** This document is the milestone. No source edit. SDL3 was not installed.
+**Status: M2 source is in the tree.** The wizard sequence has not been run. SDL3 is not installed. Do not install it before the wizard asks.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SDL2 project wizard create an SDL3 project in this native Apple Silicon distribution, with SDL3 discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -296,9 +296,11 @@ v3.0 built the helper. v3.1 made GLFW a client and replaced the macOS sample’s
 
 **Objective.** Replace the SDL2 wizard with the SDL3 client in section 5 and the sample in section 6. On macOS, a suitable prefix skips any location page and the Global Variable Editor. A missing formula uses the existing install dialog under an SDL3 label.
 
-**Files.** The `sdl3` wizard files, `resources/Makefile.am`, and `config.script`, as in section 7.
+**Files.** The `sdl3` wizard files, `resources/Makefile.am`, `config.script`, and `configure.ac` (the automake list that named `sdl2/Makefile`).
 
-**Non-goals.** No helper API, no SFML or GLFW edit, no SDL 1 edit, no rpath, no global-variable write, no `brew update`, no uninstall, no bootstrap, no install of formula `sdl2` or `sdl2-compat`.
+**Non-goals.** No helper API, no SFML or GLFW edit, no SDL 1 edit, no rpath, no global-variable write, no `brew update`, no uninstall, no bootstrap, no install of formula `sdl3`, `sdl2`, or `sdl2-compat`.
+
+**Status.** Source is in the tree, including `sdl3/wizard.script` and `sdl3/files/main.cpp`. The wizard sequence below has not been run. SDL3 is not installed.
 
 **Check.** This machine starts M2 with working Homebrew, SDL3 absent, and SDL 2.32.10 present. That absence is the first run. Do not install SDL3 before the wizard asks. The installed SDL 2 tree must not count as success.
 

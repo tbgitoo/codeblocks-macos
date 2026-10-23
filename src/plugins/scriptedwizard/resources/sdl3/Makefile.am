@@ -1,4 +1,4 @@
-pkgdatadir = $(datadir)/@PACKAGE@/templates/wizard/sdl2
+pkgdatadir = $(datadir)/@PACKAGE@/templates/wizard/sdl3
 
 dist_pkgdata_DATA = logo.png \
 		wizard.png \
