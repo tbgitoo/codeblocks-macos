@@ -1,3 +1,11 @@
+# The SDL 1 wizard stays in the Windows and other-Unix builds.
+# The macOS port does not install or register it.
+if DARWIN
+sdl_wizard_dir =
+else
+sdl_wizard_dir = sdl
+endif
+
 SUBDIRS = arduino \
 	arm \
 	avr \
@@ -29,7 +37,7 @@ SUBDIRS = arduino \
 	qt4 \
 	qt4dll \
 	qt5 \
-	sdl \
+	$(sdl_wizard_dir) \
 	sdl3 \
 	sfml \
 	smartwin \

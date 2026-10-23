@@ -19,10 +19,6 @@ int main(int, char **)
         return 1;
     }
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderPresent(renderer);
-
     const int rgb[] = { 203, 203, 203, // Gray
                         254, 254,  31, // Yellow
                           0, 255, 255, // Cyan
@@ -33,18 +29,37 @@ int main(int, char **)
                           0,   0,   0  // Black
                       };
 
-    SDL_FRect colorBar;
-    colorBar.x = 0.0f;
-    colorBar.y = 0.0f;
-    colorBar.w = 90.0f;
-    colorBar.h = 480.0f;
-
-    for (int i = 0; i != sizeof rgb / sizeof *rgb; i += 3, colorBar.x += 90.0f)
+    bool running = true;
+    while (running)
     {
-        SDL_SetRenderDrawColor(renderer, rgb[i], rgb[i + 1], rgb[i + 2], 255);
-        SDL_RenderFillRect(renderer, &colorBar);
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+                running = false;
+            else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
+                running = false;
+        }
+
+        int width = 640;
+        int height = 480;
+        SDL_GetWindowSize(window, &width, &height);
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        SDL_FRect colorBar;
+        colorBar.x = 0.0f;
+        colorBar.y = 0.0f;
+        colorBar.w = static_cast<float>(width) / 8.0f;
+        colorBar.h = static_cast<float>(height);
+
+        for (int i = 0; i != sizeof rgb / sizeof *rgb; i += 3, colorBar.x += colorBar.w)
+        {
+            SDL_SetRenderDrawColor(renderer, rgb[i], rgb[i + 1], rgb[i + 2], 255);
+            SDL_RenderFillRect(renderer, &colorBar);
+        }
         SDL_RenderPresent(renderer);
-        SDL_Delay(500);
     }
 
     SDL_DestroyRenderer(renderer);

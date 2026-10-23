@@ -1,6 +1,6 @@
 # Code::Blocks macOS v3.2 — existing SDL2 wizard becomes SDL3 on Apple Silicon
 
-**Status: M2 source is in the tree.** The wizard sequence has not been run. SDL3 is not installed. Do not install it before the wizard asks.
+**Status: M5 done.** On macOS the SDL 1 wizard is not registered and is not in the recursive build. Windows and other Unix still register **SDL project**.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SDL2 project wizard create an SDL3 project in this native Apple Silicon distribution, with SDL3 discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
@@ -60,7 +60,7 @@ There is no version page and no static/dynamic page. On macOS the location page 
 
 ### SDL 1 wizard
 
-`resources/sdl/` is a different wizard: `#include <SDL/SDL.h>`, `SDL_SetVideoMode`, `-framework SDL`, and `` `sdl-config` ``. v3.2 does not edit it.
+`resources/sdl/` is a different wizard: `#include <SDL/SDL.h>`, `SDL_SetVideoMode`, `-framework SDL`, and `` `sdl-config` ``. Its script and sample are not rewritten. M5 keeps it out of the macOS menu and the macOS build. Windows and other Unix still build and register it.
 
 ---
 
@@ -241,17 +241,17 @@ A normal Code::Blocks project. Absolute Homebrew prefix paths in the macOS `.cbp
 
 ### Sample
 
-The visible program stays the small one: a 640×480 window and eight colour bars, each held for half a second, then the program exits. That is the current SDL 2D renderer. It is not kept because the SDL2 source is shorter. The signatures change as in section 4.
+The visible program is a 640×480 window and eight colour bars. The bars fill the window, one eighth of the width each, and the window stays open until it is closed or Escape is pressed. The first build drew the bars and exited after four seconds, so there was nothing to look at.
 
 **PROPOSED DESIGN**, the body of `main`:
 
 - Include `<SDL3/SDL.h>` and `<SDL3/SDL_main.h>`.
 - `SDL_Init(SDL_INIT_VIDEO)`. Failure is `!SDL_Init(...)`, then print `SDL_GetError()` and return 1.
 - `SDL_CreateWindowAndRenderer("SDL3", 640, 480, 0, &window, &renderer)`. Flag 0 leaves the window shown. Failure uses the same error path.
-- Clear, then the eight bars. The rectangle is an `SDL_FRect` with float `x`, `y`, `w`, `h`. `SDL_RenderFillRect` and `SDL_RenderPresent` after each bar. `SDL_Delay(500)` between bars.
-- `SDL_DestroyRenderer`, then `SDL_DestroyWindow`, then `SDL_Quit`.
+- Each frame, clear and draw the eight bars. The rectangle is an `SDL_FRect` with float `x`, `y`, `w`, `h`. Its width is one eighth of the window and its height is the window height, so the last bar is not clipped.
+- `SDL_PollEvent` until `SDL_EVENT_QUIT`, `SDL_EVENT_WINDOW_CLOSE_REQUESTED`, or Escape (`SDL_EVENT_KEY_DOWN`, `SDLK_ESCAPE`). Then `SDL_DestroyRenderer`, `SDL_DestroyWindow`, and `SDL_Quit`.
 
-No event loop, no callback entry point (`SDL_MAIN_USE_CALLBACKS`), no shader, no texture, no `SDL_GPU`, no Metal, no OpenGL. The colour bars are the current drawing model. A callback main or a GPU sample would be a second program.
+No callback entry point (`SDL_MAIN_USE_CALLBACKS`), no shader, no texture, no `SDL_GPU`, no Metal, no OpenGL. The colour bars are the current drawing model. A callback main or a GPU sample would be a second program.
 
 The class named `SDL` and the `InitError` type may stay if they still make the error path shorter, without `throw()`. They are not required. `if (!call)` plus `SDL_GetError()` matches the formula test and the `bool` returns.
 
@@ -265,9 +265,9 @@ The class named `SDL` and the `InitError` type may stay if they still make the e
 | `src/plugins/scriptedwizard/resources/sdl3/wizard.script` | SDL3 client | **New**, from the old script. macOS query, suitability check, dependency page, install labels, absolute include/lib, `-lSDL3`. Windows location page and other-Unix pkg-config line as in section 5. |
 | `src/plugins/scriptedwizard/resources/sdl3/files/main.cpp` | Sample | **New.** Section 6. No `SDL_WINDOW_SHOWN`, no `SDL_INIT_TIMER`, no `SDL_Rect` fill, no `!= 0` success test, no `throw()`. |
 | `src/plugins/scriptedwizard/resources/sdl3/Makefile.am` | Install rule | **New.** `templates/wizard/sdl3`, including `files/main.cpp`. |
-| `src/plugins/scriptedwizard/resources/Makefile.am` | Subdirs | **Changes.** `sdl2` becomes `sdl3`. |
-| `src/plugins/scriptedwizard/resources/config.script` | Menu entry | **Changes.** The `sdl2` / “SDL2 project” registration becomes `sdl3` / “SDL3 project”. The `sdl` / “SDL project” line stays. |
-| `src/plugins/scriptedwizard/resources/sdl/` | SDL 1 wizard | Unchanged. |
+| `src/plugins/scriptedwizard/resources/Makefile.am` | Subdirs | **Changes.** `sdl2` becomes `sdl3`. On Darwin, `sdl` is not a subdirectory. |
+| `src/plugins/scriptedwizard/resources/config.script` | Menu entry | **Changes.** The `sdl2` / “SDL2 project” registration becomes `sdl3` / “SDL3 project”. **SDL project** is registered only when `PLATFORM` is not `PLATFORM_MAC`. |
+| `src/plugins/scriptedwizard/resources/sdl/` | SDL 1 wizard | Sources unchanged. Not installed or registered on macOS. |
 | `macbrew.cpp`, `macbrew.h`, `wiz.cpp`, `scriptedwizard/Makefile.am` | Helper | Unchanged. |
 | `sfml/wizard.script`, `glfw/wizard.script` | Other clients | Unchanged. |
 | `common_functions.script`, `wizpage.cpp`, uservarmanager | Shared wizard machinery | Unchanged. The macOS path does not use the location page. |
@@ -300,7 +300,7 @@ v3.0 built the helper. v3.1 made GLFW a client and replaced the macOS sample’s
 
 **Non-goals.** No helper API, no SFML or GLFW edit, no SDL 1 edit, no rpath, no global-variable write, no `brew update`, no uninstall, no bootstrap, no install of formula `sdl3`, `sdl2`, or `sdl2-compat`.
 
-**Status.** Source is in the tree, including `sdl3/wizard.script` and `sdl3/files/main.cpp`. The wizard sequence below has not been run. SDL3 is not installed.
+**Status.** Source is in the tree. The wizard created `~/Documents/Mathis/Test Videogame/sdl3_test` and Homebrew poured `sdl3/3.4.18`. The checks below are what that run was for. M3 measured the bottle and the binary.
 
 **Check.** This machine starts M2 with working Homebrew, SDL3 absent, and SDL 2.32.10 present. That absence is the first run. Do not install SDL3 before the wizard asks. The installed SDL 2 tree must not count as success.
 
@@ -330,6 +330,20 @@ v3.0 built the helper. v3.1 made GLFW a client and replaced the macOS sample’s
 - `SDL_Init` succeeds. The window appears. The bars are drawn in order. The process then exits. Record the renderer name SDL chose. Do not force Metal or OpenGL in the sample to match that name.
 - Apple clang warnings are recorded. Do not add a silence macro unless a warning is an error.
 
+**Status.** Done. No source change. Measured on the wizard project `~/Documents/Mathis/Test Videogame/sdl3_test` against `/opt/homebrew/opt/sdl3` (Cellar `sdl3/3.4.18`, `SDL_MICRO_VERSION` 18). The installed SDL 2.32.10 bottle was not upgraded. Apple clang 21.0.0.
+
+- Suitability files are present: `include/SDL3/SDL.h` and `lib/libSDL3.dylib` (a symlink to `libSDL3.0.dylib`).
+- `otool -D` on `libSDL3.dylib` is `/opt/homebrew/opt/sdl3/lib/libSDL3.0.dylib`. No `LC_RPATH` on that dylib. No rpath was added.
+- `otool -L` of the dylib already loads Cocoa, Carbon, IOKit, CoreAudio, AudioToolbox, AVFoundation, Metal, QuartzCore, CoreGraphics, CoreVideo, CoreMedia, GameController, ForceFeedback, AppKit, Foundation, CoreFoundation, CoreServices, and libSystem. UniformTypeIdentifiers and CoreHaptics are weak. None of those were added to the executable.
+- The `.cbp` has include `/opt/homebrew/opt/sdl3/include`, library directory `/opt/homebrew/opt/sdl3/lib`, and library `SDL3`. It has no framework, no `SDL2main`, no `$(#sdl3)`, and no pkg-config.
+- `bin/Debug/sdl3_test` linked with `-L/opt/homebrew/opt/sdl3/lib -lSDL3` only. The link reported no undefined symbol. No framework was added. The binary loads that absolute SDL id, plus `libc++` and `libSystem`. It has no `LC_RPATH`.
+- `nm` shows `_main` and no `SDL_main` symbol. Including `<SDL3/SDL_main.h>` did not change the macOS entry point.
+- The binary was started with `DYLD_LIBRARY_PATH` unset. It wrote nothing and exited 0. That run includes `SDL_Init`, the eight delays, `SDL_DestroyRenderer`, `SDL_DestroyWindow`, and `SDL_Quit`.
+- The same create call, with flag 0 and no driver name, reports renderer `metal`. The resulting window flags include `SDL_WINDOW_METAL` and do not include `SDL_WINDOW_HIDDEN`. The sample was not changed to request Metal.
+- While the wizard binary was running, the window server listed one layer-0 window owned by `sdl3_test`. This process was not given the window title or its geometry.
+- The same draw reads the bar colours in order: gray `(203,203,203)`, yellow `(254,254,31)`, cyan `(0,255,255)`, green `(0,254,30)`, magenta `(255,16,253)`, red `(253,3,2)`, blue `(18,14,252)`. The window is 640×480 pixels. Eight bars of width 90 start at x=0, so the black bar begins at x=630 and is clipped. A pixel at x=635 is `(0,0,0)`. A read at x=640 fails with “Can't read outside the current viewport”. The sample geometry was left as written.
+- Apple clang with the project’s `-Weverything` reports three `-Wimplicit-int-conversion` warnings in `main.cpp`, where the `const int` colour components are passed to `SDL_SetRenderDrawColor` as `Uint8`. The other warnings are in the SDL headers (`-Wpadded`, `-Wc++98-compat`, `-Wc++98-compat-pedantic`, one each of `-Wreserved-macro-identifier`, `-Wreserved-identifier`, `-Wpoison-system-directories`, `-Wdocumentation-unknown-command`). None is an error. No silence macro was added.
+
 ### M4 — Debugger smoke
 
 **Objective.** One ordinary Debug session on the M3 binary with the bundled GDB. Break in `main`, continue, stop.
@@ -338,19 +352,37 @@ v3.0 built the helper. v3.1 made GLFW a client and replaced the macOS sample’s
 
 **Non-goals.** No new debugger mode, no change to signing, no solib policy change.
 
+**Status.** Done. No source change. The bundled GDB at `CodeBlocks.app/Contents/Resources/debugger/bin/gdb` drove `sdl3_test/bin/Debug/sdl3_test`.
+
+- A breakpoint at `main.cpp:33` (`while (running)`) was hit. GDB reported `reason="breakpoint-hit"` in `main`, `stopped-threads="all"`.
+- `-exec-continue` reported `*running,thread-id="all"`.
+- SIGINT to the GDB process, which is what macOS `DebuggerGDB::DoBreak` sends, stopped every thread: `reason="signal-received"`, `signal-name="SIGINT"`, `stopped-threads="all"`. The stopped frame was `mach_msg2_trap` in `libsystem_kernel.dylib`.
+- `-gdb-exit` returned exit 0. No `sdl3_test` or GDB process was left.
+- The IDE Stop button was not clicked. That button calls `DoBreak`. The .eh_frame warnings seen while libraries loaded did not abort the session.
+
+### M5 — Retire the SDL 1 wizard on macOS
+
+**Objective.** On macOS, **SDL project** is not shown and the `sdl` wizard is not part of the build. Windows and other Unix keep the registration and the `resources/sdl` subdirectory.
+
+**Files.** `config.script` skips `RegisterWizard` for `sdl` when `PLATFORM == PLATFORM_MAC`. `resources/Makefile.am` leaves `sdl` out of `SUBDIRS` when `DARWIN`. The installed Mac template tree drops `templates/wizard/sdl`.
+
+**Non-goals.** No edit to `sdl/wizard.script` or `sdl/files/main.cpp`. No change to SDL3. No change to what Windows or other Unix register or install.
+
+**Status.** Done. The Mac app and `_cb_install` no longer contain `templates/wizard/sdl`. `config.script` in both trees registers **SDL project** only when the platform is not Mac.
+
 ---
 
 ## 9. Acceptance
 
 v3.2 is done when all of these hold:
 
-- The project wizard entry is **SDL3 project**. There is no **SDL2 project** entry. **SDL project** is still the SDL 1 wizard.
+- The project wizard entry is **SDL3 project**. There is no **SDL2 project** entry. On macOS there is no **SDL project** entry. On Windows and other Unix, **SDL project** is still the SDL 1 wizard.
 - On this Mac, with Homebrew working, the user can create a project whether or not SDL3 was already installed, without the Global Variable Editor and without choosing a framework or a prefix by hand.
 - The generated macOS project includes `prefix/include`, searches `prefix/lib`, and links `-lSDL3`.
 - The generated `main.cpp` is the section 6 program. It compiles against the installed SDL3 headers. It does not use `SDL_WINDOW_SHOWN`, `SDL_INIT_TIMER`, an `SDL_Rect` fill, or an SDL2 success test.
-- The built program opens a window, draws the bars, and exits.
+- The built program opens a window, draws the bars, and leaves the window open until it is closed or Escape is pressed.
 - Windows still has a location page, and that page is for SDL3. Other Unix still uses a config tool, and that tool is `pkg-config` for `sdl3`.
-- The helper, SFML, GLFW, and the SDL 1 wizard are unchanged.
+- The helper, SFML, and GLFW are unchanged. The SDL 1 wizard sources are unchanged. macOS does not register or build that wizard.
 
 Success is not “the SDL2 sample still compiles”, and it is not “the project links the installed SDL 2.32.10 or sdl2-compat”.
 
@@ -360,11 +392,11 @@ Success is not “the SDL2 sample still compiles”, and it is not “the projec
 
 - Leaving the menu title and the link line on SDL2, including pointing macOS at the installed 2.32.10 bottle or at formula `sdl2` / `sdl2-compat`.
 - Keeping an SDL2 wizard and adding an SDL3 wizard beside it.
-- Renaming or deleting the SDL 1 wizard.
+- Deleting the SDL 1 wizard sources, or hiding **SDL project** on Windows or other Unix. macOS retires that entry in M5.
 - Sending the macOS user to the Global Variable Editor, or writing `$(#sdl3)` into the macOS project.
 - `-framework SDL2`, `-framework Cocoa`, or `SDL2main` carried over because the old macOS branch had them.
 - `pkg-config` or `sdl3-config` inside the macOS project. Other Unix may use `pkg-config`. macOS uses the prefix.
-- An SDL_GPU, Metal, OpenGL, or callback-main sample. The colour bars are the current 2D model.
+- An SDL_GPU, Metal, OpenGL, or callback-main sample. The colour bars are the current 2D model. The window stays open on an ordinary `SDL_PollEvent` loop.
 - A version page, a static/shared page, or a second sample directory.
 - A GL loader, an extra Homebrew formula, or a C++ standard flag copied from the SFML wizard.
 - A speculative rpath.
@@ -376,7 +408,7 @@ Success is not “the SDL2 sample still compiles”, and it is not “the projec
 
 ## 11. Open implementation-time measurements
 
-These stay open until M3. They are not a reason to install SDL3 during planning.
+Recorded under M3. They were not settled by installing during planning.
 
 - Install name of `libSDL3.dylib`, and whether it is absolute.
 - `otool -L` of that dylib: which of Cocoa, Metal, and the other system libraries it already loads.
