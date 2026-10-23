@@ -69,12 +69,33 @@ struct WinSdkFetch
 };
 
 // Consent dialog first. Cancel there does not connect. The button label is
-// what the user sees; the URL is not shown.
+// what the user sees; the URL is not shown. Unpacks straight into
+// sdk\<id> and remembers that directory. SFML uses this.
 WinSdkFetch FetchWinSdk(const wxString& url,
                         const wxString& libraryId,
                         const wxString& explanation,
                         const wxString& confirmLabel);
 wxString FormatWinSdkFetch(const WinSdkFetch& result);
+
+// Consent, then download into a disposable staging directory. The hash is
+// checked before unpack. Archive names that are absolute, drive-qualified,
+// contain "..", or are links are rejected and nothing is published.
+// prefix is the unpacked directory that contains every marker (separated by
+// ';'). This does not remember the directory.
+WinSdkFetch StageWinSdk(const wxString& url,
+                        const wxString& sha256,
+                        const wxString& libraryId,
+                        const wxString& markers,
+                        const wxString& explanation,
+                        const wxString& confirmLabel);
+
+// Copy a staged directory to sdk\<id>\<edition> and remember that path.
+// stagingPrefix must sit under this library's staging area. A note is stored
+// beside the tree; the resolved directory is appended to it.
+WinSdkFetch PublishWinSdk(const wxString& libraryId,
+                          const wxString& edition,
+                          const wxString& stagingPrefix,
+                          const wxString& note);
 
 #endif // __WXMSW__
 

@@ -16,6 +16,7 @@
 #include <wx/button.h>
 #include <wx/dir.h>
 #include <wx/dialog.h>
+#include <wx/ffile.h>
 #include <wx/filename.h>
 #include <wx/process.h>
 #include <wx/sizer.h>
@@ -38,6 +39,7 @@
 
 #include <windows.h>
 #include <winhttp.h>
+#include <bcrypt.h>
 
 namespace
 {
@@ -160,13 +162,17 @@ struct FetchJob
     bool success;
     bool cancelled;
     std::string error;
+    // Empty hash skips the check. SFML leaves both unset.
+    wxString expectedSha256;
+    bool checkEntries;
 
     FetchJob()
         : cancel(false),
           finished(false),
           percent(-1),
           success(false),
-          cancelled(false)
+          cancelled(false),
+          checkEntries(false)
     {}
 
     void SetStatus(const std::string& text)
@@ -347,6 +353,10 @@ bool DownloadHttps(FetchJob& job)
                 pct = 100;
             job.percent.store(pct);
             job.SetStatus("Downloading. " + std::to_string(pct) + "%");
+            // The body is complete. Another availability query waits on a
+            // keep-alive connection until the receive timeout.
+            if (got >= contentLength)
+                break;
         }
     }
     fclose(out);
@@ -363,10 +373,358 @@ bool DownloadHttps(FetchJob& job)
     return true;
 }
 
+bool ArchiveEntriesSafe(const wxString& tar, const wxString& zip, std::string& error);
+bool VerifyDownload(FetchJob& job);
+
 void RunFetch(FetchJob* job)
 {
-    DownloadHttps(*job);
+    if (DownloadHttps(*job) && job->error.empty() && !job->cancelled)
+    {
+        if (!job->expectedSha256.empty() || job->checkEntries)
+        {
+            job->SetStatus("Checking the download.");
+            VerifyDownload(*job);
+        }
+    }
     job->finished.store(true);
+}
+
+bool Sha256Hex(const wxString& path, wxString& hex)
+{
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0)
+        return false;
+    DWORD objLen = 0;
+    DWORD cb = 0;
+    if (BCryptGetProperty(alg, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&objLen),
+                          sizeof(objLen), &cb, 0) < 0
+        || objLen == 0 || objLen > 4096)
+    {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return false;
+    }
+    std::vector<UCHAR> obj(objLen);
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCryptCreateHash(alg, &hash, obj.data(), objLen, nullptr, 0, 0) < 0)
+    {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return false;
+    }
+    FILE* file = _wfopen(path.wc_str(), L"rb");
+    if (!file)
+    {
+        BCryptDestroyHash(hash);
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return false;
+    }
+    std::vector<unsigned char> buf(65536);
+    bool ok = true;
+    while (ok)
+    {
+        const size_t n = fread(buf.data(), 1, buf.size(), file);
+        if (n > 0 && BCryptHashData(hash, buf.data(), static_cast<ULONG>(n), 0) < 0)
+            ok = false;
+        if (n < buf.size())
+            break;
+    }
+    if (ferror(file))
+        ok = false;
+    fclose(file);
+    UCHAR digest[32];
+    if (ok && BCryptFinishHash(hash, digest, sizeof(digest), 0) < 0)
+        ok = false;
+    BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(alg, 0);
+    if (!ok)
+        return false;
+    hex.clear();
+    for (size_t i = 0; i < sizeof(digest); ++i)
+        hex += wxString::Format(wxT("%02x"), digest[i]);
+    return true;
+}
+
+// A zip entry that is absolute, drive-qualified, or walks out with ".."
+// is not unpacked. A blank line is ignored by the caller.
+bool EntryNameSafe(const wxString& raw)
+{
+    wxString name = raw;
+    name.Trim(true).Trim(false);
+    if (name.empty())
+        return true;
+    if (name[0] == wxT('/') || name[0] == wxT('\\'))
+        return false;
+    if (name.Find(wxT(':')) != wxNOT_FOUND)
+        return false;
+    name.Replace(wxT("\\"), wxT("/"));
+    wxString remaining = name;
+    while (!remaining.empty())
+    {
+        const int slash = remaining.Find(wxT('/'));
+        const wxString part = slash == wxNOT_FOUND ? remaining : remaining.Mid(0, slash);
+        if (part == wxT(".."))
+            return false;
+        if (slash == wxNOT_FOUND)
+            break;
+        remaining = remaining.Mid(slash + 1);
+    }
+    return true;
+}
+
+// Runs on the download thread. wxExecute is not used here: a synchronous
+// execute from the dialog's timer does not return while that dialog is modal.
+bool ListArchive(const wxString& tar, const wxString& flag, const wxString& zip, wxArrayString& lines)
+{
+    lines.Clear();
+    SECURITY_ATTRIBUTES inherit;
+    memset(&inherit, 0, sizeof(inherit));
+    inherit.nLength = sizeof(inherit);
+    inherit.bInheritHandle = TRUE;
+    HANDLE outRead = nullptr;
+    HANDLE outWrite = nullptr;
+    if (!CreatePipe(&outRead, &outWrite, &inherit, 0))
+        return false;
+    SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    si.hStdOutput = outWrite;
+    si.hStdError = outWrite;
+
+    wxString command = wxT("\"") + tar + wxT("\" ") + flag + wxT(" \"") + zip + wxT("\"");
+    std::wstring mutableCmd(command.wc_str());
+    PROCESS_INFORMATION pi;
+    memset(&pi, 0, sizeof(pi));
+    const BOOL started = CreateProcessW(nullptr, &mutableCmd[0], nullptr, nullptr, TRUE,
+                                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    CloseHandle(outWrite);
+    if (!started)
+    {
+        CloseHandle(outRead);
+        return false;
+    }
+
+    std::string bytes;
+    char buf[8192];
+    DWORD got = 0;
+    while (ReadFile(outRead, buf, sizeof(buf), &got, nullptr) && got > 0)
+        bytes.append(buf, buf + got);
+    CloseHandle(outRead);
+
+    const DWORD wait = WaitForSingleObject(pi.hProcess, 60000);
+    DWORD code = 1;
+    if (wait == WAIT_OBJECT_0)
+        GetExitCodeProcess(pi.hProcess, &code);
+    else
+        TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    if (wait != WAIT_OBJECT_0 || code != 0)
+        return false;
+
+    size_t start = 0;
+    for (size_t i = 0; i <= bytes.size(); ++i)
+    {
+        if (i == bytes.size() || bytes[i] == '\n')
+        {
+            std::string line = bytes.substr(start, i - start);
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (!line.empty())
+                lines.Add(wxString::FromUTF8(line.c_str()));
+            start = i + 1;
+        }
+    }
+    return true;
+}
+
+bool VerifyDownload(FetchJob& job)
+{
+    if (!job.expectedSha256.empty())
+    {
+        wxString got;
+        if (!Sha256Hex(job.zipPath, got) || got.CmpNoCase(job.expectedSha256) != 0)
+        {
+            job.error = "the download did not match";
+            return false;
+        }
+    }
+    if (!job.checkEntries)
+        return true;
+    wxString sys;
+    if (!wxGetEnv(wxT("SystemRoot"), &sys) || sys.empty())
+    {
+        job.error = "the archive could not be read";
+        return false;
+    }
+    const wxString tar = sys + wxT("\\System32\\tar.exe");
+    if (!wxFileExists(tar))
+    {
+        job.error = "the archive could not be read";
+        return false;
+    }
+    std::string why;
+    if (!ArchiveEntriesSafe(tar, job.zipPath, why))
+    {
+        job.error = why;
+        return false;
+    }
+    return true;
+}
+
+// Names from tar -tf, types from tar -tvf. A link, or any type other than
+// a file or directory, is rejected before unpack.
+bool ArchiveEntriesSafe(const wxString& tar, const wxString& zip, std::string& error)
+{
+    wxArrayString names;
+    wxArrayString verbose;
+    if (!ListArchive(tar, wxT("-tf"), zip, names) || !ListArchive(tar, wxT("-tvf"), zip, verbose))
+    {
+        error = "the archive could not be read";
+        return false;
+    }
+    int count = 0;
+    for (size_t i = 0; i < names.GetCount(); ++i)
+    {
+        wxString name = names[i];
+        name.Trim(true).Trim(false);
+        if (name.empty())
+            continue;
+        ++count;
+        if (!EntryNameSafe(name))
+        {
+            error = "the archive was rejected";
+            return false;
+        }
+    }
+    if (count == 0)
+    {
+        error = "the archive was rejected";
+        return false;
+    }
+    for (size_t i = 0; i < verbose.GetCount(); ++i)
+    {
+        wxString line = verbose[i];
+        line.Trim(false);
+        if (line.empty())
+            continue;
+        const wxChar kind = line[0];
+        if (kind != wxT('-') && kind != wxT('d'))
+        {
+            error = "the archive was rejected";
+            return false;
+        }
+    }
+    return true;
+}
+
+wxArrayString SplitMarkers(const wxString& text)
+{
+    wxArrayString out;
+    wxString rest = text;
+    while (!rest.empty())
+    {
+        const int semi = rest.Find(wxT(';'));
+        wxString one = semi == -1 ? rest : rest.Mid(0, semi);
+        one.Trim(true).Trim(false);
+        if (!one.empty())
+            out.Add(one);
+        if (semi == -1)
+            break;
+        rest = rest.Mid(semi + 1);
+    }
+    return out;
+}
+
+bool DirHasMarkers(const wxString& root, const wxArrayString& markers)
+{
+    if (markers.IsEmpty() || !wxDirExists(root))
+        return false;
+    for (size_t i = 0; i < markers.GetCount(); ++i)
+    {
+        wxString rel = markers[i];
+        rel.Replace(wxT("/"), wxT("\\"));
+        while (rel.StartsWith(wxT("\\")))
+            rel = rel.Mid(1);
+        if (!wxFileExists(root + wxT("\\") + rel))
+            return false;
+    }
+    return true;
+}
+
+wxString FindMarkedRoot(const wxString& unpack, const wxArrayString& markers)
+{
+    if (DirHasMarkers(unpack, markers))
+        return unpack;
+    wxDir dir(unpack);
+    if (!dir.IsOpened())
+        return wxString();
+    wxString name;
+    bool more = dir.GetFirst(&name, wxEmptyString, wxDIR_DIRS);
+    while (more)
+    {
+        const wxString child = unpack + wxT("\\") + name;
+        if (DirHasMarkers(child, markers))
+            return child;
+        more = dir.GetNext(&name);
+    }
+    return wxString();
+}
+
+bool CopyTree(const wxString& from, const wxString& to)
+{
+    wxFileName dest;
+    dest.AssignDir(to);
+    if (!wxDirExists(to) && !dest.Mkdir(wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+        return false;
+    wxDir dir(from);
+    if (!dir.IsOpened())
+        return false;
+    wxString name;
+    bool more = dir.GetFirst(&name, wxEmptyString, wxDIR_FILES | wxDIR_DIRS);
+    while (more)
+    {
+        const wxString src = from + wxT("\\") + name;
+        const wxString dst = to + wxT("\\") + name;
+        if (wxDirExists(src))
+        {
+            if (!CopyTree(src, dst))
+                return false;
+        }
+        else if (!wxCopyFile(src, dst, true))
+            return false;
+        more = dir.GetNext(&name);
+    }
+    return true;
+}
+
+bool Hex64(const wxString& text)
+{
+    if (text.length() != 64)
+        return false;
+    for (size_t i = 0; i < text.length(); ++i)
+    {
+        const wxChar c = text[i];
+        const bool hex = (c >= wxT('0') && c <= wxT('9'))
+                      || (c >= wxT('a') && c <= wxT('f'))
+                      || (c >= wxT('A') && c <= wxT('F'));
+        if (!hex)
+            return false;
+    }
+    return true;
+}
+
+wxString NormalizedDir(const wxString& path)
+{
+    wxFileName name;
+    name.AssignDir(path);
+    name.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS | wxPATH_NORM_ENV_VARS | wxPATH_NORM_TILDE);
+    wxString full = name.GetFullPath();
+    if (!full.EndsWith(wxT("\\")) && !full.EndsWith(wxT("/")))
+        full += wxT("\\");
+    return full;
 }
 
 bool ConfirmFetch(const wxString& explanation, const wxString& confirmLabel)
@@ -725,6 +1083,174 @@ wxString FormatWinSdkFetch(const WinSdkFetch& result)
         result.success ? 1 : 0,
         result.prefix,
         FirstLine(result.output));
+}
+
+WinSdkFetch StageWinSdk(const wxString& url,
+                        const wxString& sha256,
+                        const wxString& libraryId,
+                        const wxString& markersText,
+                        const wxString& explanation,
+                        const wxString& confirmLabel)
+{
+    WinSdkFetch result;
+    if (!LibraryIdOk(libraryId))
+    {
+        result.output = wxT("invalid library");
+        return result;
+    }
+    if (!url.StartsWith(wxT("https://")) || url.Contains(wxT(" ")) || url.Contains(wxT("\"")))
+    {
+        result.output = wxT("invalid address");
+        return result;
+    }
+    if (!Hex64(sha256))
+    {
+        result.output = wxT("invalid hash");
+        return result;
+    }
+    const wxArrayString markers = SplitMarkers(markersText);
+    if (markers.IsEmpty())
+    {
+        result.output = wxT("invalid markers");
+        return result;
+    }
+    for (size_t i = 0; i < markers.GetCount(); ++i)
+    {
+        if (!EntryNameSafe(markers[i]) || markers[i].Find(wxT(':')) != wxNOT_FOUND)
+        {
+            result.output = wxT("invalid markers");
+            return result;
+        }
+    }
+    const wxString root = SdkRoot();
+    if (root.empty())
+    {
+        result.output = wxT("no local data directory");
+        return result;
+    }
+    if (root.Lower().Contains(wxT("\\program files\\codeblocks")))
+    {
+        result.output = wxT("refusing the Code::Blocks install directory");
+        return result;
+    }
+    if (!ConfirmFetch(explanation, confirmLabel))
+        return result;
+
+    wxString stage;
+    for (int n = 0; n < 100; ++n)
+    {
+        stage = root + wxT("\\_cb_stage\\") + libraryId + wxT("\\")
+              + wxString::Format(wxT("%lld-%d"),
+                                 static_cast<long long>(wxGetUTCTimeMillis().GetValue()), n);
+        if (!wxDirExists(stage))
+            break;
+    }
+    const wxString unpack = stage + wxT("\\unpack");
+    wxFileName unpackName;
+    unpackName.AssignDir(unpack);
+    if (!unpackName.Mkdir(wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+    {
+        result.output = wxT("could not create the library directory");
+        return result;
+    }
+
+    FetchJob job;
+    job.url = url;
+    job.destDir = unpack;
+    job.zipPath = stage + wxT("\\_cb_download.zip");
+    job.expectedSha256 = sha256;
+    job.checkEntries = true;
+    result.launched = true;
+
+    FetchDialog dlg(Manager::Get()->GetAppWindow(), &job);
+    dlg.ShowModal();
+
+    result.cancelled = job.cancelled;
+    result.success = job.success && !job.cancelled;
+    if (!job.error.empty())
+        result.output = wxString::FromUTF8(job.error.c_str());
+    else if (!result.success)
+        result.output = wxT("the download did not finish");
+    if (!result.success)
+        return result;
+
+    const wxString marked = FindMarkedRoot(unpack, markers);
+    if (marked.empty())
+    {
+        result.success = false;
+        result.prefix.Clear();
+        result.output = wxT("the archive did not contain the expected files");
+        return result;
+    }
+    result.prefix = marked;
+    return result;
+}
+
+WinSdkFetch PublishWinSdk(const wxString& libraryId,
+                          const wxString& edition,
+                          const wxString& stagingPrefix,
+                          const wxString& note)
+{
+    WinSdkFetch result;
+    if (!LibraryIdOk(libraryId) || !LibraryIdOk(edition))
+    {
+        result.output = wxT("invalid library");
+        return result;
+    }
+    const wxString root = SdkRoot();
+    if (root.empty())
+    {
+        result.output = wxT("no local data directory");
+        return result;
+    }
+    if (root.Lower().Contains(wxT("\\program files\\codeblocks")))
+    {
+        result.output = wxT("refusing the Code::Blocks install directory");
+        return result;
+    }
+    if (stagingPrefix.empty() || !wxDirExists(stagingPrefix))
+    {
+        result.output = wxT("the staged directory is missing");
+        return result;
+    }
+    const wxString stageRoot = NormalizedDir(root + wxT("\\_cb_stage\\") + libraryId);
+    const wxString staged = NormalizedDir(stagingPrefix);
+    if (!staged.Lower().StartsWith(stageRoot.Lower()))
+    {
+        result.output = wxT("refusing a directory outside the staging area");
+        return result;
+    }
+    const wxString dest = root + wxT("\\") + libraryId + wxT("\\") + edition;
+    if (dest.Lower().Contains(wxT("\\program files\\codeblocks")))
+    {
+        result.output = wxT("refusing the Code::Blocks install directory");
+        return result;
+    }
+    if (!CopyTree(stagingPrefix, dest))
+    {
+        result.output = wxT("could not publish the library directory");
+        return result;
+    }
+
+    wxFFile record(dest + wxT("\\_cb_provenance.txt"), wxT("w"));
+    const wxString body = note + wxT("\nroot=") + dest + wxT("\n");
+    if (!record.IsOpened() || !record.Write(body, wxConvUTF8))
+    {
+        result.output = wxT("could not record the library directory");
+        return result;
+    }
+    record.Close();
+
+    ConfigManager* cfg = Manager::Get()->GetConfigManager(wxT("scripts"));
+    if (!cfg)
+    {
+        result.output = wxT("could not remember the library directory");
+        return result;
+    }
+    cfg->Write(SavedKey(libraryId), dest);
+    result.success = true;
+    result.prefix = dest;
+    return result;
 }
 
 #endif // __WXMSW__
