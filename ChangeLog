@@ -1,3 +1,25 @@
+2026-10-23 23:55  tbgitoo
+
+v3.3  Aim: Give the SFML, GLFW, and SDL3 wizards the same automatic setup on Windows that Homebrew gives them on macOS
+v3.3 DONE: Windows library wizards
+      * Install SFML 3.1.0, GLFW 3.5.1, or SDL3 3.4.18 only after
+        Install SFML, Install GLFW, or Install SDL3. Cancel before
+        the transfer does not connect
+      * Each archive is hashed, unpacked in a staging directory, and
+        published under %LOCALAPPDATA%\codeblocks\sdk only after the
+        wizard accepts the tree. A later install of another version
+        does not replace a tree an existing project already uses
+      * SFML is fetched only for GCC 14.2.0 UCRT, matching the
+        MinGW-w64 machine. GLFW and SDL3 follow the machine only
+      * The generated project uses absolute include and library
+        directories and copies the required DLLs beside the executable
+      * GLFW's Windows sample is the 4.1 core triangle. SDL3 keeps
+        main named main, so Step into stops in main.cpp
+      * SDL project (SDL 1) is not registered or installed on Windows.
+        Unix still has it. macOS behaviour of the three wizards is
+        unchanged
+
+
 2026-10-20 21:00  tbgitoo
 
 v2.3  Aim: Make macOS debugging recoverable from within Code::Blocks when system signing prevents GDB from starting

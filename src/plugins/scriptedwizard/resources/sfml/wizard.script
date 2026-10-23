@@ -26,6 +26,10 @@ SFMLWinInclude <- _T("");
 SFMLWinLib     <- _T("");
 SFMLWinBin     <- _T("");
 SFMLWinState   <- _T("");
+SFMLWinEdition <- _T("");
+SFMLWinUrl     <- _T("");
+SFMLWinHash    <- _T("");
+SFMLWinMachine <- _T("");
 
 function BeginWizard()
 {
@@ -522,46 +526,79 @@ function SfmlWinPageText(reason)
     return text;
 }
 
-function SfmlWinZipUrl()
+function SfmlWinSelectArchive(report)
 {
-    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
-    if (!SfmlWinCompilerMatches(report))
-        return _T("");
-    if (SfmlReportField(report, _T("machine")).Matches(_T("i686-w64-mingw32")))
-        return _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-32-bit.zip");
-    return _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-64-bit.zip");
+    SFMLWinMachine = SfmlReportField(report, _T("machine"));
+    if (SFMLWinMachine.Matches(_T("i686-w64-mingw32")))
+    {
+        SFMLWinEdition = _T("3.1.0-i686");
+        SFMLWinUrl = _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-32-bit.zip");
+        SFMLWinHash = _T("6bca8aa62bdb9328a81588b088176fc1de5271badc5bc6f68ac4576ff1023fee");
+    }
+    else
+    {
+        SFMLWinEdition = _T("3.1.0-x86_64");
+        SFMLWinUrl = _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-64-bit.zip");
+        SFMLWinHash = _T("908ffe33f4c452023e0a6266a8ef5717a76a1826fec3f9f7adecf7fa81984ba1");
+    }
 }
 
 function SfmlWinOfferInstall()
 {
-    local url = SfmlWinZipUrl();
-    if (url.IsEmpty())
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!SfmlWinCompilerMatches(report))
     {
         ShowError(_("The automatic SFML install does not apply to this compiler. No project was created."));
         return false;
     }
+    SfmlWinSelectArchive(report);
     local explanation = _("This project needs SFML.\n\n") +
                         _("Nothing is downloaded until you choose Install SFML.\n") +
                         _("Cancel on this dialog does not start a download.");
-    local report = Wizard.WinSdkFetch(url, _T("sfml"), explanation, _("Install SFML"));
-    if (SfmlReportField(report, _T("success")).Matches(_T("1")))
+    local markers = _T("include/SFML/Graphics.hpp;include/SFML/Config.hpp;") +
+                    _T("lib/libsfml-graphics.a;lib/libsfml-window.a;lib/libsfml-system.a;") +
+                    _T("bin/sfml-graphics-3.dll;bin/sfml-window-3.dll;bin/sfml-system-3.dll");
+    local staged = Wizard.WinSdkStage(SFMLWinUrl, SFMLWinHash, _T("sfml"), markers, explanation, _("Install SFML"));
+    if (!SfmlReportField(staged, _T("success")).Matches(_T("1")))
     {
-        local reason = SfmlWinBlockReason();
-        if (reason.IsEmpty())
-            return true;
-        ShowMessage(SfmlWinPageText(reason));
+        if (SfmlReportField(staged, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+            return false;
+        }
+        if (SfmlReportField(staged, _T("launched")).Matches(_T("1")))
+        {
+            ShowError(_("SFML was not installed. No project was created.\n\n") +
+                      SfmlReportField(staged, _T("output")));
+        }
         return false;
     }
-    if (SfmlReportField(report, _T("cancelled")).Matches(_T("1")))
+
+    local stagedPrefix = SfmlReportField(staged, _T("prefix"));
+    local reason = SfmlWinSuitable(stagedPrefix);
+    if (!reason.IsEmpty())
     {
-        ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+        SfmlWinClear();
+        ShowError(reason);
         return false;
     }
-    if (SfmlReportField(report, _T("launched")).Matches(_T("1")))
+
+    local note = _T("library=sfml\nversion=3.1.0\nsource=") + SFMLWinUrl +
+                 _T("\nsha256=") + SFMLWinHash +
+                 _T("\nsha256_verified=") + SFMLWinHash +
+                 _T("\ncompiler=") + SfmlReportField(report, _T("version")) + _T(" ") + SFMLWinMachine;
+    local published = Wizard.WinSdkPublish(_T("sfml"), SFMLWinEdition, stagedPrefix, note);
+    if (!SfmlReportField(published, _T("success")).Matches(_T("1")))
     {
+        SfmlWinClear();
         ShowError(_("SFML was not installed. No project was created.\n\n") +
-                  SfmlReportField(report, _T("output")));
+                  SfmlReportField(published, _T("output")));
+        return false;
     }
+    reason = SfmlWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowMessage(SfmlWinPageText(reason));
     return false;
 }
 

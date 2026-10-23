@@ -1,6 +1,6 @@
 # Code::Blocks Windows v3.3 — SFML, GLFW, and SDL3
 
-**Status: planning.** No code in this version yet. v3.0, v3.1, and v3.2 stay the macOS plans. This file is their Windows implementation, one version for all three. This update records the install transaction, the hash check, versioned trees, and revalidation. It does not add code.
+**Status: DONE.** v3.0, v3.1, and v3.2 stay the macOS plans. This file is their Windows implementation, one version for all three. SFML, GLFW, and SDL3 publish a versioned tree only after the archive hash and the script’s suitability check. An SFML tree already installed by the first Windows wizard stays where that project recorded it. A new install publishes `sdk\sfml\3.1.0-<arch>` and does not replace that older tree. Two facts found while building differ from the draft below: this SFML zip’s import libraries are `libsfml-*.a`, not `libsfml-*.dll.a`, and the shared SDL3 sample defines `SDL_MAIN_HANDLED` so Windows debugging stops in `main`.
 
 **Question this version answers:** what is the smallest change that gives the existing SFML, GLFW, and SDL3 wizards the same automatic setup on Windows that Homebrew gives them on macOS?
 
@@ -70,7 +70,7 @@ SHA-256 values for these three files are not recorded here. **PROPOSED DESIGN.**
 
 The sample stays `sfml/sfml3/main.cpp`. It was written for 3.0.2 (`sf::VideoMode({800, 600})`, `sf::Sprite(texture)`, `pollEvent` optional, `event->is<sf::Event::Closed>()`). 3.1.0 is a minor release of that API. Do not add a 3.1-only sample. If a 3.1.0 header rejects one of those calls, fix that call so 3.0.2 still accepts it, or stop and record the line. Do not fork the sample.
 
-Suitability, dynamic only: `include/SFML/Graphics.hpp`, `include/SFML/Config.hpp`, `SFML_VERSION_MAJOR` 3, and import libraries `libsfml-graphics.dll.a`, `libsfml-window.dll.a`, `libsfml-system.dll.a`. A static `libsfml-graphics.a` with no import library is not suitable. Major 1 or 2 is not suitable on this path: the download is 3.1.0, and the 1.6 / 2.0 list is not shown. An unreadable version stops.
+Suitability, dynamic only: `include/SFML/Graphics.hpp`, `include/SFML/Config.hpp`, `SFML_VERSION_MAJOR` 3, and the import libraries this zip actually ships: `libsfml-graphics.a`, `libsfml-window.a`, `libsfml-system.a`. The static archives are `libsfml-*-s.a`. There is no `.dll.a`. Major 1 or 2 is not suitable on this path: the download is 3.1.0, and the 1.6 / 2.0 list is not shown. An unreadable version stops.
 
 **CONFIRMED FROM WEB** (SFML FAQ): a missing dynamic module is reported as `sfml-graphics-3.dll` (and window, system). Debug builds of the official zip are not what that page’s release archives are. At the first unpack, list `lib` and `bin`. If no `sfml-*-d` import library exists, leave `SFMLDebugLib` unset. Do not invent `-d` or `-s`.
 
@@ -142,7 +142,7 @@ The sample stays `sdl3/files/main.cpp`. It is already the 3.4.18 program: `<SDL3
 
 Suitability: `<arch>/include/SDL3/SDL.h` and `<arch>/lib/libSDL3.dll.a` and `<arch>/bin/SDL3.dll`. The VC development zip is not this file and is not suitable.
 
-Link `SDL3` only. The current Windows branch already does. Do not put back `mingw32`, `SDL2main`, `SDL2.dll`, `user32`, `gdi32`, `winmm`, or `dxguid`. `SDL_main.h` is already included; on Windows that header is what supplies the entry point, and the SDL3 migration notes say the SDLmain library is gone. Do not add `-mwindows` unless the link of this sample reports that it is required. The debug target stays `ttConsoleOnly`.
+Link `SDL3` only. The current Windows branch already does. Do not put back `mingw32`, `SDL2main`, `SDL2.dll`, `user32`, `gdi32`, `winmm`, or `dxguid`. `SDL_main.h` is included. On Windows that header would rename `main` and inject `WinMain`, and the MinGW console startup `main` has no source lines, so Step into stops with no arrow and Step over runs the program. The sample defines `SDL_MAIN_HANDLED` before the includes and calls `SDL_SetMainReady()` before `SDL_Init`, so the function the debugger breaks in stays `main`. Do not add `-mwindows`. The debug target stays `ttConsoleOnly`.
 
 Any matching `dumpmachine` may fetch the one mingw zip. SDL is not held to the SFML 14.2.0 UCRT test. A compiler outside those two machine names does not download; the existing location page remains, and its checks stay `SDL3/SDL.h` and the `SDL3` library stem.
 
@@ -168,7 +168,7 @@ Any matching `dumpmachine` may fetch the one mingw zip. SDL is not held to the S
 | `sfml/wizard.script` | **Windows branch.** Compiler probe, diagnostic page, install button, skip version / link-type / location pages when the 3.1.0 tree validates, absolute include and lib, DLL copy. macOS branch unchanged. |
 | `glfw/wizard.script`, `glfw/Makefile.am` | **Windows branch** plus install of `glfw/win/main.cpp`. macOS branch unchanged. `glfw/files/main.cpp` unchanged for other Unix. |
 | `glfw/win/main.cpp` | **New.** Section 5. |
-| `sdl3/wizard.script` | **Windows branch.** Automatic `<arch>` prefix and DLL copy. macOS branch unchanged. Sample unchanged. |
+| `sdl3/wizard.script`, `sdl3/files/main.cpp` | **Windows branch.** Automatic `<arch>` prefix and DLL copy. The shared sample defines `SDL_MAIN_HANDLED` so Windows debugging stops in `main`. macOS branch of the wizard unchanged. |
 | `config.script` | **SDL project** is registered for Unix only. macOS and Windows do not register it. |
 | `src/update.bat` | **Windows install.** Exclude the `sdl` wizard from the template copy. |
 | `resources/sdl/`, `resources/Makefile.am` | **Sources unchanged.** Unix still installs that wizard. The Darwin branch already skips it. |
