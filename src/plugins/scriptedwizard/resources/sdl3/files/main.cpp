@@ -1,9 +1,13 @@
+// Keep this function named main. On Windows, SDL_main.h otherwise
+// renames it and the console startup code is what the debugger stops in.
+#define SDL_MAIN_HANDLED
 #include <iostream>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 int main(int, char **)
 {
+    SDL_SetMainReady();
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         std::cerr << "Error while initializing SDL: " << SDL_GetError() << std::endl;

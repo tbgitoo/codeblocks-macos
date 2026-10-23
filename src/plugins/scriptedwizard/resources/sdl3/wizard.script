@@ -16,6 +16,14 @@ SDL3MacLib     <- _T("");
 SDL3MacState   <- _T("");
 SDL3MacAccess  <- _T("");
 SDL3MacExecutable <- _T("");
+// Windows automatic install. 0 keeps the location page.
+SDL3WinAuto    <- 0;
+SDL3WinInclude <- _T("");
+SDL3WinLib     <- _T("");
+SDL3WinDll     <- _T("");
+SDL3WinState   <- _T("");
+SDL3WinArch    <- _T("");
+SDL3WinMachine <- _T("");
 
 function BeginWizard()
 {
@@ -32,8 +40,23 @@ function BeginWizard()
         if (!reason.IsEmpty())
             Wizard.AddInfoPage(_T("SDL3MacDiag"), SDL3MacPageText(reason));
     }
+    else if (PLATFORM == PLATFORM_MSW && SDL3WinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        SDL3WinAuto = 1;
+        SDL3WinSelectArchive(Wizard.WinSdkCompiler(Wizard.GetCompilerID()));
+        local reason = SDL3WinBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("SDL3WinDiag"), SDL3WinPageText(reason));
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        Wizard.AddInfoPage(_T("SDL3WinManual"),
+            _("The automatic SDL3 install does not apply to this compiler.\n\n") +
+            _("The next page asks for an SDL3 folder you already have.\n") +
+            _("Nothing is downloaded."));
+    }
     Wizard.AddProjectPathPage();
-    if (PLATFORM == PLATFORM_MSW)
+    if (PLATFORM == PLATFORM_MSW && SDL3WinAuto == 0)
     {
         local sdl3path_descr = _("Please select the folder where SDL3 is installed on your computer.\n") +
                                _("This is either the i686-w64-mingw32 (32-bit) or the x86_64-w64-mingw32 (64-bit)\nfolder under the top-level folder where SDL3 was unpacked.\n\n") +
@@ -289,17 +312,203 @@ function SDL3MacAllowForward()
     return false;
 }
 
+// This MinGW archive names the import library libSDL3.dll.a.
+function SDL3WinClear()
+{
+    SDL3WinInclude = _T("");
+    SDL3WinLib = _T("");
+    SDL3WinDll = _T("");
+}
+
+function SDL3WinCompilerMatches(report)
+{
+    if (!SDL3ReportField(report, _T("access")).Matches(_T("works")))
+        return false;
+    local machine = SDL3ReportField(report, _T("machine"));
+    return machine.Matches(_T("x86_64-w64-mingw32")) || machine.Matches(_T("i686-w64-mingw32"));
+}
+
+function SDL3WinSelectArchive(report)
+{
+    SDL3WinMachine = SDL3ReportField(report, _T("machine"));
+    if (SDL3WinMachine.Matches(_T("i686-w64-mingw32")))
+        SDL3WinArch = _T("i686-w64-mingw32");
+    else
+        SDL3WinArch = _T("x86_64-w64-mingw32");
+}
+
+// Empty string: this tree may be written into the project.
+// The prefix is the folder that contains the architecture directories.
+function SDL3WinSuitable(prefix)
+{
+    SDL3WinClear();
+    if (prefix.IsEmpty() || SDL3WinArch.IsEmpty())
+        return _("SDL3's directory is missing. No project was created.");
+    local sep = _T("\\");
+    local archDir = prefix + sep + SDL3WinArch;
+    local includeDir = archDir + sep + _T("include");
+    local libDir = archDir + sep + _T("lib");
+    if (!IO.FileExists(includeDir + sep + _T("SDL3") + sep + _T("SDL.h")))
+        return _("SDL3 was found, but ") + SDL3WinArch + _("/include/SDL3/SDL.h is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(libDir + sep + _T("libSDL3.dll.a")))
+        return _("SDL3 was found, but ") + SDL3WinArch + _("/lib/libSDL3.dll.a is not under ") + prefix + _(". No project was created.");
+    local dll = archDir + sep + _T("bin") + sep + _T("SDL3.dll");
+    if (!IO.FileExists(dll))
+        return _("SDL3 was found, but ") + SDL3WinArch + _("/bin/SDL3.dll is not under ") + prefix + _(". No project was created.");
+    SDL3WinInclude = includeDir;
+    SDL3WinLib = libDir;
+    SDL3WinDll = dll;
+    return _T("");
+}
+
+function SDL3WinDecide(prefix, nested)
+{
+    if (SDL3WinSuitable(prefix).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty() && SDL3WinSuitable(nested).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty())
+        return SDL3WinSuitable(nested);
+    return SDL3WinSuitable(prefix);
+}
+
+function SDL3WinBlockReason()
+{
+    local report = Wizard.WinSdkTree(_T("sdl3"));
+    SDL3WinState = SDL3ReportField(report, _T("state"));
+    if (SDL3WinState.Matches(_T("installed")))
+        return SDL3WinDecide(SDL3ReportField(report, _T("prefix")), SDL3ReportField(report, _T("nested")));
+    SDL3WinClear();
+    if (SDL3WinState.Matches(_T("missing")))
+        return _("SDL3 is not installed. This wizard will not create a project.");
+    return _("SDL3 could not be checked. This wizard will not create a project.");
+}
+
+function SDL3WinPageText(reason)
+{
+    local text = _("No project is created from this page.\n\n");
+    if (SDL3WinState.Matches(_T("missing")))
+    {
+        text = text + _("SDL3 is not installed.\n\n") +
+                      _("Press Next to install SDL3.\n") +
+                      _("Cancel on that dialog does not start a download.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    }
+    else
+    {
+        text = text + reason + _("\n\n") +
+                      _("Use Cancel to close the wizard.\n");
+    }
+    return text;
+}
+
+function SDL3WinOfferInstall()
+{
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!SDL3WinCompilerMatches(report))
+    {
+        ShowError(_("The automatic SDL3 install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    SDL3WinSelectArchive(report);
+    local explanation = _("This project needs SDL3.\n\n") +
+                        _("Nothing is downloaded until you choose Install SDL3.\n") +
+                        _("Cancel on this dialog does not start a download.");
+    local url = _T("https://libsdl.org/release/SDL3-devel-3.4.18-mingw.zip");
+    local hash = _T("cd98158c8d025a816f430a600b4e9526524e6219ee884ec72bd498b80fd3bf58");
+    local markers = SDL3WinArch + _T("/include/SDL3/SDL.h;") +
+                    SDL3WinArch + _T("/lib/libSDL3.dll.a;") +
+                    SDL3WinArch + _T("/bin/SDL3.dll");
+    local staged = Wizard.WinSdkStage(url, hash, _T("sdl3"), markers, explanation, _("Install SDL3"));
+    if (!SDL3ReportField(staged, _T("success")).Matches(_T("1")))
+    {
+        if (SDL3ReportField(staged, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+            return false;
+        }
+        if (SDL3ReportField(staged, _T("launched")).Matches(_T("1")))
+        {
+            ShowError(_("SDL3 was not installed. No project was created.\n\n") +
+                      SDL3ReportField(staged, _T("output")));
+        }
+        return false;
+    }
+
+    local stagedPrefix = SDL3ReportField(staged, _T("prefix"));
+    local reason = SDL3WinSuitable(stagedPrefix);
+    if (!reason.IsEmpty())
+    {
+        SDL3WinClear();
+        ShowError(reason);
+        return false;
+    }
+
+    local note = _T("library=sdl3\nversion=3.4.18\nsource=") + url +
+                 _T("\nsha256=") + hash +
+                 _T("\nsha256_verified=") + hash +
+                 _T("\ncompiler=") + SDL3WinMachine;
+    local published = Wizard.WinSdkPublish(_T("sdl3"), _T("3.4.18"), stagedPrefix, note);
+    if (!SDL3ReportField(published, _T("success")).Matches(_T("1")))
+    {
+        SDL3WinClear();
+        ShowError(_("SDL3 was not installed. No project was created.\n\n") +
+                  SDL3ReportField(published, _T("output")));
+        return false;
+    }
+    reason = SDL3WinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowMessage(SDL3WinPageText(reason));
+    return false;
+}
+
+function OnLeave_SDL3WinDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (SDL3WinBlockReason().IsEmpty())
+        return true;
+    if (SDL3WinState.Matches(_T("missing")))
+        return SDL3WinOfferInstall();
+    return false;
+}
+
+function SDL3WinAllowForward()
+{
+    if (PLATFORM != PLATFORM_MSW || SDL3WinAuto == 0)
+        return true;
+    if (!SDL3WinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        ShowError(_("The automatic SDL3 install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    local reason = SDL3WinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
 function OnLeave_ProjectPathPage(fwd)
 {
     if (fwd)
-        return SDL3MacAllowForward();
+    {
+        if (!SDL3MacAllowForward())
+            return false;
+        return SDL3WinAllowForward();
+    }
     return true;
 }
 
 function OnLeave_CompilerPage(fwd)
 {
     if (fwd)
-        return SDL3MacAllowForward();
+    {
+        if (!SDL3MacAllowForward())
+            return false;
+        return SDL3WinAllowForward();
+    }
     return true;
 }
 
@@ -320,6 +529,15 @@ function SetupProject(project)
         project.AddIncludeDir(SDL3MacInclude);
         project.AddLibDir(SDL3MacLib);
         project.AddLinkLib(_T("SDL3"));
+    }
+    else if (PLATFORM == PLATFORM_MSW && SDL3WinAuto == 1)
+    {
+        if (SDL3WinInclude.IsEmpty() || SDL3WinLib.IsEmpty() || SDL3WinDll.IsEmpty())
+            return false;
+        project.AddIncludeDir(SDL3WinInclude);
+        project.AddLibDir(SDL3WinLib);
+        project.AddLinkLib(_T("SDL3"));
+        project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SDL3WinDll + _T("\" \"$(TARGET_OUTPUT_DIR)SDL3.dll\""));
     }
     else if (PLATFORM == PLATFORM_MSW)
     {
