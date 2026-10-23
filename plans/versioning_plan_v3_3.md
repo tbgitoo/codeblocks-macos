@@ -25,7 +25,7 @@ The page order, the consent rule, the cancel rule, and the “already installed�
 | Homebrew missing: locate `brew`, or open https://brew.sh. No bootstrap. | Compiler does not match the archive: no download. The existing location page is the way to point at a tree the user already has. There is no installer to locate and no package manager to bootstrap. |
 | Dynamic library, absolute install name, no rpath | Dynamic library. Copy the needed DLLs next to the executable. There is no rpath step. |
 
-Other Unix is unchanged: SFML’s commented `pkg-config`, GLFW’s `GL` / `GLU` / `pthread` / `Xxf86vm` and `glfw/files/main.cpp`, SDL3’s `pkg-config` lines. **SDL project** (SDL 1) stays registered on Windows. v3.2 M5 retired it on macOS only.
+Other Unix is unchanged: SFML’s commented `pkg-config`, GLFW’s `GL` / `GLU` / `pthread` / `Xxf86vm` and `glfw/files/main.cpp`, SDL3’s `pkg-config` lines. **SDL project** (SDL 1) is removed on Windows as well. It stays registered and installed on Unix. v3.2 M5 already retired it on macOS. The sources under `resources/sdl/` stay in the tree for that Unix build.
 
 ---
 
@@ -142,7 +142,7 @@ Any matching `dumpmachine` may fetch the one mingw zip. SDL is not held to the S
 | M2 Client | No location page when `<arch>` validates. Button **Install SDL3**. Same `sdl3/files/main.cpp`. |
 | M3 Window | No `otool`. Link is `-lSDL3` plus the copied `SDL3.dll`. The window opens, the bars draw, close or Escape exits. Record the renderer name. Do not force a driver. |
 | M4 Debugger | Ordinary Windows debugger. Break in `main.cpp`, continue, stop. |
-| M5 Retire SDL 1 | Not on Windows. `config.script` still registers **SDL project** when `PLATFORM != PLATFORM_MAC`. Do not edit `resources/sdl/`. |
+| M5 Retire SDL 1 | On Windows too. `config.script` registers **SDL project** only when `PLATFORM` is neither `PLATFORM_MAC` nor `PLATFORM_MSW`, so Unix (`PLATFORM_GTK`, `PLATFORM_X11`) still shows it. `src/update.bat` excludes `sdl\` from the wizard `xcopy`, and an existing `templates/wizard/sdl` under the Windows devel and output trees is removed. `resources/Makefile.am` still installs `sdl` for the non-Darwin build. Do not edit `resources/sdl/`. |
 
 **Check.** An installed SDL2 tree, or an `sdl2-compat` DLL, does not satisfy the check. The `.cbp` has no `$(#sdl3)`, no `SDL2`, and no pkg-config. The post-build copy names the unpacked `<arch>\bin`.
 
@@ -159,7 +159,10 @@ Any matching `dumpmachine` may fetch the one mingw zip. SDL is not held to the S
 | `glfw/wizard.script`, `glfw/Makefile.am` | **Windows branch** plus install of `glfw/win/main.cpp`. macOS branch unchanged. `glfw/files/main.cpp` unchanged for other Unix. |
 | `glfw/win/main.cpp` | **New.** Section 5. |
 | `sdl3/wizard.script` | **Windows branch.** Automatic `<arch>` prefix and DLL copy. macOS branch unchanged. Sample unchanged. |
-| `config.script`, `resources/sdl/`, `common_functions.script`, `macbrew.*`, other wizards, `src/templates/common/sfml*`, `src/templates/common/glfw*` | **Unchanged.** |
+| `config.script` | **SDL project** is registered for Unix only. macOS and Windows do not register it. |
+| `src/update.bat` | **Windows install.** Exclude the `sdl` wizard from the template copy. |
+| `resources/sdl/`, `resources/Makefile.am` | **Sources unchanged.** Unix still installs that wizard. The Darwin branch already skips it. |
+| `common_functions.script`, `macbrew.*`, other wizards, `src/templates/common/sfml*`, `src/templates/common/glfw*` | **Unchanged.** |
 
 The running IDE loads wizard scripts from its data directory. Copying the changed scripts and the new sample into that tree is how a milestone is tried. A rebuild is required for `winsdk.cpp`.
 
@@ -175,7 +178,7 @@ The running IDE loads wizard scripts from its data directory. Copying the change
 6. **Generated projects.** Absolute include and lib directories. SFML: `-std=c++17`, dynamic `sfml-graphics` / `sfml-window` / `sfml-system`, the existing Win32 libs, the three `sfml-*-3.dll` beside the executable, sample `sfml/sfml3`. GLFW: `-DGLFW_DLL`, `-lglfw3dll`, `-lopengl32`, `-lgdi32`, `glfw3.dll` beside the executable, sample `glfw/win`. SDL3: `-lSDL3`, `SDL3.dll` beside the executable, sample `sdl3/files`. No `$(#sfml)`, `$(#glfw)`, or `$(#sdl3)`.
 7. **Run.** Each program starts from the IDE with no added `PATH` entry. SFML opens its window. GLFW shows the triangle in a 4.1 core context. SDL3 draws the bars and stays open until close or Escape.
 8. **Debugger.** One ordinary session per generated project: break in `main`, continue, stop.
-9. **Left in place.** macOS behaviour of the three wizards. Other Unix. **SDL project** on Windows. The official tree `D:\Program Files\CodeBlocks` is not modified.
+9. **Left in place.** macOS behaviour of the three wizards. Other Unix, including **SDL project**. The official tree `D:\Program Files\CodeBlocks` is not modified. Windows does not list **SDL project** and does not install `templates/wizard/sdl`.
 
 ---
 
@@ -188,7 +191,8 @@ The running IDE loads wizard scripts from its data directory. Copying the change
 - The 1.6 / 2.0 list, the static/dynamic page, or a hand-entered prefix, when the automatic tree validates.
 - Linking SFML or GLFW statically to avoid copying a DLL.
 - GLAD, GLEW, GLM, or the fixed-function GLFW sample, on the automatic Windows path.
-- A second SDL sample, an SDL_GPU sample, or retiring **SDL project** on Windows.
+- A second SDL sample, or an SDL_GPU sample.
+- Deleting `resources/sdl/`, or hiding **SDL project** on Unix. Windows and macOS do not register or install it. Unix does.
 - Editing `macbrew.cpp` so that it downloads zip files.
 - `brew`, `pkg-config`, or a global-variable write.
 - A debugger campaign. The three debugger milestones are smoke tests.
