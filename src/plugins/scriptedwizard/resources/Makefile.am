@@ -30,7 +30,7 @@ SUBDIRS = arduino \
 	qt4dll \
 	qt5 \
 	sdl \
-	sdl2 \
+	sdl3 \
 	sfml \
 	smartwin \
 	staticlib \

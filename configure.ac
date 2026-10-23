@@ -528,7 +528,7 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/scriptedwizard/resources/qt4dll/Makefile
 	src/plugins/scriptedwizard/resources/qt5/Makefile
 	src/plugins/scriptedwizard/resources/sdl/Makefile
-	src/plugins/scriptedwizard/resources/sdl2/Makefile
+	src/plugins/scriptedwizard/resources/sdl3/Makefile
 	src/plugins/scriptedwizard/resources/sfml/Makefile
 	src/plugins/scriptedwizard/resources/sharedlib/Makefile
 	src/plugins/scriptedwizard/resources/smartwin/Makefile
