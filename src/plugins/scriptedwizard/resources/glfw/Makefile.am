@@ -11,3 +11,7 @@ dist_glfwfiles_DATA	= files/main.cpp
 glfwmacdir		= $(pkgdatadir)/mac
 
 dist_glfwmac_DATA	= mac/main.cpp
+
+glfwwindir		= $(pkgdatadir)/win
+
+dist_glfwwin_DATA	= win/main.cpp

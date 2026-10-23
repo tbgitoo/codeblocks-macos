@@ -1996,6 +1996,28 @@ SQInteger Wiz_WinSdkFetch(HSQUIRRELVM v)
     const WinSdkFetch result = FetchWinSdk(*extractor.p1, *extractor.p2, *extractor.p3, *extractor.p4);
     return ConstructAndReturnInstance(v, FormatWinSdkFetch(result));
 }
+
+SQInteger Wiz_WinSdkStage(HSQUIRRELVM v)
+{
+    // this, url, sha256, libraryId, markers, explanation, confirmLabel
+    ExtractParams7<Wiz*, const wxString *, const wxString *, const wxString *,
+                   const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkStage"))
+        return extractor.ErrorMessage();
+    const WinSdkFetch result = StageWinSdk(*extractor.p1, *extractor.p2, *extractor.p3,
+                                           *extractor.p4, *extractor.p5, *extractor.p6);
+    return ConstructAndReturnInstance(v, FormatWinSdkFetch(result));
+}
+
+SQInteger Wiz_WinSdkPublish(HSQUIRRELVM v)
+{
+    // this, libraryId, edition, stagingPrefix, note
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkPublish"))
+        return extractor.ErrorMessage();
+    const WinSdkFetch result = PublishWinSdk(*extractor.p1, *extractor.p2, *extractor.p3, *extractor.p4);
+    return ConstructAndReturnInstance(v, FormatWinSdkFetch(result));
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2307,6 +2329,8 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("WinSdkCompiler"), Wiz_WinSdkCompiler, _SC("Wiz::WinSdkCompiler"));
         BindMethod(v, _SC("WinSdkTree"), Wiz_WinSdkTree, _SC("Wiz::WinSdkTree"));
         BindMethod(v, _SC("WinSdkFetch"), Wiz_WinSdkFetch, _SC("Wiz::WinSdkFetch"));
+        BindMethod(v, _SC("WinSdkStage"), Wiz_WinSdkStage, _SC("Wiz::WinSdkStage"));
+        BindMethod(v, _SC("WinSdkPublish"), Wiz_WinSdkPublish, _SC("Wiz::WinSdkPublish"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);

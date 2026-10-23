@@ -16,6 +16,16 @@ GlfwMacLib     <- _T("");
 GlfwMacState   <- _T("");
 GlfwMacAccess  <- _T("");
 GlfwMacExecutable <- _T("");
+// Windows automatic install. 0 keeps the location page and the historical sample.
+GlfwWinAuto    <- 0;
+GlfwWinInclude <- _T("");
+GlfwWinLib     <- _T("");
+GlfwWinDll     <- _T("");
+GlfwWinState   <- _T("");
+GlfwWinEdition <- _T("");
+GlfwWinUrl     <- _T("");
+GlfwWinHash    <- _T("");
+GlfwWinMachine <- _T("");
 
 function BeginWizard()
 {
@@ -36,8 +46,23 @@ function BeginWizard()
         if (!reason.IsEmpty())
             Wizard.AddInfoPage(_T("GlfwMacDiag"), GlfwMacPageText(reason));
     }
+    else if (PLATFORM == PLATFORM_MSW && GlfwWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        GlfwWinAuto = 1;
+        GlfwWinSelectArchive(Wizard.WinSdkCompiler(Wizard.GetCompilerID()));
+        local reason = GlfwWinBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("GlfwWinDiag"), GlfwWinPageText(reason));
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        Wizard.AddInfoPage(_T("GlfwWinManual"),
+            _("The automatic GLFW install does not apply to this compiler.\n\n") +
+            _("The next page asks for a GLFW folder you already have.\n") +
+            _("Nothing is downloaded."));
+    }
     Wizard.AddProjectPathPage();
-    if (PLATFORM != PLATFORM_MAC)
+    if (PLATFORM != PLATFORM_MAC && GlfwWinAuto == 0)
         Wizard.AddGenericSelectPathPage(_T("GlfwPath"), glfwpath_descr, _("Please select GLFW's location:"), GlfwPathDefault);
     Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
 }
@@ -282,17 +307,208 @@ function GlfwMacAllowForward()
     return false;
 }
 
+// The 3.5.1 Windows README names the MinGW-w64 binaries as win32-msvcrt.
+// libglfw3.a is that static archive. lib-static-ucrt is a Visual C++ 2019
+// DLL, not a MinGW library. The project links libglfw3dll.a and copies
+// glfw3.dll, which depends on msvcrt.dll.
+function GlfwWinClear()
+{
+    GlfwWinInclude = _T("");
+    GlfwWinLib = _T("");
+    GlfwWinDll = _T("");
+}
+
+function GlfwWinCompilerMatches(report)
+{
+    if (!GlfwReportField(report, _T("access")).Matches(_T("works")))
+        return false;
+    local machine = GlfwReportField(report, _T("machine"));
+    return machine.Matches(_T("x86_64-w64-mingw32")) || machine.Matches(_T("i686-w64-mingw32"));
+}
+
+function GlfwWinSelectArchive(report)
+{
+    GlfwWinMachine = GlfwReportField(report, _T("machine"));
+    if (GlfwWinMachine.Matches(_T("i686-w64-mingw32")))
+    {
+        GlfwWinEdition = _T("3.5.1-i686");
+        GlfwWinUrl = _T("https://github.com/glfw/glfw/releases/download/3.5.1/glfw-3.5.1.bin.WIN32.zip");
+        GlfwWinHash = _T("47ee7ce5307e11f8515a2bb2d6ace6d88ffd6dbcd614b87da21969261f3d0ffe");
+    }
+    else
+    {
+        GlfwWinEdition = _T("3.5.1-x86_64");
+        GlfwWinUrl = _T("https://github.com/glfw/glfw/releases/download/3.5.1/glfw-3.5.1.bin.WIN64.zip");
+        GlfwWinHash = _T("34c6766043e09ad9c6e88b5636a5f34d1f2857aae828768c5bf2016dc8821a93");
+    }
+}
+
+// Empty string: this tree may be written into the project.
+function GlfwWinSuitable(prefix)
+{
+    GlfwWinClear();
+    if (prefix.IsEmpty())
+        return _("GLFW's directory is missing. No project was created.");
+    local sep = _T("\\");
+    local includeDir = prefix + sep + _T("include");
+    local libDir = prefix + sep + _T("lib-mingw-w64");
+    if (!IO.FileExists(includeDir + sep + _T("GLFW") + sep + _T("glfw3.h")))
+        return _("GLFW was found, but include/GLFW/glfw3.h is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(libDir + sep + _T("libglfw3dll.a")))
+        return _("GLFW was found, but lib-mingw-w64/libglfw3dll.a is not under ") + prefix + _(". No project was created.");
+    local dll = libDir + sep + _T("glfw3.dll");
+    if (!IO.FileExists(dll))
+        return _("GLFW was found, but lib-mingw-w64/glfw3.dll is not under ") + prefix + _(". No project was created.");
+    GlfwWinInclude = includeDir;
+    GlfwWinLib = libDir;
+    GlfwWinDll = dll;
+    return _T("");
+}
+
+function GlfwWinDecide(prefix, nested)
+{
+    if (GlfwWinSuitable(prefix).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty() && GlfwWinSuitable(nested).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty())
+        return GlfwWinSuitable(nested);
+    return GlfwWinSuitable(prefix);
+}
+
+function GlfwWinBlockReason()
+{
+    local report = Wizard.WinSdkTree(_T("glfw"));
+    GlfwWinState = GlfwReportField(report, _T("state"));
+    if (GlfwWinState.Matches(_T("installed")))
+        return GlfwWinDecide(GlfwReportField(report, _T("prefix")), GlfwReportField(report, _T("nested")));
+    GlfwWinClear();
+    if (GlfwWinState.Matches(_T("missing")))
+        return _("GLFW is not installed. This wizard will not create a project.");
+    return _("GLFW could not be checked. This wizard will not create a project.");
+}
+
+function GlfwWinPageText(reason)
+{
+    local text = _("No project is created from this page.\n\n");
+    if (GlfwWinState.Matches(_T("missing")))
+    {
+        text = text + _("GLFW is not installed.\n\n") +
+                      _("Press Next to install GLFW.\n") +
+                      _("Cancel on that dialog does not start a download.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    }
+    else
+    {
+        text = text + reason + _("\n\n") +
+                      _("Use Cancel to close the wizard.\n");
+    }
+    return text;
+}
+
+function GlfwWinOfferInstall()
+{
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!GlfwWinCompilerMatches(report))
+    {
+        ShowError(_("The automatic GLFW install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    GlfwWinSelectArchive(report);
+    local explanation = _("This project needs GLFW.\n\n") +
+                        _("Nothing is downloaded until you choose Install GLFW.\n") +
+                        _("Cancel on this dialog does not start a download.");
+    local markers = _T("include/GLFW/glfw3.h;lib-mingw-w64/libglfw3dll.a;lib-mingw-w64/glfw3.dll");
+    local staged = Wizard.WinSdkStage(GlfwWinUrl, GlfwWinHash, _T("glfw"), markers, explanation, _("Install GLFW"));
+    if (!GlfwReportField(staged, _T("success")).Matches(_T("1")))
+    {
+        if (GlfwReportField(staged, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+            return false;
+        }
+        if (GlfwReportField(staged, _T("launched")).Matches(_T("1")))
+        {
+            ShowError(_("GLFW was not installed. No project was created.\n\n") +
+                      GlfwReportField(staged, _T("output")));
+        }
+        return false;
+    }
+
+    local stagedPrefix = GlfwReportField(staged, _T("prefix"));
+    local reason = GlfwWinSuitable(stagedPrefix);
+    if (!reason.IsEmpty())
+    {
+        GlfwWinClear();
+        ShowError(reason);
+        return false;
+    }
+
+    local note = _T("library=glfw\nversion=3.5.1\nsource=") + GlfwWinUrl +
+                 _T("\nsha256=") + GlfwWinHash +
+                 _T("\nsha256_verified=") + GlfwWinHash +
+                 _T("\ncompiler=") + GlfwWinMachine;
+    local published = Wizard.WinSdkPublish(_T("glfw"), GlfwWinEdition, stagedPrefix, note);
+    if (!GlfwReportField(published, _T("success")).Matches(_T("1")))
+    {
+        GlfwWinClear();
+        ShowError(_("GLFW was not installed. No project was created.\n\n") +
+                  GlfwReportField(published, _T("output")));
+        return false;
+    }
+    reason = GlfwWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowMessage(GlfwWinPageText(reason));
+    return false;
+}
+
+function OnLeave_GlfwWinDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (GlfwWinBlockReason().IsEmpty())
+        return true;
+    if (GlfwWinState.Matches(_T("missing")))
+        return GlfwWinOfferInstall();
+    return false;
+}
+
+function GlfwWinAllowForward()
+{
+    if (PLATFORM != PLATFORM_MSW || GlfwWinAuto == 0)
+        return true;
+    if (!GlfwWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        ShowError(_("The automatic GLFW install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    local reason = GlfwWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
 function OnLeave_ProjectPathPage(fwd)
 {
     if (fwd)
-        return GlfwMacAllowForward();
+    {
+        if (!GlfwMacAllowForward())
+            return false;
+        return GlfwWinAllowForward();
+    }
     return true;
 }
 
 function OnLeave_CompilerPage(fwd)
 {
     if (fwd)
-        return GlfwMacAllowForward();
+    {
+        if (!GlfwMacAllowForward())
+            return false;
+        return GlfwWinAllowForward();
+    }
     return true;
 }
 
@@ -301,6 +517,8 @@ function GetFilesDir()
 {
     if (PLATFORM == PLATFORM_MAC)
         return _T("glfw/mac");
+    if (PLATFORM == PLATFORM_MSW && GlfwWinAuto == 1)
+        return _T("glfw/win");
     return _T("glfw/files");
 }
 
@@ -317,6 +535,18 @@ function SetupProject(project)
         project.AddLinkLib(_T("glfw"));
         // Proposed until a real link of the generated program confirms it.
         project.AddLinkerOption(_T("-framework OpenGL"));
+    }
+    else if (PLATFORM == PLATFORM_MSW && GlfwWinAuto == 1)
+    {
+        if (GlfwWinInclude.IsEmpty() || GlfwWinLib.IsEmpty() || GlfwWinDll.IsEmpty())
+            return false;
+        project.AddIncludeDir(GlfwWinInclude);
+        project.AddLibDir(GlfwWinLib);
+        project.AddCompilerOption(_T("-DGLFW_DLL"));
+        project.AddLinkLib(_T("glfw3dll"));
+        project.AddLinkLib(_T("opengl32"));
+        project.AddLinkLib(_T("gdi32"));
+        project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + GlfwWinDll + _T("\" \"$(TARGET_OUTPUT_DIR)glfw3.dll\""));
     }
     else
     {
@@ -350,7 +580,7 @@ function SetupProject(project)
     {
         target.SetTargetType(ttConsoleOnly); // ttConsoleOnly: console for debugging
         target.SetOutputFilename(Wizard.GetDebugOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        if (PLATFORM != PLATFORM_MAC)
+        if (PLATFORM != PLATFORM_MAC && GlfwWinAuto == 0)
             target.SetWorkingDir(GlfwPath + _T("/bin"));
         // enable generation of debugging symbols for target
         DebugSymbolsOn(target, Wizard.GetCompilerID());
@@ -362,7 +592,7 @@ function SetupProject(project)
     {
         target.SetTargetType(ttExecutable); // ttExecutable: no console
         target.SetOutputFilename(Wizard.GetReleaseOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        if (PLATFORM != PLATFORM_MAC)
+        if (PLATFORM != PLATFORM_MAC && GlfwWinAuto == 0)
             target.SetWorkingDir(GlfwPath + _T("/bin"));
         // enable optimizations for target
         OptimizationsOn(target, Wizard.GetCompilerID());
