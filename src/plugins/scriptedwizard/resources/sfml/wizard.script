@@ -20,6 +20,12 @@ SFMLMacLib     <- _T("");
 SFMLMacState   <- _T("");
 SFMLMacAccess  <- _T("");
 SFMLMacExecutable <- _T("");
+// Windows automatic path. Empty include means the manual pages were used.
+SFMLWinAuto    <- 0;
+SFMLWinInclude <- _T("");
+SFMLWinLib     <- _T("");
+SFMLWinBin     <- _T("");
+SFMLWinState   <- _T("");
 
 function BeginWizard()
 {
@@ -29,22 +35,39 @@ function BeginWizard()
 
     Wizard.AddInfoPage(_T("SFMLIntro"), intro_msg);
     // macOS reads SFML_VERSION_MAJOR from the installed headers. Do not ask 1.6 versus 2.0.
-    if (PLATFORM != PLATFORM_MAC)
-        Wizard.AddGenericSingleChoiceListPage(_T("SFMLVersionPage"), _("Please select the SFML version you want to use."), _T("SFML 1.6;SFML 2.0"), SFMLVersion);
-    if (PLATFORM == PLATFORM_MSW)
-        Wizard.AddGenericSingleChoiceListPage(_T("SFMLLinkPage"), _("Please choose the kind of library you want to link to."), _("Static Library;Dynamic Link Library"), SFMLLinkType);
-
-    // A suitable SFML install has no dependency page. Anything else stays on this page
-    // until Cancel. Project path is still registered because the wizard requires it.
+    // Windows does the same when the selected GCC is the one the SFML archive was built for.
     if (PLATFORM == PLATFORM_MAC)
     {
         local reason = SfmlMacBlockReason();
         if (!reason.IsEmpty())
             Wizard.AddInfoPage(_T("SFMLMacDiag"), SfmlMacPageText(reason));
     }
+    else if (PLATFORM == PLATFORM_MSW && SfmlWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        SFMLWinAuto = 1;
+        SFMLLinkType = 1;
+        SFMLDebugLib = 0;
+        local reason = SfmlWinBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("SFMLWinDiag"), SfmlWinPageText(reason));
+    }
+    else
+    {
+        if (PLATFORM == PLATFORM_MSW)
+        {
+            Wizard.AddInfoPage(_T("SFMLWinManual"),
+                _("The automatic SFML install does not apply to this compiler.\n\n") +
+                _("The next pages ask for an SFML folder you already have.\n") +
+                _("Nothing is downloaded."));
+        }
+        if (PLATFORM != PLATFORM_MAC)
+            Wizard.AddGenericSingleChoiceListPage(_T("SFMLVersionPage"), _("Please select the SFML version you want to use."), _T("SFML 1.6;SFML 2.0"), SFMLVersion);
+        if (PLATFORM == PLATFORM_MSW)
+            Wizard.AddGenericSingleChoiceListPage(_T("SFMLLinkPage"), _("Please choose the kind of library you want to link to."), _("Static Library;Dynamic Link Library"), SFMLLinkType);
+    }
 
     Wizard.AddProjectPathPage();
-    if (PLATFORM == PLATFORM_MSW)
+    if (PLATFORM == PLATFORM_MSW && SFMLWinAuto == 0)
     {
         local sfmlpath_descr = _("Please select the location of SFML on your computer.\n") +
                                _("This is the top-level folder where SFML was installed (unpacked).\n") +
@@ -386,17 +409,208 @@ function SfmlMacAllowForward()
     return false;
 }
 
+function SfmlWinClear()
+{
+    SFMLWinInclude = _T("");
+    SFMLWinLib = _T("");
+    SFMLWinBin = _T("");
+}
+
+function SfmlWinCompilerMatches(report)
+{
+    if (!SfmlReportField(report, _T("access")).Matches(_T("works")))
+        return false;
+    if (!SfmlReportField(report, _T("version")).Matches(_T("14.2.0")))
+        return false;
+    if (!SfmlReportField(report, _T("ucrt")).Matches(_T("1")))
+        return false;
+    local machine = SfmlReportField(report, _T("machine"));
+    return machine.Matches(_T("x86_64-w64-mingw32")) || machine.Matches(_T("i686-w64-mingw32"));
+}
+
+// Empty string: this folder may be written into the project.
+// Dynamic SFML 3 only. Major 1 and 2 are not accepted on this path.
+function SfmlWinSuitable(prefix)
+{
+    SfmlWinClear();
+    if (prefix.IsEmpty() || !IO.DirectoryExists(prefix))
+        return _("SFML's folder is not a directory. No project was created.");
+
+    local sep = wxFILE_SEP_PATH;
+    local includeDir = prefix + sep + _T("include");
+    local libDir = prefix + sep + _T("lib");
+    local binDir = prefix + sep + _T("bin");
+    local config = includeDir + sep + _T("SFML") + sep + _T("Config.hpp");
+    local graphics = includeDir + sep + _T("SFML") + sep + _T("Graphics.hpp");
+    if (!IO.FileExists(graphics) || !IO.FileExists(config))
+        return _("SFML was found, but the headers are not under ") + prefix + _(". No project was created.");
+    // This MinGW archive names the import library libsfml-graphics.a.
+    // The static archive is libsfml-graphics-s.a. There is no .dll.a.
+    if (   !IO.FileExists(libDir + sep + _T("libsfml-graphics.a"))
+        || !IO.FileExists(libDir + sep + _T("libsfml-window.a"))
+        || !IO.FileExists(libDir + sep + _T("libsfml-system.a")) )
+    {
+        return _("SFML was found, but the dynamic libraries are not under ") + prefix + _(". No project was created.");
+    }
+    if (   !IO.FileExists(binDir + sep + _T("sfml-graphics-3.dll"))
+        || !IO.FileExists(binDir + sep + _T("sfml-window-3.dll"))
+        || !IO.FileExists(binDir + sep + _T("sfml-system-3.dll")) )
+    {
+        return _("SFML was found, but sfml-graphics-3.dll, sfml-window-3.dll, or sfml-system-3.dll is not under ") + prefix + _(". No project was created.");
+    }
+
+    local major = SfmlMajorFromConfig(IO.ReadFileContents(config));
+    if (major != 3)
+        return _("This SFML is not version 3. No project was created.");
+
+    SFMLVersion = 2;
+    SFMLLinkType = 1;
+    // Debug import libs are libsfml-graphics-d.a and the DLL is sfml-graphics-d-3.dll.
+    if (   IO.FileExists(libDir + sep + _T("libsfml-graphics-d.a"))
+        && IO.FileExists(libDir + sep + _T("libsfml-window-d.a"))
+        && IO.FileExists(libDir + sep + _T("libsfml-system-d.a"))
+        && IO.FileExists(binDir + sep + _T("sfml-graphics-d-3.dll"))
+        && IO.FileExists(binDir + sep + _T("sfml-window-d-3.dll"))
+        && IO.FileExists(binDir + sep + _T("sfml-system-d-3.dll")) )
+        SFMLDebugLib = 1;
+    else
+        SFMLDebugLib = 0;
+    SFMLWinInclude = includeDir;
+    SFMLWinLib = libDir;
+    SFMLWinBin = binDir;
+    return _T("");
+}
+
+function SfmlWinDecide(prefix, nested)
+{
+    if (SfmlWinSuitable(prefix).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty() && SfmlWinSuitable(nested).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty())
+        return SfmlWinSuitable(nested);
+    return SfmlWinSuitable(prefix);
+}
+
+function SfmlWinBlockReason()
+{
+    local report = Wizard.WinSdkTree(_T("sfml"));
+    SFMLWinState = SfmlReportField(report, _T("state"));
+    if (SFMLWinState.Matches(_T("installed")))
+        return SfmlWinDecide(SfmlReportField(report, _T("prefix")), SfmlReportField(report, _T("nested")));
+    SfmlWinClear();
+    if (SFMLWinState.Matches(_T("missing")))
+        return _("SFML is not installed. This wizard will not create a project.");
+    return _("SFML could not be checked. This wizard will not create a project.");
+}
+
+function SfmlWinPageText(reason)
+{
+    local text = _("No project is created from this page.\n\n");
+    if (SFMLWinState.Matches(_T("missing")))
+    {
+        text = text + _("SFML is not installed.\n\n") +
+                      _("Press Next to install SFML.\n") +
+                      _("Cancel on that dialog does not start a download.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    }
+    else
+    {
+        text = text + reason + _("\n\n") +
+                      _("Use Cancel to close the wizard.\n");
+    }
+    return text;
+}
+
+function SfmlWinZipUrl()
+{
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!SfmlWinCompilerMatches(report))
+        return _T("");
+    if (SfmlReportField(report, _T("machine")).Matches(_T("i686-w64-mingw32")))
+        return _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-32-bit.zip");
+    return _T("https://www.sfml-dev.org/files/SFML-3.1.0-windows-gcc-14.2.0-mingw-64-bit.zip");
+}
+
+function SfmlWinOfferInstall()
+{
+    local url = SfmlWinZipUrl();
+    if (url.IsEmpty())
+    {
+        ShowError(_("The automatic SFML install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    local explanation = _("This project needs SFML.\n\n") +
+                        _("Nothing is downloaded until you choose Install SFML.\n") +
+                        _("Cancel on this dialog does not start a download.");
+    local report = Wizard.WinSdkFetch(url, _T("sfml"), explanation, _("Install SFML"));
+    if (SfmlReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = SfmlWinBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowMessage(SfmlWinPageText(reason));
+        return false;
+    }
+    if (SfmlReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+        return false;
+    }
+    if (SfmlReportField(report, _T("launched")).Matches(_T("1")))
+    {
+        ShowError(_("SFML was not installed. No project was created.\n\n") +
+                  SfmlReportField(report, _T("output")));
+    }
+    return false;
+}
+
+function OnLeave_SFMLWinDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (SfmlWinBlockReason().IsEmpty())
+        return true;
+    if (SFMLWinState.Matches(_T("missing")))
+        return SfmlWinOfferInstall();
+    return false;
+}
+
+function SfmlWinAllowForward()
+{
+    if (PLATFORM != PLATFORM_MSW || SFMLWinAuto == 0)
+        return true;
+    if (!SfmlWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        ShowError(_("The automatic SFML install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    local reason = SfmlWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
 function OnLeave_ProjectPathPage(fwd)
 {
     if (fwd)
-        return SfmlMacAllowForward();
+    {
+        if (!SfmlMacAllowForward())
+            return false;
+        return SfmlWinAllowForward();
+    }
     return true;
 }
 
 function OnLeave_CompilerPage(fwd)
 {
     if (fwd)
-        return SfmlMacAllowForward();
+    {
+        if (!SfmlMacAllowForward())
+            return false;
+        return SfmlWinAllowForward();
+    }
     return true;
 }
 
@@ -451,8 +665,31 @@ function SetupProject(project)
 {
     if (PLATFORM == PLATFORM_MSW)
     {
-        project.AddIncludeDir(SFMLPathDefaultInc);
-        project.AddLibDir(SFMLPathDefaultLib);
+        if (!SFMLWinInclude.IsEmpty())
+        {
+            project.AddIncludeDir(SFMLWinInclude);
+            project.AddLibDir(SFMLWinLib);
+            project.AddCompilerOption(_T("-std=c++17"));
+            // TARGET_OUTPUT_DIR already ends with a separator, so the copy
+            // destination is a file path and the trailing separator is not quoted.
+            local sep = wxFILE_SEP_PATH;
+            project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-graphics-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-graphics-3.dll\""));
+            project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-window-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-window-3.dll\""));
+            project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-system-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-system-3.dll\""));
+            if (SFMLDebugLib == 1)
+            {
+                project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-graphics-d-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-graphics-d-3.dll\""));
+                project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-window-d-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-window-d-3.dll\""));
+                project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + SFMLWinBin + sep + _T("sfml-system-d-3.dll\" \"$(TARGET_OUTPUT_DIR)sfml-system-d-3.dll\""));
+            }
+        }
+        else
+        {
+            project.AddIncludeDir(SFMLPathDefaultInc);
+            project.AddLibDir(SFMLPathDefaultLib);
+            if (SFMLLinkType == 0) // static library
+                project.AddCompilerOption(_T("-DSFML_STATIC"));
+        }
 
         // add link libraries
         project.AddLinkLib(_T("mingw32"));
@@ -460,10 +697,6 @@ function SetupProject(project)
         project.AddLinkLib(_T("gdi32"));
         project.AddLinkLib(_T("winmm"));
         project.AddLinkLib(_T("dxguid"));
-        if (SFMLLinkType == 0) // static library
-        {
-            project.AddCompilerOption(_T("-DSFML_STATIC"));
-        }
     }
     else if (PLATFORM == PLATFORM_MAC)
     {

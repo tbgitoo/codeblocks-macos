@@ -1539,10 +1539,22 @@ void EditorManager::OnGenericContextMenuHandler(wxCommandEvent& event)
 
 void EditorManager::OnPageChanged(wxAuiNotebookEvent& event)
 {
-    EditorBase* eb = static_cast<EditorBase*>(m_pNotebook->GetPage(event.GetSelection()));
+    const int sel = event.GetSelection();
+    const int oldSel = event.GetOldSelection();
+    const size_t pageCount = m_pNotebook->GetPageCount();
+    // wx 3.3 sends this after the last page is removed, with selection wxNOT_FOUND.
+    // GetPage asserts on that index in a debug build.
+    EditorBase* eb = nullptr;
+    if (sel >= 0 && static_cast<size_t>(sel) < pageCount)
+        eb = static_cast<EditorBase*>(m_pNotebook->GetPage(static_cast<size_t>(sel)));
     EditorBase* eb_old = nullptr;
-    if (event.GetOldSelection()!=-1)
-        eb_old = static_cast<EditorBase*>(m_pNotebook->GetPage(event.GetOldSelection()));
+    if (oldSel >= 0 && static_cast<size_t>(oldSel) < pageCount)
+        eb_old = static_cast<EditorBase*>(m_pNotebook->GetPage(static_cast<size_t>(oldSel)));
+    if (!eb)
+    {
+        event.Skip();
+        return;
+    }
 
     CodeBlocksEvent evt(cbEVT_EDITOR_SWITCHED, -1, nullptr, eb, nullptr, eb_old);
     Manager::Get()->GetPluginManager()->NotifyPlugins(evt);
@@ -1552,10 +1564,9 @@ void EditorManager::OnPageChanged(wxAuiNotebookEvent& event)
 
     if (Manager::Get()->GetConfigManager("app")->ReadBool("/environment/tabs_stacked_based_switching"))
     {
-        wxWindow*        wnd;
+        wxWindow*        wnd = eb;
         cbNotebookStack* body;
         cbNotebookStack* tmp;
-        wnd = m_pNotebook->GetPage(event.GetSelection());
         for (body = m_pNotebookStackHead; body->next != nullptr; body = body->next)
         {
             if (wnd == body->next->window)
