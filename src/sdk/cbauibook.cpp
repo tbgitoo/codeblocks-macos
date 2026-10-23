@@ -436,7 +436,10 @@ void cbAuiNotebook::MinimizeFreeSpace(wxAuiTabCtrl* tabCtrl)
         return;
 
     int ctrl_idx = tabCtrl->GetActivePage();
-    wxWindow* win = GetPage(ctrl_idx);
+    if (ctrl_idx < 0)
+        ctrl_idx = 0;
+    // Active page is an index in this tab control, not in the notebook.
+    wxWindow* win = tabCtrl->GetWindowFromIdx(static_cast<size_t>(ctrl_idx));
     if (win)
     {
         int tabOffset = tabCtrl->GetTabOffset();

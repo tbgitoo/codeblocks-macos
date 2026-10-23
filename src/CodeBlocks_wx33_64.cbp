@@ -572,6 +572,7 @@
 					<Add option="-mthreads" />
 					<Add library="codeblocks" />
 					<Add library="wxmsw$(WX_VERSION)$(WX_SUFFIX)" />
+					<Add library="winhttp" />
 				</Linker>
 				<ExtraCommands>
 					<Add after="cmd /c if not exist devel33_64\share\CodeBlocks mkdir devel33_64\share\CodeBlocks" />
@@ -2239,6 +2240,12 @@
 			<Option target="Scripted wizard" />
 		</Unit>
 		<Unit filename="plugins/scriptedwizard/resources/wxwidgets/wizard.xrc">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/winsdk.cpp">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/winsdk.h">
 			<Option target="Scripted wizard" />
 		</Unit>
 		<Unit filename="plugins/scriptedwizard/wiz.cpp">

@@ -46,6 +46,7 @@
 #include "wiz.h"
 #include "wizpage.h"
 #include "macbrew.h"
+#include "winsdk.h"
 
 #include "scripting/bindings/sc_utils.h"
 #include "scripting/bindings/sc_typeinfo_all.h"
@@ -1965,6 +1966,38 @@ SQInteger Wiz_MacBrewInstall(HSQUIRRELVM v)
 }
 #endif
 
+#if defined(__WXMSW__)
+SQInteger Wiz_WinSdkCompiler(HSQUIRRELVM v)
+{
+    // this, compilerId
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkCompiler"))
+        return extractor.ErrorMessage();
+    const WinSdkCompiler probe = ProbeWinSdkCompiler(*extractor.p1);
+    return ConstructAndReturnInstance(v, FormatWinSdkCompiler(probe));
+}
+
+SQInteger Wiz_WinSdkTree(HSQUIRRELVM v)
+{
+    // this, libraryId
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkTree"))
+        return extractor.ErrorMessage();
+    const WinSdkTree tree = QueryWinSdkTree(*extractor.p1);
+    return ConstructAndReturnInstance(v, FormatWinSdkTree(tree));
+}
+
+SQInteger Wiz_WinSdkFetch(HSQUIRRELVM v)
+{
+    // this, url, libraryId, explanation, confirmLabel
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkFetch"))
+        return extractor.ErrorMessage();
+    const WinSdkFetch result = FetchWinSdk(*extractor.p1, *extractor.p2, *extractor.p3, *extractor.p4);
+    return ConstructAndReturnInstance(v, FormatWinSdkFetch(result));
+}
+#endif
+
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
 {
     // this, name
@@ -2267,6 +2300,13 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacBrewTry"), Wiz_MacBrewTry, _SC("Wiz::MacBrewTry"));
         BindMethod(v, _SC("MacBrewChoice"), Wiz_MacBrewChoice, _SC("Wiz::MacBrewChoice"));
         BindMethod(v, _SC("MacBrewInstall"), Wiz_MacBrewInstall, _SC("Wiz::MacBrewInstall"));
+#endif
+#if defined(__WXMSW__)
+        // v3.3. Compiler identity, one saved unpack directory, one https zip
+        // after consent. The script supplies the address and checks the tree.
+        BindMethod(v, _SC("WinSdkCompiler"), Wiz_WinSdkCompiler, _SC("Wiz::WinSdkCompiler"));
+        BindMethod(v, _SC("WinSdkTree"), Wiz_WinSdkTree, _SC("Wiz::WinSdkTree"));
+        BindMethod(v, _SC("WinSdkFetch"), Wiz_WinSdkFetch, _SC("Wiz::WinSdkFetch"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);
