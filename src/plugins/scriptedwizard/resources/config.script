@@ -44,7 +44,8 @@ function RegisterWizards()
     RegisterWizard(wizProject,     _T("qt4"),          _("QT4 project"),           _("GUI"));
     RegisterWizard(wizProject,     _T("qt4dll"),       _("QT4 (shared) project"),  _("GUI"));
     RegisterWizard(wizProject,     _T("qt5"),          _("QT5 project"),           _("GUI"));
-    if (PLATFORM != PLATFORM_MAC)
+    // SDL 1 stays on Unix. macOS and Windows do not register it.
+    if (PLATFORM != PLATFORM_MAC && PLATFORM != PLATFORM_MSW)
         RegisterWizard(wizProject, _T("sdl"),          _("SDL project"),           _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("sdl3"),         _("SDL3 project"),          _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("sfml"),         _("SFML project"),          _("2D/3D Graphics"));

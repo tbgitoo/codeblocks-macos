@@ -173,6 +173,8 @@ echo \.svn\      >  excludes%TARGET%.txt
 echo Makefile    >> excludes%TARGET%.txt
 echo Makefile.am >> excludes%TARGET%.txt
 echo Makefile.in >> excludes%TARGET%.txt
+REM SDL 1 wizard is Unix-only. sdl\ does not match sdl3\.
+echo sdl\         >> excludes%TARGET%.txt
 
 xcopy /D /y sdk\resources\lexers\lexer_*                  "%CB_DEVEL_RESDIR%\lexers" > nul
 xcopy /D /y src\resources\images\*.png                    "%CB_DEVEL_RESDIR%\images" > nul
