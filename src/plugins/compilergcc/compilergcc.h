@@ -281,6 +281,9 @@ class CompilerGCC : public cbCompilerPlugin
             PipedProcess* pProcess;
             wxString      OutputFile;
             long int      PID;
+            bool          isRun;
+            wxString      runTarget;
+            wxString      producedExecutable;
         };
         typedef std::vector<CompilerProcess> CompilerProcessList;
         CompilerProcessList m_CompilerProcessList;
@@ -350,6 +353,60 @@ class CompilerGCC : public cbCompilerPlugin
         bool   m_LogBuildProgressPercentage;
 
         cbArtProvider *m_pArtProvider;
+
+#ifdef __WXMSW__
+        // One normal Run. The UI already disables Run while IsRunning(), so a
+        // second concurrent Run is not started from the menus.
+        struct TrackedConsoleRun
+        {
+            bool active;
+            long runnerPid;
+            long targetPid;
+            wxString targetPath;
+            unsigned long long launchTime;
+            unsigned long long createdTime;
+            bool creationKnown;
+            bool terminationRequested;
+            bool terminationFailed;
+            void* process;
+            wxLongLong lastDiscoverMs;
+            int discoverAttempts;
+            TrackedConsoleRun()
+                : active(false), runnerPid(0), targetPid(0), launchTime(0), createdTime(0),
+                  creationKnown(false), terminationRequested(false), terminationFailed(false),
+                  process(nullptr), lastDiscoverMs(0), discoverAttempts(0)
+            {}
+        };
+        TrackedConsoleRun m_TrackedRun;
+
+        enum RecoveryReplay
+        {
+            rrNone = 0,
+            rrCompileFile,
+            rrBuild,
+            rrRebuild
+        };
+        RecoveryReplay m_RecoveryReplay;
+        wxString       m_RecoveryReplayArg;
+        bool           m_RecoveryRetryInProgress;
+        bool           m_RecoveryOfferDone;
+        bool           m_StandaloneDebugBuild;
+        wxString       m_StandaloneLinkOutput;
+
+        void RememberRecoveryReplay(RecoveryReplay kind, const wxString& arg);
+        void BeginTrackedRun(long runnerPid, const wxString& targetPath);
+        void ClearTrackedRun(const wxString& reason);
+        void RefreshTrackedRun();
+        bool DiscoverTrackedTarget();
+        bool AdoptTrackedTarget(long pid);
+        bool TerminateTrackedRunAndWait();
+        void KillAssociatedConsole();
+        void ReleaseRunReservationIfIdle();
+        void LogRunNote(const wxString& message);
+        bool OfferLockedExecutableRecovery(const wxString& producedExecutable);
+        void ReplayRecoveryBuild();
+        wxString AbsoluteExecutablePath(ProjectBuildTarget* target) const;
+#endif
 
         DECLARE_EVENT_TABLE()
 };

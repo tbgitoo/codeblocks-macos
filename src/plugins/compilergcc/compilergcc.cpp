@@ -43,6 +43,12 @@
 
 #include <wx/uri.h>
 #include <wx/xml/xml.h>
+#include <wx/msgdlg.h>
+#ifdef __WXMSW__
+#include <windows.h>
+#include <tlhelp32.h>
+#include <vector>
+#endif
 
 #include "annoyingdialog.h"
 #include "debuggermanager.h"
@@ -362,6 +368,13 @@ void CompilerGCC::OnAttach()
     m_Build = false;
     m_LastBuildStep = true;
     m_IsWorkspaceOperation = false;
+#ifdef __WXMSW__
+    m_TrackedRun = TrackedConsoleRun();
+    m_RecoveryReplay = rrNone;
+    m_RecoveryRetryInProgress = false;
+    m_RecoveryOfferDone = false;
+    m_StandaloneDebugBuild = false;
+#endif
 
     m_timerIdleWakeUp.SetOwner(this, idTimerPollCompiler);
 
@@ -1295,6 +1308,15 @@ void CompilerGCC::AddToCommandQueue(const wxArrayString& commands)
             CompilerCommand* p = new CompilerCommand(cmd, wxEmptyString, m_pBuildingProject, bt);
             p->mustWait = mustWait;
             p->isLink = isLink;
+#ifdef __WXMSW__
+            if (isLink)
+            {
+                if (bt && (bt->GetTargetType() == ttExecutable || bt->GetTargetType() == ttConsoleOnly))
+                    p->producedExecutable = AbsoluteExecutablePath(bt);
+                else if (!m_StandaloneLinkOutput.empty())
+                    p->producedExecutable = m_StandaloneLinkOutput;
+            }
+#endif
             m_CommandQueue.Add(p);
             isLink = false;
             mustWait = false;
@@ -1320,6 +1342,9 @@ void CompilerGCC::AllocProcesses()
     {
         p.pProcess = nullptr;
         p.PID = 0;
+        p.isRun = false;
+        p.runTarget.clear();
+        p.producedExecutable.clear();
     }
 }
 
@@ -1344,14 +1369,27 @@ bool CompilerGCC::IsProcessRunning(int idx) const
     if (m_CompilerProcessList.empty() || idx >= (int)m_CompilerProcessList.size())
         return false;
 
+    auto slotActive = [this](const CompilerProcess& p) -> bool
+    {
+        if (!p.pProcess)
+            return false;
+#ifdef __WXMSW__
+        // The console runner stays up for "Press any key" after the user's
+        // program has exited. That no longer counts as a running target.
+        if (p.isRun && !m_TrackedRun.active)
+            return false;
+#endif
+        return true;
+    };
+
     // specific process
     if (idx >= 0)
-        return (m_CompilerProcessList.at(static_cast<size_t>(idx)).pProcess != nullptr);
+        return slotActive(m_CompilerProcessList.at(static_cast<size_t>(idx)));
 
     // any process (idx = -1)
     for (const CompilerProcess &p : m_CompilerProcessList)
     {
-        if (p.pProcess)
+        if (slotActive(p))
             return true;
     }
     return false;
@@ -1526,6 +1564,9 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
     // create a new process
     CompilerProcess &process = m_CompilerProcessList.at(procIndex);
     process.OutputFile = (cmd->isLink && cmd->target) ? cmd->target->GetOutputFilename() : wxString(wxEmptyString);
+    process.isRun = cmd->isRun;
+    process.runTarget = cmd->isRun ? cmd->runTarget : wxString();
+    process.producedExecutable = cmd->producedExecutable;
 
     int poll_process_timer = Manager::Get()->GetConfigManager("compiler")->ReadInt("/poll_process_timer", 1000);
     const bool runViaProgramConsole = cmd->isRun && cmd->useProgramConsole;
@@ -1602,6 +1643,11 @@ int CompilerGCC::DoRunQueue(int timer /*= 100*/)
         else
             m_timerIdleWakeUp.Start(timer);
     }
+
+#ifdef __WXMSW__
+    if (process.isRun && process.PID)
+        BeginTrackedRun(process.PID, process.runTarget);
+#endif
 
     // restore old dynamic linker path
     wxSetEnv(CB_LIBRARY_ENVVAR, oldLibPath);
@@ -2082,6 +2128,7 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
     Manager::Get()->GetLogManager()->Log(wxString::Format(_("Executing: '%s' (in '%s')"), command, m_CdRun), m_PageIndex);
     CompilerCommand* runCmd = new CompilerCommand(command, wxEmptyString, nullptr, nullptr, true);
     runCmd->useProgramConsole = useProgramConsole;
+    runCmd->runTarget = exe_filename;
     m_CommandQueue.Add(runCmd);
     return 0;
 }
@@ -2390,6 +2437,19 @@ int CompilerGCC::RunActiveProjectAfterPrepare(ProjectBuildTarget* target)
     const wxString& message = wxString::Format(_("Executing: %s (in %s)"), cmd, m_CdRun);
     CompilerCommand* runCmd = new CompilerCommand(cmd, message, m_pProject, target, true);
     runCmd->useProgramConsole = useProgramConsole;
+    {
+        wxString launched = f.GetFullPath();
+        const TargetType kind = target->GetTargetType();
+        if (kind == ttDynamicLib || kind == ttStaticLib || kind == ttCommandsOnly)
+        {
+            launched = target->GetHostApplication();
+            wxFileName host(launched);
+            if (host.IsRelative())
+                host.MakeAbsolute(m_pProject->GetBasePath());
+            launched = host.GetFullPath();
+        }
+        runCmd->runTarget = launched;
+    }
     m_CommandQueue.Add(runCmd);
 
     m_pProject->SetCurrentlyCompilingTarget(nullptr);
@@ -3201,6 +3261,13 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
 
 int CompilerGCC::Build(const wxString& target)
 {
+#ifdef __WXMSW__
+    if (!m_RecoveryRetryInProgress)
+    {
+        m_StandaloneDebugBuild = false;
+        RememberRecoveryReplay(rrBuild, target);
+    }
+#endif
     m_LastBuildStep = true;
     cbClearBackticksCache();
     return DoBuild(target, false, true);
@@ -3218,6 +3285,13 @@ int CompilerGCC::Rebuild(ProjectBuildTarget* target)
 
 int CompilerGCC::Rebuild(const wxString& target)
 {
+#ifdef __WXMSW__
+    if (!m_RecoveryRetryInProgress)
+    {
+        m_StandaloneDebugBuild = false;
+        RememberRecoveryReplay(rrRebuild, target);
+    }
+#endif
     cbClearBackticksCache();
     m_LastBuildStep = Manager::Get()->GetConfigManager("compiler")->ReadBool("/rebuild_seperately", false);
     if (m_LastBuildStep)
@@ -3295,13 +3369,710 @@ int CompilerGCC::CleanWorkspace(const wxString& target)
     return DoWorkspaceBuild(target, true, false);
 }
 
+#ifdef __WXMSW__
+namespace
+{
+static const int kDiscoverAttempts = 10;
+static const unsigned long long kFileTimeSlack = 10000000ULL; // 1 second
+
+struct WinProc
+{
+    unsigned long pid;
+    unsigned long ppid;
+    wxString image;
+};
+
+static bool IsConsoleHostImage(const wxString& image)
+{
+    return image.IsSameAs("conhost.exe", false)
+        || image.IsSameAs("OpenConsole.exe", false);
+}
+
+static bool IsConsoleRunnerImage(const wxString& image)
+{
+    return image.IsSameAs("cb_console_runner.exe", false);
+}
+
+static std::vector<WinProc> SnapshotProcesses()
+{
+    std::vector<WinProc> out;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return out;
+    PROCESSENTRY32W entry;
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snap, &entry))
+    {
+        do
+        {
+            WinProc proc;
+            proc.pid = entry.th32ProcessID;
+            proc.ppid = entry.th32ParentProcessID;
+            proc.image = entry.szExeFile;
+            out.push_back(proc);
+            entry.dwSize = sizeof(entry);
+        }
+        while (Process32NextW(snap, &entry));
+    }
+    CloseHandle(snap);
+    return out;
+}
+
+static void CollectDescendants(unsigned long root, const std::vector<WinProc>& procs, std::vector<unsigned long>& out)
+{
+    std::vector<unsigned long> queue(1, root);
+    for (size_t i = 0; i < queue.size(); ++i)
+    {
+        for (const WinProc& proc : procs)
+        {
+            if (proc.ppid == queue[i] && proc.pid != queue[i])
+            {
+                out.push_back(proc.pid);
+                queue.push_back(proc.pid);
+            }
+        }
+    }
+}
+
+static wxString QueryProcessImagePath(unsigned long pid)
+{
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!handle)
+        return wxString();
+    wchar_t buf[32768];
+    DWORD len = 32767;
+    wxString path;
+    if (QueryFullProcessImageNameW(handle, 0, buf, &len))
+        path = buf;
+    CloseHandle(handle);
+    return path;
+}
+
+static unsigned long long NowFileTime()
+{
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER value;
+    value.LowPart = ft.dwLowDateTime;
+    value.HighPart = ft.dwHighDateTime;
+    return value.QuadPart;
+}
+
+static bool ReadCreationTime(HANDLE handle, unsigned long long* out)
+{
+    FILETIME created, exited, kernel, user;
+    if (!GetProcessTimes(handle, &created, &exited, &kernel, &user))
+        return false;
+    ULARGE_INTEGER value;
+    value.LowPart = created.dwLowDateTime;
+    value.HighPart = created.dwHighDateTime;
+    *out = value.QuadPart;
+    return true;
+}
+
+static wxString NormalizeExecutablePath(const wxString& path)
+{
+    if (path.empty())
+        return path;
+    wxFileName name(path);
+    name.Normalize(wxPATH_NORM_ENV_VARS | wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE | wxPATH_NORM_LONG);
+    return name.GetFullPath();
+}
+
+static bool SameExecutablePath(const wxString& left, const wxString& right)
+{
+    if (left.empty() || right.empty())
+        return false;
+    return NormalizeExecutablePath(left).IsSameAs(NormalizeExecutablePath(right), false);
+}
+
+static std::vector<unsigned long> ProcessesWithExactImage(const wxString& path, unsigned long long minCreate)
+{
+    std::vector<unsigned long> hits;
+    const wxString want = NormalizeExecutablePath(path);
+    const wxString base = wxFileName(want).GetFullName();
+    if (want.empty() || base.empty())
+        return hits;
+    const std::vector<WinProc> procs = SnapshotProcesses();
+    for (const WinProc& proc : procs)
+    {
+        if (!proc.image.IsSameAs(base, false))
+            continue;
+        HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, proc.pid);
+        if (!handle)
+            continue;
+        unsigned long long created = 0;
+        const bool gotTime = ReadCreationTime(handle, &created);
+        wchar_t buf[32768];
+        DWORD len = 32767;
+        wxString image;
+        if (QueryFullProcessImageNameW(handle, 0, buf, &len))
+            image = buf;
+        CloseHandle(handle);
+        if (!gotTime || !SameExecutablePath(image, want))
+            continue;
+        if (minCreate && created + kFileTimeSlack < minCreate)
+            continue;
+        hits.push_back(proc.pid);
+    }
+    return hits;
+}
+
+static bool FileLockedForReplace(const wxString& path)
+{
+    HANDLE handle = CreateFileW(path.wc_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(handle);
+        return false;
+    }
+    const DWORD err = GetLastError();
+    return err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION || err == ERROR_ACCESS_DENIED;
+}
+
+static DWORD WaitProcessPump(HANDLE handle, DWORD timeoutMs)
+{
+    const DWORD start = GetTickCount();
+    for (;;)
+    {
+        const DWORD elapsed = GetTickCount() - start;
+        if (elapsed >= timeoutMs)
+            return WAIT_TIMEOUT;
+        const DWORD slice = timeoutMs - elapsed;
+        const DWORD waited = MsgWaitForMultipleObjects(1, &handle, FALSE, slice, QS_ALLINPUT);
+        if (waited == WAIT_OBJECT_0 || waited == WAIT_TIMEOUT)
+            return waited;
+        if (waited == WAIT_OBJECT_0 + 1)
+        {
+            MSG msg;
+            while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+            {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+            continue;
+        }
+        return waited;
+    }
+}
+
+static void TerminateConsoleTree(unsigned long runnerPid, unsigned long targetPid)
+{
+    if (!runnerPid)
+        return;
+    const std::vector<WinProc> procs = SnapshotProcesses();
+    std::vector<unsigned long> desc;
+    CollectDescendants(runnerPid, procs, desc);
+
+    auto finish = [&](unsigned long pid, const wxString& image, bool belongs)
+    {
+        if (!belongs)
+            return;
+        if (pid == targetPid)
+            return;
+        if (image.IsSameAs("WindowsTerminal.exe", false) || image.IsSameAs("wt.exe", false))
+            return;
+        const bool host = IsConsoleHostImage(image) || IsConsoleRunnerImage(image) || pid == runnerPid;
+        if (!host)
+            return;
+        HANDLE handle = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        if (!handle)
+            return;
+        TerminateProcess(handle, 1);
+        CloseHandle(handle);
+    };
+
+    for (const WinProc& proc : procs)
+        finish(proc.pid, proc.image, proc.pid == runnerPid);
+    for (unsigned long pid : desc)
+    {
+        wxString image;
+        for (const WinProc& proc : procs)
+        {
+            if (proc.pid == pid)
+                image = proc.image;
+        }
+        finish(pid, image, true);
+    }
+}
+
+static bool StopExactProcess(unsigned long pid, const wxString& path, wxString* failure)
+{
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                                FALSE, pid);
+    if (!handle)
+    {
+        if (failure)
+            *failure = wxString::Format("pid %lu is not running", pid);
+        return false;
+    }
+    unsigned long long created = 0;
+    wchar_t buf[32768];
+    DWORD len = 32767;
+    const bool gotTime = ReadCreationTime(handle, &created);
+    wxString image;
+    if (QueryFullProcessImageNameW(handle, 0, buf, &len))
+        image = buf;
+    if (!gotTime || !SameExecutablePath(image, path))
+    {
+        CloseHandle(handle);
+        if (failure)
+            *failure = wxString::Format("pid %lu is not %s", pid, path);
+        return false;
+    }
+    if (!TerminateProcess(handle, 1))
+    {
+        const DWORD err = GetLastError();
+        CloseHandle(handle);
+        if (failure)
+            *failure = wxString::Format("TerminateProcess pid %lu failed (%lu)", pid, err);
+        return false;
+    }
+    const DWORD waited = WaitProcessPump(handle, 3000);
+    CloseHandle(handle);
+    if (waited != WAIT_OBJECT_0)
+    {
+        if (failure)
+            *failure = wxString::Format("pid %lu did not exit", pid);
+        return false;
+    }
+    if (FileLockedForReplace(path))
+    {
+        if (failure)
+            *failure = "executable is still locked after the process exited";
+        return false;
+    }
+    return true;
+}
+}
+
+wxString CompilerGCC::AbsoluteExecutablePath(ProjectBuildTarget* target) const
+{
+    if (!target)
+        return wxString();
+    wxString out = UnixFilename(target->GetOutputFilename());
+    Manager::Get()->GetMacrosManager()->ReplaceMacros(out, target);
+    wxFileName name(out);
+    cbProject* project = target->GetParentProject();
+    if (name.IsRelative() && project)
+        name.MakeAbsolute(project->GetBasePath());
+    return NormalizeExecutablePath(name.GetFullPath());
+}
+
+void CompilerGCC::LogRunNote(const wxString& message)
+{
+    Manager::Get()->GetLogManager()->DebugLog("Run: " + message);
+    LogMessage(message, cltInfo);
+}
+
+void CompilerGCC::RememberRecoveryReplay(RecoveryReplay kind, const wxString& arg)
+{
+    m_RecoveryReplay = kind;
+    m_RecoveryReplayArg = arg;
+    m_RecoveryOfferDone = false;
+}
+
+void CompilerGCC::ClearTrackedRun(const wxString& reason)
+{
+    if (m_TrackedRun.process)
+    {
+        CloseHandle(static_cast<HANDLE>(m_TrackedRun.process));
+        m_TrackedRun.process = nullptr;
+    }
+    if (m_TrackedRun.active || m_TrackedRun.runnerPid || m_TrackedRun.targetPid)
+        LogRunNote("cleared run (" + reason + ")");
+    m_TrackedRun = TrackedConsoleRun();
+}
+
+void CompilerGCC::ReleaseRunReservationIfIdle()
+{
+    if (m_TrackedRun.active || IsProcessRunning())
+        return;
+    ProjectManager* manager = Manager::Get()->GetProjectManager();
+    if (manager && manager->GetIsRunning() == this)
+        manager->SetIsRunning(nullptr);
+}
+
+bool CompilerGCC::AdoptTrackedTarget(long pid)
+{
+    if (pid <= 0)
+        return false;
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                                FALSE, static_cast<DWORD>(pid));
+    if (!handle)
+    {
+        LogRunNote(wxString::Format("could not open target pid %ld", pid));
+        return false;
+    }
+    unsigned long long created = 0;
+    wchar_t buf[32768];
+    DWORD len = 32767;
+    if (!ReadCreationTime(handle, &created) ||
+        !QueryFullProcessImageNameW(handle, 0, buf, &len) ||
+        !SameExecutablePath(buf, m_TrackedRun.targetPath))
+    {
+        CloseHandle(handle);
+        LogRunNote(wxString::Format("pid %ld is not %s", pid, m_TrackedRun.targetPath));
+        return false;
+    }
+    if (m_TrackedRun.launchTime && created + kFileTimeSlack < m_TrackedRun.launchTime)
+    {
+        CloseHandle(handle);
+        LogRunNote(wxString::Format("pid %ld started before this run; not adopting", pid));
+        return false;
+    }
+    if (m_TrackedRun.process)
+        CloseHandle(static_cast<HANDLE>(m_TrackedRun.process));
+    m_TrackedRun.process = handle;
+    m_TrackedRun.targetPid = pid;
+    m_TrackedRun.createdTime = created;
+    m_TrackedRun.creationKnown = true;
+    LogRunNote(wxString::Format("target pid %ld path %s (runner pid %ld)",
+                                pid, m_TrackedRun.targetPath, m_TrackedRun.runnerPid));
+    return true;
+}
+
+bool CompilerGCC::DiscoverTrackedTarget()
+{
+    if (!m_TrackedRun.active || m_TrackedRun.targetPath.empty())
+        return false;
+    if (m_TrackedRun.targetPid && m_TrackedRun.process)
+        return true;
+
+    if (SameExecutablePath(QueryProcessImagePath(static_cast<unsigned long>(m_TrackedRun.runnerPid)),
+                           m_TrackedRun.targetPath))
+        return AdoptTrackedTarget(m_TrackedRun.runnerPid);
+
+    const std::vector<WinProc> procs = SnapshotProcesses();
+    std::vector<unsigned long> descendants;
+    CollectDescendants(static_cast<unsigned long>(m_TrackedRun.runnerPid), procs, descendants);
+    std::vector<long> hits;
+    for (unsigned long pid : descendants)
+    {
+        if (SameExecutablePath(QueryProcessImagePath(pid), m_TrackedRun.targetPath))
+            hits.push_back(static_cast<long>(pid));
+    }
+    if (hits.size() == 1)
+        return AdoptTrackedTarget(hits[0]);
+    if (hits.size() > 1)
+    {
+        LogRunNote("several descendant processes match the target path; not choosing one");
+        return false;
+    }
+
+    ++m_TrackedRun.discoverAttempts;
+    if (m_TrackedRun.discoverAttempts < kDiscoverAttempts)
+        return false;
+
+    const std::vector<unsigned long> global = ProcessesWithExactImage(m_TrackedRun.targetPath, m_TrackedRun.launchTime);
+    if (global.size() == 1)
+        return AdoptTrackedTarget(static_cast<long>(global[0]));
+
+    LogRunNote(wxString::Format("target process not observed for %s (runner pid %ld)",
+                                m_TrackedRun.targetPath, m_TrackedRun.runnerPid));
+    ClearTrackedRun("target not observed");
+    ReleaseRunReservationIfIdle();
+    return false;
+}
+
+void CompilerGCC::RefreshTrackedRun()
+{
+    if (!m_TrackedRun.active)
+        return;
+    if (m_TrackedRun.process)
+    {
+        const DWORD waited = WaitForSingleObject(static_cast<HANDLE>(m_TrackedRun.process), 0);
+        if (waited == WAIT_OBJECT_0)
+        {
+            if (m_TrackedRun.terminationRequested)
+                return;
+            LogRunNote(wxString::Format("target exit observed pid %ld (%s)",
+                                        m_TrackedRun.targetPid, m_TrackedRun.targetPath));
+            ClearTrackedRun("target exit observed");
+            ReleaseRunReservationIfIdle();
+            if (!IsProcessRunning())
+                m_timerIdleWakeUp.Stop();
+            return;
+        }
+        if (waited == WAIT_TIMEOUT)
+            return;
+    }
+
+    const wxLongLong now = wxGetUTCTimeMillis();
+    if (m_TrackedRun.lastDiscoverMs != 0 && (now - m_TrackedRun.lastDiscoverMs) < 200)
+        return;
+    m_TrackedRun.lastDiscoverMs = now;
+    DiscoverTrackedTarget();
+}
+
+void CompilerGCC::BeginTrackedRun(long runnerPid, const wxString& targetPath)
+{
+    if (m_TrackedRun.active)
+        ClearTrackedRun("replaced by a new run");
+    const wxString path = NormalizeExecutablePath(targetPath);
+    if (runnerPid <= 0 || path.empty())
+    {
+        LogRunNote("run target path unknown; the console runner is not treated as the user's program");
+        return;
+    }
+    m_TrackedRun = TrackedConsoleRun();
+    m_TrackedRun.active = true;
+    m_TrackedRun.runnerPid = runnerPid;
+    m_TrackedRun.targetPath = path;
+    m_TrackedRun.launchTime = NowFileTime();
+    LogRunNote(wxString::Format("runner pid %ld target path %s", runnerPid, path));
+    DiscoverTrackedTarget();
+}
+
+void CompilerGCC::KillAssociatedConsole()
+{
+    const unsigned long runnerPid = static_cast<unsigned long>(m_TrackedRun.runnerPid);
+    const unsigned long targetPid = static_cast<unsigned long>(m_TrackedRun.targetPid);
+    if (!runnerPid)
+        return;
+    TerminateConsoleTree(runnerPid, targetPid);
+    LogRunNote(wxString::Format("console cleanup requested for runner pid %lu", runnerPid));
+
+    const std::vector<WinProc> procs = SnapshotProcesses();
+    std::vector<unsigned long> descendants;
+    CollectDescendants(runnerPid, procs, descendants);
+    for (const WinProc& proc : procs)
+    {
+        if (!IsConsoleRunnerImage(proc.image) || proc.pid == runnerPid)
+            continue;
+        bool ours = false;
+        for (unsigned long pid : descendants)
+        {
+            if (pid == proc.pid)
+                ours = true;
+        }
+        if (!ours)
+            LogRunNote(wxString::Format("unrelated console runner pid %lu left running", proc.pid));
+    }
+}
+
+bool CompilerGCC::TerminateTrackedRunAndWait()
+{
+    if (!m_TrackedRun.active)
+        return true;
+    if (!m_TrackedRun.targetPid)
+        DiscoverTrackedTarget();
+
+    m_TrackedRun.terminationRequested = true;
+    LogRunNote(wxString::Format("Abort requested termination runner pid %ld target pid %ld path %s",
+                                m_TrackedRun.runnerPid, m_TrackedRun.targetPid, m_TrackedRun.targetPath));
+    LogMessage(_("Stopping the running program."), cltInfo);
+
+    if (!m_TrackedRun.targetPid || !m_TrackedRun.process)
+    {
+        m_TrackedRun.terminationFailed = true;
+        LogRunNote("Abort found no target process");
+        LogMessage(_("Could not stop the running program."), cltError);
+        m_TrackedRun.terminationRequested = false;
+        return false;
+    }
+
+    HANDLE probe = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(m_TrackedRun.targetPid));
+    if (!probe)
+    {
+        LogRunNote(wxString::Format("target pid %ld no longer exists", m_TrackedRun.targetPid));
+        const long runnerPid = m_TrackedRun.runnerPid;
+        const long targetPid = m_TrackedRun.targetPid;
+        m_TrackedRun.runnerPid = runnerPid;
+        KillAssociatedConsole();
+        ClearTrackedRun("target already exited");
+        ReleaseRunReservationIfIdle();
+        (void)targetPid;
+        return true;
+    }
+    unsigned long long created = 0;
+    wchar_t buf[32768];
+    DWORD len = 32767;
+    const bool same = ReadCreationTime(probe, &created) &&
+                      m_TrackedRun.creationKnown &&
+                      created == m_TrackedRun.createdTime &&
+                      QueryFullProcessImageNameW(probe, 0, buf, &len) &&
+                      SameExecutablePath(buf, m_TrackedRun.targetPath);
+    CloseHandle(probe);
+    if (!same)
+    {
+        LogRunNote(wxString::Format("pid %ld no longer refers to %s; not stopping it",
+                                    m_TrackedRun.targetPid, m_TrackedRun.targetPath));
+        LogMessage(_("The running program could not be identified safely, so it was not stopped."), cltError);
+        ClearTrackedRun("pid identity changed");
+        ReleaseRunReservationIfIdle();
+        return false;
+    }
+
+    const long runnerPid = m_TrackedRun.runnerPid;
+    const long targetPid = m_TrackedRun.targetPid;
+    HANDLE handle = static_cast<HANDLE>(m_TrackedRun.process);
+    if (!TerminateProcess(handle, 1))
+    {
+        LogRunNote(wxString::Format("TerminateProcess failed for target pid %ld (error %lu)",
+                                    targetPid, GetLastError()));
+        m_TrackedRun.terminationFailed = true;
+        m_TrackedRun.terminationRequested = false;
+        LogMessage(_("Could not stop the running program."), cltError);
+        return false;
+    }
+
+    const DWORD waited = WaitProcessPump(handle, 3000);
+    if (waited != WAIT_OBJECT_0)
+    {
+        LogRunNote(wxString::Format("target pid %ld did not exit after Abort", targetPid));
+        m_TrackedRun.terminationFailed = true;
+        m_TrackedRun.terminationRequested = false;
+        LogMessage(_("Could not stop the running program."), cltError);
+        return false;
+    }
+
+    LogRunNote(wxString::Format("termination succeeded; target exit observed pid %ld", targetPid));
+    m_TrackedRun.runnerPid = runnerPid;
+    m_TrackedRun.targetPid = targetPid;
+    KillAssociatedConsole();
+    ClearTrackedRun("termination succeeded");
+    ReleaseRunReservationIfIdle();
+    return true;
+}
+
+bool CompilerGCC::OfferLockedExecutableRecovery(const wxString& producedExecutable)
+{
+    if (producedExecutable.empty() || Manager::IsBatchBuild())
+        return false;
+    cbDebuggerPlugin* debugger = Manager::Get()->GetDebuggerManager()->GetActiveDebugger();
+    if (m_StandaloneDebugBuild || (debugger && (debugger->IsRunning() || debugger->WaitingCompilerToFinish())))
+    {
+        LogRunNote("recovery skipped because a debugger build is in progress");
+        return false;
+    }
+
+    const wxString path = NormalizeExecutablePath(producedExecutable);
+    if (path.empty() || !wxFileExists(path) || !FileLockedForReplace(path))
+        return false;
+
+    m_RecoveryOfferDone = true;
+    const std::vector<unsigned long> matches = ProcessesWithExactImage(path, 0);
+    const wxString name = wxFileName(path).GetFullName();
+    LogRunNote(wxString::Format("recovery: %s is locked by %u matching process(es)",
+                                path, static_cast<unsigned>(matches.size())));
+
+    wxWindow* parent = Manager::Get()->GetAppWindow();
+    if (matches.size() != 1)
+    {
+        LogRunNote(matches.empty()
+                       ? "recovery declined: executable is in use but no process has that exact path"
+                       : "recovery declined: more than one process has this exact path");
+        cbMessageBox(wxString::Format(_("The program \"%s\" appears to be in use, so Windows cannot replace the executable."), name),
+                     _("Rebuild"), wxOK | wxICON_WARNING, parent);
+        return false;
+    }
+
+    wxMessageDialog dialog(parent,
+                           wxString::Format(_("The program \"%s\" is still running, so Windows cannot replace the executable.\n\nStop the program and rebuild?"), name),
+                           _("Rebuild"),
+                           wxYES_NO | wxICON_QUESTION);
+    dialog.SetYesNoLabels(_("Stop and rebuild"), _("Cancel"));
+    if (dialog.ShowModal() != wxID_YES)
+    {
+        LogRunNote("recovery cancelled");
+        return false;
+    }
+
+    const unsigned long pid = matches[0];
+    const long runnerForCleanup = (m_TrackedRun.active && m_TrackedRun.targetPid == static_cast<long>(pid))
+                                  ? m_TrackedRun.runnerPid : 0;
+    if (m_TrackedRun.active)
+        m_TrackedRun.terminationRequested = true;
+
+    wxString failure;
+    if (!StopExactProcess(pid, path, &failure))
+    {
+        if (m_TrackedRun.active)
+            m_TrackedRun.terminationRequested = false;
+        LogRunNote("recovery termination failed: " + failure);
+        LogMessage(_("Could not stop the running program."), cltError);
+        return false;
+    }
+    LogRunNote(wxString::Format("recovery stopped pid %lu (%s)", pid, path));
+    if (runnerForCleanup > 0)
+        TerminateConsoleTree(static_cast<unsigned long>(runnerForCleanup), pid);
+
+    if (m_TrackedRun.active &&
+        (m_TrackedRun.targetPid == static_cast<long>(pid) || SameExecutablePath(m_TrackedRun.targetPath, path)))
+    {
+        ClearTrackedRun("recovery stopped target");
+        ReleaseRunReservationIfIdle();
+    }
+    else if (m_TrackedRun.active)
+        m_TrackedRun.terminationRequested = false;
+
+    const std::vector<WinProc> procs = SnapshotProcesses();
+    for (const WinProc& proc : procs)
+    {
+        if (IsConsoleRunnerImage(proc.image))
+            LogRunNote(wxString::Format("console runner pid %lu still present after recovery", proc.pid));
+    }
+
+    if (m_RecoveryReplay == rrNone)
+    {
+        LogRunNote("recovery stopped the program; no build was replayed");
+        return false;
+    }
+    m_RecoveryRetryInProgress = true;
+    LogRunNote("recovery retry scheduled");
+    LogMessage(_("Rebuilding after the program stopped."), cltInfo);
+    CallAfter(&CompilerGCC::ReplayRecoveryBuild);
+    return true;
+}
+
+void CompilerGCC::ReplayRecoveryBuild()
+{
+    const RecoveryReplay kind = m_RecoveryReplay;
+    const wxString arg = m_RecoveryReplayArg;
+    int result = -1;
+    switch (kind)
+    {
+        case rrCompileFile:
+            result = CompileFile(arg);
+            break;
+        case rrBuild:
+            result = Build(arg);
+            break;
+        case rrRebuild:
+            result = Rebuild(arg);
+            break;
+        default:
+            m_RecoveryRetryInProgress = false;
+            LogRunNote("recovery retry has no build to repeat");
+            return;
+    }
+    if (result < 0 && !IsRunning())
+    {
+        LogRunNote("recovery retry was not started");
+        m_RecoveryRetryInProgress = false;
+    }
+}
+#endif
+
 int CompilerGCC::KillProcess()
 {
     ResetBuildState();
     ClearRunAfterCompileContinuation();
-    if (!IsProcessRunning())
+#ifdef __WXMSW__
+    RefreshTrackedRun();
+    bool abortingRun = m_TrackedRun.active;
+    for (const CompilerProcess& proc : m_CompilerProcessList)
+    {
+        if (proc.isRun && proc.pProcess)
+            abortingRun = true;
+    }
+#else
+    const bool abortingRun = false;
+#endif
+    if (!IsProcessRunning() && !abortingRun)
         return 0;
-    if (!m_CommandQueue.LastCommandWasRun())
+    if (!abortingRun && !m_CommandQueue.LastCommandWasRun())
         LogMessage(_("Aborting build..."), cltInfo, ltMessages);
     wxKillError ret = wxKILL_OK;
 
@@ -3310,8 +4081,22 @@ int CompilerGCC::KillProcess()
     ProjectManager* projectManager = Manager::Get()->GetProjectManager();
     bool isRunning = projectManager->GetIsRunning() == this;
 
+#ifdef __WXMSW__
+    bool runStopFailed = false;
+    if (abortingRun)
+        runStopFailed = !TerminateTrackedRunAndWait();
+#else
+    const bool runStopFailed = false;
+#endif
+
     for (CompilerProcess &p : m_CompilerProcessList)
     {
+#ifdef __WXMSW__
+        // A live target is stopped by TerminateTrackedRunAndWait. A runner
+        // whose target has already exited can still be stopped here.
+        if (p.isRun && m_TrackedRun.active)
+            continue;
+#endif
         if (!p.pProcess)
             continue;
 
@@ -3382,13 +4167,22 @@ int CompilerGCC::KillProcess()
         }
     }
 
-    if (isRunning)
-        projectManager->SetIsRunning(nullptr);
+    if (isRunning && !runStopFailed)
+    {
+#ifdef __WXMSW__
+        if (!m_TrackedRun.active)
+#endif
+            projectManager->SetIsRunning(nullptr);
+    }
     return ret;
 }
 
 bool CompilerGCC::IsRunning() const
 {
+#ifdef __WXMSW__
+    if (m_TrackedRun.active)
+        return true;
+#endif
     return m_BuildJob != bjIdle || IsProcessRunning() || m_CommandQueue.GetCount();
 }
 
@@ -3422,6 +4216,13 @@ ProjectBuildTarget* CompilerGCC::GetBuildTargetForFile(ProjectFile* pf)
 
 int CompilerGCC::CompileFile(const wxString& file)
 {
+#ifdef __WXMSW__
+    if (!m_RecoveryRetryInProgress)
+    {
+        m_StandaloneDebugBuild = false;
+        RememberRecoveryReplay(rrCompileFile, file);
+    }
+#endif
     CheckProject();
 
     ProjectFile* pf = m_pProject ? m_pProject->GetFileByFilename(file, true, false) : nullptr;
@@ -3513,6 +4314,11 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
     // get compile commands for file (always linked as console-executable)
     DirectCommands dc(this, compiler, nullptr, m_PageIndex);
     wxArrayString compile = dc.GetCompileSingleFileCommand(path);
+#ifdef __WXMSW__
+    wxFileName standaloneExe(path);
+    standaloneExe.SetExt(FileFilters::EXECUTABLE_EXT);
+    m_StandaloneLinkOutput = standaloneExe.GetFullPath();
+#endif
     if (compile.IsEmpty())
     {
         ClearRunAfterCompileContinuation();
@@ -3520,12 +4326,18 @@ int CompilerGCC::CompileFileWithoutProject(const wxString& file)
         return -1;
     }
     AddToCommandQueue(compile);
+#ifdef __WXMSW__
+    m_StandaloneLinkOutput.clear();
+#endif
 
     return DoRunQueue( Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100) );
 }
 
 int CompilerGCC::CompileStandaloneFileForDebug(const wxString& file)
 {
+#ifdef __WXMSW__
+    m_StandaloneDebugBuild = true;
+#endif
     // Always-rebuild single file for no-project Debug: default compiler options, but
     // with that compiler's "Produce debugging symbols" CompOption applied and strip off.
     Manager::Get()->GetEditorManager()->Save(file);
@@ -3589,6 +4401,9 @@ int CompilerGCC::CompileFileDefault(cbProject* project, ProjectFile* pf, Project
 
 void CompilerGCC::OnIdle(wxIdleEvent& event)
 {
+#ifdef __WXMSW__
+    RefreshTrackedRun();
+#endif
     if (IsProcessRunning())
     {
         for (const CompilerProcess &p : m_CompilerProcessList)
@@ -3942,6 +4757,9 @@ void CompilerGCC::OnClearErrors(cb_unused wxCommandEvent& event)
 
 void CompilerGCC::OnUpdateUI(wxUpdateUIEvent& event)
 {
+#ifdef __WXMSW__
+    RefreshTrackedRun();
+#endif
     const int id = event.GetId();
     if  (id == idMenuKillProcess)
     {
@@ -4406,8 +5224,27 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
     int idle_wake_up_timer = Manager::Get()->GetConfigManager("compiler")->ReadInt("/idle_wake_up_timer", 100);
 
     CompilerProcess &process = m_CompilerProcessList.at(procIndex);
+    const bool wasRun = process.isRun;
+    const long endedPid = process.PID;
+    const wxString producedExecutable = process.producedExecutable;
     process.PID = 0;
     process.pProcess = nullptr;
+    process.isRun = false;
+#ifdef __WXMSW__
+    if (wasRun)
+    {
+        RefreshTrackedRun();
+        if (m_TrackedRun.active)
+        {
+            LogRunNote(wxString::Format("runner pid %ld exited; target pid %ld still alive (%s)",
+                                        endedPid, m_TrackedRun.targetPid, m_TrackedRun.targetPath));
+            if (m_BuildJob != bjIdle && !IsProcessRunning())
+                m_BuildJob = bjIdle;
+            m_timerIdleWakeUp.Start(idle_wake_up_timer);
+            return;
+        }
+    }
+#endif
     wxString oFile = UnixFilename(process.OutputFile);
 
     if (m_LastExitCode == 0 || exitCode != 0) // prevent exit errors from being overwritten during multi-threaded build
@@ -4501,6 +5338,25 @@ void CompilerGCC::OnJobEnd(size_t procIndex, int exitCode)
             }
             if (!Manager::IsBatchBuild() && m_pLog->progress)
                 m_pLog->progress->SetValue(0);
+#ifdef __WXMSW__
+            if (m_RecoveryRetryInProgress && (success || producedExecutable.empty()))
+            {
+                LogRunNote(success ? "recovery retry succeeded"
+                                   : "recovery retry finished without a locked executable");
+                m_RecoveryRetryInProgress = false;
+            }
+            else if (!success && !producedExecutable.empty() && !IsProcessRunning())
+            {
+                if (m_RecoveryRetryInProgress)
+                {
+                    LogRunNote("recovery retry did not replace " + producedExecutable);
+                    LogMessage(_("Rebuild after stopping the program did not succeed."), cltError);
+                    m_RecoveryRetryInProgress = false;
+                }
+                else if (!m_RecoveryOfferDone)
+                    OfferLockedExecutableRecovery(producedExecutable);
+            }
+#endif
         }
         else
         {

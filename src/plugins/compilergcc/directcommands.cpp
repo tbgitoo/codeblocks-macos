@@ -483,7 +483,7 @@ wxArrayString DirectCommands::GetCompileSingleFileCommand(const wxString& filena
                 ret.Add(COMPILER_SIMPLE_LOG + _("Linking console executable: ") + exe_filename);
                 break;
         }
-        AddCommandsToArray(linkerCmd, ret, true);
+        AddCommandsToArray(linkerCmd, ret, true, true);
     }
     else
         ret.Add(COMPILER_SIMPLE_LOG + _("Skipping linking (no linker program set): ") + exe_filename);
