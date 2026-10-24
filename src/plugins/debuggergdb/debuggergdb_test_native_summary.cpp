@@ -182,3 +182,97 @@ TEST(BasicStringCharTypeAccepted)
 }
 
 } // SUITE
+
+/** MinGW libstdc++ cxx11 dumps, captured from GDB 16.2 / GCC 14.2. */
+SUITE(NativeWatchSummaryLibstdcxxString)
+{
+
+wxString LibstdcxxDump(const wxString &pointerField, const wxString &lengthField,
+                       const wxString &localField)
+{
+    return wxT("{_M_dataplus = {<std::allocator<char>> = {<std::__new_allocator<char>> = {<No data fields>}, <No data fields>}, _M_p = ")
+         + pointerField
+         + wxT("}, _M_string_length = ") + lengthField
+         + wxT(", {_M_local_buf = ") + localField
+         + wxT(", _M_allocated_capacity = 16}}");
+}
+
+TEST(ShortStringShownOnParent)
+{
+    const wxString dump = LibstdcxxDump(wxT("0x5ffe40 \"19403\""), wxT("5"),
+                                        wxT("\"19403\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(TryNativeWatchSummary(w));
+    CHECK_EQUAL(wxT("\"19403\""), ParentValue(w));
+    CHECK(w->GetChildCount() > 0);
+}
+
+TEST(EmptyString)
+{
+    const wxString dump = LibstdcxxDump(wxT("0x5ffe20 \"\""), wxT("0"),
+                                        wxT("\"\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    w->SetType(wxT("std::string"));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(TryNativeWatchSummary(w));
+    CHECK_EQUAL(wxT("\"\""), ParentValue(w));
+}
+
+TEST(LocalRepeats)
+{
+    const wxString dump = LibstdcxxDump(wxT("0x5ffde0 'x' <repeats 15 times>"), wxT("15"),
+                                        wxT("'x' <repeats 15 times>"));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    w->SetType(wxT("std::string"));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(TryNativeWatchSummary(w));
+    CHECK_EQUAL(wxT("\"xxxxxxxxxxxxxxx\""), ParentValue(w));
+}
+
+TEST(HeapRepeats)
+{
+    const wxString dump = LibstdcxxDump(wxT("0xd77eb0 'y' <repeats 16 times>"), wxT("16"),
+                                        wxT("\"\\020\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    w->SetType(wxT("std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >"));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(TryNativeWatchSummary(w));
+    wxString expect = wxT("\"");
+    expect.Append(wxT('y'), 16);
+    expect += wxT("\"");
+    CHECK_EQUAL(expect, ParentValue(w));
+}
+
+TEST(EmbeddedNulUsesLocalBuffer)
+{
+    const wxString dump = LibstdcxxDump(wxT("0x5ffda0 \"abc\""), wxT("7"),
+                                        wxT("\"abc\\000def\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(TryNativeWatchSummary(w));
+    CHECK_EQUAL(wxT("\"abc\\0def\""), ParentValue(w));
+}
+
+TEST(TruncatedHeapDeclines)
+{
+    const wxString dump = LibstdcxxDump(wxT("0xd77eb0 \"yyyyy\""), wxT("16"),
+                                        wxT("\"\\020\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    w->SetType(wxT("std::string"));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(!TryNativeWatchSummary(w));
+    CHECK(ParentValue(w).empty());
+}
+
+TEST(WrongTypeDeclines)
+{
+    const wxString dump = LibstdcxxDump(wxT("0x5ffe40 \"19403\""), wxT("5"),
+                                        wxT("\"19403\\000\""));
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    w->SetType(wxT("int"));
+    CHECK(ParseGDBWatchValue(w, dump));
+    CHECK(!TryNativeWatchSummary(w));
+}
+
+} // SUITE
