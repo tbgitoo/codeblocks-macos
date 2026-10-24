@@ -3,7 +3,7 @@
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
  * Native semantic watch summaries over already-parsed GDBWatch trees.
- * M6: Apple libc++ std::string — no GDB/Python dependency.
+ * std::string for Apple libc++ and MinGW libstdc++, with no GDB/Python dependency.
  */
 
 #ifndef NATIVEWATCHSUMMARY_H
