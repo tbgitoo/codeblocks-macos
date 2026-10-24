@@ -20,7 +20,8 @@ struct CompilerCommand
     {}
     CompilerCommand(const CompilerCommand& rhs)
         : command(rhs.command), message(rhs.message), project(rhs.project), target(rhs.target), isRun(rhs.isRun),
-          mustWait(rhs.mustWait), isLink(rhs.isLink), useProgramConsole(rhs.useProgramConsole)
+          mustWait(rhs.mustWait), isLink(rhs.isLink), useProgramConsole(rhs.useProgramConsole),
+          runTarget(rhs.runTarget), producedExecutable(rhs.producedExecutable)
     {}
     wxString command;
     wxString message;
@@ -31,6 +32,8 @@ struct CompilerCommand
     bool mustWait; ///< wait for all previous commands to finish (for parallel builds).
     bool isLink; ///< wait for all previous commands to finish (for parallel builds) - only for linking stage.
     bool useProgramConsole; ///< macOS Program Console PTY path (not Terminal.app).
+    wxString runTarget; ///< absolute path of the user's program, when isRun.
+    wxString producedExecutable; ///< absolute executable a link command replaces, when known.
 };
 WX_DECLARE_LIST(CompilerCommand, CompilerCommands);
 
