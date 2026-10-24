@@ -39,6 +39,9 @@
 #endif
 
 #include <wx/tokenzr.h>
+#include <wx/stattext.h>
+#include <wx/button.h>
+#include <wx/sizer.h>
 #include "editarraystringdlg.h"
 #include "annoyingdialog.h"
 #include "cbstyledtextctrl.h"
@@ -365,7 +368,10 @@ void DebuggerGDB::OnReleaseReal(bool appShutDown)
             wxKill(gdbPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
         if (childPid > 0 && childPid != gdbPid && wxProcess::Exists(childPid))
         {
+#ifndef __WXMSW__
+            // A Mach-suspended debuggee ignores SIGKILL until it is continued.
             kill(static_cast<pid_t>(childPid), SIGCONT);
+#endif
             wxKill(childPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
         }
         wxYieldIfNeeded();
@@ -938,6 +944,7 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
 {
     // set this to true before every error exit point in this function
     m_Canceled = false;
+    m_DebuggeeFileName.clear();
     // Init these just in case.
     m_bIsConsole = false;
     m_nConsolePid = 0;
@@ -1109,6 +1116,9 @@ int DebuggerGDB::DoDebug(bool breakOnEntry)
             m_Canceled = true;
             return -3;
         }
+
+        if (!debuggee.empty())
+            m_DebuggeeFileName = wxFileName(debuggee).GetFullName();
 
         if (!path.empty())
         {
@@ -2000,6 +2010,56 @@ void DebuggerGDB::SetNextStatement(const wxString& filename, int line)
     }
 }
 
+#if defined(_WIN32_WINNT) && (_WIN32_WINNT >= 0x0501)
+// "set new-console on" makes the console host a child of GDB, beside the
+// debuggee. Breaking the host closes the window and does not stop the program.
+static bool WindowsSkipBreakTarget(const wxString& exeName)
+{
+    return exeName.IsSameAs(wxT("conhost.exe"), false)
+        || exeName.IsSameAs(wxT("OpenConsole.exe"), false)
+        || exeName.IsSameAs(wxT("WindowsTerminal.exe"), false)
+        || exeName.IsSameAs(wxT("wt.exe"), false);
+}
+
+static long FindWindowsDebuggeePid(long gdbPid, const wxString& debuggeeFile)
+{
+    if (gdbPid <= 0
+        || CreateToolhelp32SnapshotFunc == nullptr
+        || Process32FirstFunc == nullptr
+        || Process32NextFunc == nullptr)
+        return 0;
+
+    HANDLE snap = CreateToolhelp32SnapshotFunc(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+
+    long named = 0;
+    long other = 0;
+    PROCESSENTRY32 entry;
+    entry.dwSize = sizeof(entry);
+    BOOL ok = Process32FirstFunc(snap, &entry);
+    while (ok == TRUE)
+    {
+        if (static_cast<int>(entry.th32ParentProcessID) == gdbPid)
+        {
+            const wxString name(entry.szExeFile);
+            if (!WindowsSkipBreakTarget(name))
+            {
+                const long child = static_cast<long>(entry.th32ProcessID);
+                if (!debuggeeFile.empty() && name.IsSameAs(debuggeeFile, false))
+                    named = child;
+                else
+                    other = child;
+            }
+        }
+        entry.dwSize = sizeof(entry);
+        ok = Process32NextFunc(snap, &entry);
+    }
+    CloseHandle(snap);
+    return named > 0 ? named : other;
+}
+#endif
+
 void DebuggerGDB::Break()
 {
     DoBreak(false);
@@ -2044,32 +2104,13 @@ void DebuggerGDB::DoBreak(bool temporary)
         }
     #else
         // windows gdb can interrupt the running process too. yay!
-        if (   (pid <=0)
-            && (CreateToolhelp32SnapshotFunc!=NULL)
-            && (Process32FirstFunc!=NULL)
-            && (Process32NextFunc!=NULL) )
-        {
-            HANDLE snap = CreateToolhelp32SnapshotFunc(TH32CS_SNAPALL,0);
-            if (snap!=INVALID_HANDLE_VALUE)
-            {
-                PROCESSENTRY32 lppe;
-                lppe.dwSize = sizeof(PROCESSENTRY32);
-                BOOL ok = Process32FirstFunc(snap, &lppe);
-                while ( ok == TRUE)
-                {
-                    if (static_cast<int>(lppe.th32ParentProcessID) == m_Pid) // Have my Child...
-                    {
-                        pid = lppe.th32ProcessID;
-                        DebugLog(wxString::Format(_("Found child: %ld"),  pid));
-                    }
-                    lppe.dwSize = sizeof(PROCESSENTRY32);
-                    ok = Process32NextFunc(snap, &lppe);
-                }
-                CloseHandle(snap);
-            }
-            else
-                Log(_("No handle created. Trying to pause directly with cbd.exe..."), Logger::warning);
-        }
+        // Prefer the debuggee over whichever child was enumerated last.
+        // That last child is often conhost.exe, and breaking it only
+        // closes the console.
+        if (pid <= 0)
+            pid = FindWindowsDebuggeePid(m_Pid, m_DebuggeeFileName);
+        if (pid > 0 && childPid <= 0 && m_State.HasDriver())
+            m_State.GetDriver()->SetChildPID(pid);
 
         if (m_State.GetDriver()->UseDebugBreakProcess())
         {
@@ -2129,12 +2170,16 @@ void DebuggerGDB::Stop()
             Break();
         }
         RunCommand(CMD_STOP);
-#if defined(__WXMAC__)
+#if defined(__WXMAC__) || defined(__WXMSW__)
         // "quit" is written only once GDB is at a prompt. If that prompt
         // never comes, the debuggee is still running and the IDE stays
         // in the debug session. Kill both if the session is still here.
         m_macStopGdbPid = m_Pid;
         m_macStopChildPid = m_State.HasDriver() ? m_State.GetDriver()->GetChildPID() : 0;
+#ifdef __WXMSW__
+        if (m_macStopChildPid <= 0)
+            m_macStopChildPid = FindWindowsDebuggeePid(m_Pid, m_DebuggeeFileName);
+#endif
         m_MacStopWatchdog.StartOnce(2000);
 #endif
     }
@@ -2144,13 +2189,22 @@ void DebuggerGDB::OnMacStopWatchdog(wxTimerEvent& event)
 {
     wxUnusedVar(event);
     const long gdbPid = m_macStopGdbPid;
-    const long childPid = m_macStopChildPid;
+    long childPid = m_macStopChildPid;
     m_macStopGdbPid = 0;
     m_macStopChildPid = 0;
     if (gdbPid <= 0 || !wxProcess::Exists(gdbPid))
         return;
 
     Log(_("The debugger did not stop. Killing it."));
+#ifdef __WXMSW__
+    // End the debuggee first. Killing GDB alone leaves the program running
+    // after the console window has already gone.
+    if (childPid <= 0)
+        childPid = FindWindowsDebuggeePid(gdbPid, m_DebuggeeFileName);
+    if (childPid > 0 && childPid != gdbPid && wxProcess::Exists(childPid))
+        wxKill(childPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
+    wxKill(gdbPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
+#else
     wxKill(gdbPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
     if (childPid > 0 && childPid != gdbPid && wxProcess::Exists(childPid))
     {
@@ -2158,6 +2212,7 @@ void DebuggerGDB::OnMacStopWatchdog(wxTimerEvent& event)
         kill(static_cast<pid_t>(childPid), SIGCONT);
         wxKill(childPid, wxSIGKILL, nullptr, wxKILL_NOCHILDREN);
     }
+#endif
 }
 
 void DebuggerGDB::ParseOutput(const wxString& output)
@@ -2694,6 +2749,7 @@ void DebuggerGDB::OnGDBTerminated(wxCommandEvent& event)
     // Allow a clean Debug/Step Into restart of the same standalone file.
     m_UseStandaloneDebuggee = false;
     m_StandaloneDebuggee = DebuggeeDescription();
+    m_DebuggeeFileName.clear();
 
     ///killerbot : run there the post shell commands ?
 }

@@ -111,6 +111,10 @@ class GDB_driver : public DebuggerDriver
 
         int m_catchThrowIndex;
 
+        // Tail of GDB output so a "[New Thread pid.tid]" split across reads
+        // still yields the debuggee pid.
+        wxString m_ChildPidTail;
+
 }; // GDB_driver
 
 #endif // GDB_DRIVER_H
