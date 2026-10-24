@@ -8,7 +8,7 @@ Homebrew discovery is not an SFML-only detail. It is a small shared facility for
 
 v3.0 does not add SFML support. The wizard is already registered. v3.0 does not add a second wizard, a game-project type, or a project-system change.
 
-**Windows is v3.3 (planning only, section 12).** No Windows code in v3.0, v3.1, or v3.2. v3.3 is one implementation of the Windows side of all three together: SFML (v3.0), GLFW (v3.1), and SDL3 (v3.2). It is not a separate Windows follow-up for each of those versions. The automated Mac path is Homebrew. The Windows counterpart is not winget, MSYS2, or vcpkg. For SFML it is SFML’s own MinGW archive built for the same compiler Code::Blocks uses to build the project: WinLibs GCC 14.2.0 UCRT, 64-bit SEH, which is the MinGW shipped in the official 25.03 installer.
+**Windows is v3.3, and that version is complete (section 12).** No Windows code in v3.0, v3.1, or v3.2. v3.3 is one implementation of the Windows side of all three together: SFML (v3.0), GLFW (v3.1), and SDL3 (v3.2). It is not a separate Windows follow-up for each of those versions. The automated Mac path is Homebrew. The Windows counterpart is not winget, MSYS2, or vcpkg. For SFML it is SFML’s own MinGW archive built for the same compiler Code::Blocks uses to build the project: WinLibs GCC 14.2.0 UCRT, 64-bit SEH, which is the MinGW shipped in the official 25.03 installer.
 
 Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**. v2.x console, standalone-file, and signing behaviour stays as shipped. An SFML project is a normal project. Debugging it uses the same Debug, Step Into, Step Over, Continue, and Stop commands as any other project. The macOS defects that showed up on a real SFML 3 program are recorded in section 11. They are not an SFML debugger mode.
 
@@ -430,7 +430,7 @@ The IDE built a Debug target with `g++ -std=c++17 -Wall -g -I/opt/homebrew/opt/s
 - **E.** The executable exists but `--version` fails, or `install` exits non-zero. The failure is visible. The IDE does not say SFML was installed and does not write a project.
 - **F.** Cancel before installation starts performs no package operation. Cancel during installation requests termination of the Homebrew process Code::Blocks launched, does not report success, does not create the project, and causes fresh discovery before any subsequent attempt. Code::Blocks does not claim that cancellation rolls back changes already made by Homebrew.
 
-The macOS work does not change Windows behaviour. The Windows counterpart of v3.0, v3.1, and v3.2 together is v3.3 (section 12) and is not implemented. Non-mac Unix stays as it is. SFML stays out of the DMG. v2.x console and signing behaviour stay as they are. `README.macos.md` does not gain an SFML section. Debugging acceptance is section 11.
+The macOS work does not change Windows behaviour. The Windows counterpart of v3.0, v3.1, and v3.2 together is v3.3 (section 12), and that version is complete. Non-mac Unix stays as it is. SFML stays out of the DMG. v2.x console and signing behaviour stay as they are. `README.macos.md` does not gain an SFML section. Debugging acceptance is section 11.
 
 ---
 
@@ -484,11 +484,11 @@ The GDB changes are in the companion fork, not in this repository. The IDE chang
 
 ---
 
-## 12. Windows annotations — v3.3 (planning only)
+## 12. Windows annotations — v3.3 (complete)
 
-The implementation plan is `plans/versioning_plan_v3_3.md`. This section is the decision that led to it.
+The implementation plan is `plans/versioning_plan_v3_3.md`, and that version is complete. This section is the decision that led to it.
 
-No code, no installer, no download. **v3.3** is the Windows implementation, and it covers v3.0, v3.1, and v3.2 jointly. One version, three clients: the SFML wizard, the GLFW wizard, and the SDL3 wizard. There is no Windows v3.0, no Windows v3.1, and no Windows v3.2. Those three stay the macOS plans. v3.3 starts from them as they are and does not reopen their macOS milestones.
+**v3.3** is the Windows implementation, and it covers v3.0, v3.1, and v3.2 jointly. One version, three clients: the SFML wizard, the GLFW wizard, and the SDL3 wizard. There is no Windows v3.0, no Windows v3.1, and no Windows v3.2. Those three stay the macOS plans. v3.3 starts from them as they are and does not reopen their macOS milestones.
 
 | macOS plan | Wizard | What v3.3 adds on Windows |
 |------------|--------|---------------------------|
@@ -496,7 +496,7 @@ No code, no installer, no download. **v3.3** is the Windows implementation, and 
 | v3.1 | GLFW | The same compiler gate, consent, and cancel rules. The location page and `$(#glfw)` stay the manual path. v3.1 itself does not automate Windows. |
 | v3.2 | SDL3 | The same. The location page and `$(#sdl3)` stay the manual path. **SDL project** (SDL 1) is not registered or installed on Windows. It stays on Unix. v3.2 itself does not automate Windows. |
 
-GLFW and SDL3 use the same rule as SFML: an official build for the Code::Blocks MinGW, not winget, MSYS2, vcpkg, or an MSVC archive. Their archive names are chosen when v3.3 is implemented. They are not locked here. The SFML archive below is locked.
+GLFW and SDL3 use the same rule as SFML: an official build for the Code::Blocks MinGW, not winget, MSYS2, vcpkg, or an MSVC archive. The archives that shipped are recorded in `plans/versioning_plan_v3_3.md`. The SFML archive below is the one this decision locked.
 
 The official 25.03 Windows installer puts **WinLibs GCC 14.2.0, MinGW-w64, UCRT, 64-bit SEH** in `<CodeBlocks>\MinGW`. SFML’s own download page says a MinGW package matches only that compiler, not “any GCC 14”. The archive for that case is the 64-bit GCC 14.2.0 MinGW zip (`SFML-3.0.2-windows-gcc-14.2.0-mingw-64-bit.zip`, also published as `SFML-3.0.2-Windows.MinGW.x64.zip`). A later 3.x archive with the same compiler in the name is the same kind of package. Read `SFML_VERSION_MAJOR` after unpack, as on macOS. The Visual Studio zip is the wrong file.
 

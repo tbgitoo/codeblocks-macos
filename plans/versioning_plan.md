@@ -13,6 +13,9 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v2.2 (standalone New → Save as C|C++ → Build/Run/Debug; tab Rename; readable Watches)
   → v2.3 (Enable debugging — repair-only, in-process; no manual codesign)
   → v3.0 (existing SFML project wizard usable on Apple Silicon)
+  → v3.1 (existing GLFW project wizard usable on Apple Silicon)
+  → v3.2 (SDL2 project wizard becomes SDL3 on Apple Silicon)
+  → v3.3 (SFML, GLFW, and SDL3 wizards set up automatically on Windows)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -43,7 +46,10 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.1** | **DONE** (tree) — standalone Debug / Step Into (DebuggerGDB). Tag/release when ready. | [versioning_plan_v2_1.md](versioning_plan_v2_1.md) |
 | **v2.2** | **DONE** (tree) — M1–M6 in UI (ownership, Save As C/C++, Rename, unbuffered Debug stdout, readable `std::string` Watches). Tag/release when ready. | [versioning_plan_v2_2.md](versioning_plan_v2_2.md) |
 | **v2.3** | **Complete** (tree) — M1–M6. Tag/release when ready. | [versioning_plan_v2_3.md](versioning_plan_v2_3.md) |
-| **v3.0** | **M8 DONE** (tree). M9 not started. No rpath: the SFML 3.0.2 dylib ids are absolute and each dylib's own rpath finds the others. | [versioning_plan_v_3_0.md](versioning_plan_v_3_0.md) |
+| **v3.0** | **M8–M9 DONE** (tree). No rpath: the SFML 3.0.2 dylib ids are absolute and each dylib's own rpath finds the others. | [versioning_plan_v3_0.md](versioning_plan_v3_0.md) |
+| **v3.1** | **M4 done** (tree). GLFW project wizard on Apple Silicon, through the v3.0 Homebrew helper. | [versioning_plan_v3_1.md](versioning_plan_v3_1.md) |
+| **v3.2** | **M5 done** (tree). The SDL2 wizard creates an SDL3 project on Apple Silicon. SDL 1 is not registered on macOS. | [versioning_plan_v3_2.md](versioning_plan_v3_2.md) |
+| **v3.3** | **Complete** (tree). Windows automatic setup for SFML 3.1.0, GLFW 3.5.1, and SDL3 3.4.18. SDL 1 is not registered on Windows. | [versioning_plan_v3_3.md](versioning_plan_v3_3.md) |
 
 ### One-line outcomes
 
@@ -57,6 +63,9 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v2.2** | Active-source ownership + PREPARE→COMMIT for Build/Run/Debug; Save As C/C++ split; tab Rename; unbuffered Debug stdout; human-readable Apple-libc++ `std::string` Watches. |
 | **v2.3** | DMG still ships ad-hoc+entitled gdb. Enable debugging appears only after a confirmed signing or task-port failure; repair stays in-process and waits for consent. |
 | **v3.0** | File → New → Project → SFML project → Build and Run yields a native window. A small shared Homebrew helper serves wizards; SFML is the only client. Install is explicit. Homebrew itself is not installed by the IDE. SFML stays out of the DMG. |
+| **v3.1** | File → New → Project → GLFW project on Apple Silicon uses a validated Homebrew prefix. The location page stays for Windows and other Unix. |
+| **v3.2** | The SDL2 wizard creates an SDL3 project on Apple Silicon. SDL 1 is retired on macOS and stays on Unix. |
+| **v3.3** | On Windows, SFML, GLFW, and SDL3 install only after Install SFML, Install GLFW, or Install SDL3, into a versioned tree under the user profile. The generated project uses absolute include and library directories and copies the DLLs beside the executable. SDL 1 is not registered on Windows. |
 
 ---
 
