@@ -26,6 +26,8 @@ Makefile.in
 **/compile_commands.json
 
 # Local build output
+/packaging/windows/stage/
+/packaging/windows/stage-mingw/
 _cb_install/
 config.log
 config.status
@@ -66,3 +68,5 @@ src/build_tools/autorevision/auto_revision
 
 CodeBlocks-macos-arm64.dmg
 build.log
+packaging/windows/*
+!packaging/windows/stage.bat
