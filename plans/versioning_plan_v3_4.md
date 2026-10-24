@@ -82,6 +82,25 @@ The previously measured LLVM tree was 1,533,687,789 bytes (1.43 GiB). This archi
 
 **Licences.** [winlibs.com](https://winlibs.com/) states the licences of the components that this archive still contains: GCC, GDB, GNU Binutils, and GNU Make are GPL; MinGW-w64 is the Zope Public License with exceptions; Yasm and NASM are 2-clause BSD; JWasm is the Sybase Open Watcom Public License. LLVM is not in this payload. The extracted tree contains `version_info.txt` and `lib\python3.9\LICENSE.txt`. It does not contain a GCC or GDB `COPYING`. A notice that names those components is required with the binaries. That notice does not by itself satisfy the GPL duty to convey corresponding source. This pass did not find a source archive for this r3 build. The [winlibs_recipes](https://github.com/brechtsanders/winlibs_recipes) repository is MIT build recipes, and it was not shown to be the corresponding source of these binaries. The turnkey installer is blocked until the plan records a concrete way to convey that source. The IDE-only installer does not redistribute this toolchain, so it is not blocked by that duty. The compiler is not vendored into the repository, and it is not copied from Program Files.
 
+### Official 25.03 installers
+
+**CONFIRMED FROM LOCAL MACHINE** (24 October 2026). The files were downloaded from the SourceForge 25.03 Windows folder. SHA-256 matches `checkums.txt` there. Both are NSIS-3 Unicode installers (`7-Zip` subtype). The NSIS script inside them is compressed. It was not recovered, and it is not copied here.
+
+| Installer | Measured size | SHA-256 |
+|-----------|---------------|---------|
+| `codeblocks-25.03-setup.exe` | 52,312,337 bytes | `88bca802df27fd9a9bae77453cf3bca36a7b69cbb3863e62d70a42f204f28df2` |
+| `codeblocks-25.03mingw-setup.exe` | 423,494,500 bytes | `8712227526eb3bb26c90dd5c78301b3fa32bf5869a43294bbf4e9c5512c52792` |
+
+The IDE-only installer contains no `MinGW` directory, no `gcc.exe`, and no `gdb.exe`. The MinGW installer contains `MinGW\version_info.txt` for `gcc-14.2.0-llvm-19.1.7-mingw-w64ucrt-12.0.0-r3`, plus `clang.exe`, `cmake.exe`, `ninja.exe`, `doxygen.exe`, and `cppcheck.exe`. `MinGW\bin\gcc.exe` in that installer is byte-identical to `D:\Program Files\CodeBlocks\MinGW\bin\gcc.exe`. Official 25.03 therefore ships the large LLVM WinLibs tree, not the smaller archive in the table above. That is their package. It is not a failure of the smaller archive. v3.4 keeps the smaller intact archive for the basic C and C++ workflow. It does not prune the large tree down to match, and it does not switch back to the LLVM archive.
+
+The IDE files in the official installer are a different build from this repository’s stage: wxWidgets 3.2 (`wxmsw32u_gcc_custom.dll`), contrib plugins such as `clangd_client.dll`, and extras such as `CbLauncher.exe`, `cb_share_config.exe`, `cbp2make.exe`, and `Addr2LineUI.exe`. v3.4 still stages this repository’s wx 3.3.4 output. It does not adopt the official file list.
+
+On this machine the official program is installed at `D:\Program Files\CodeBlocks`. With `PATH` limited to `C:\Windows\System32` and `C:\Windows`, a build logged `Final MinGW master path='D:\Program Files\CodeBlocks\MinGW'` and produced a program that printed `7`. A non-C: directory works for that official layout. The default directory string was not readable from the compressed script, so it is not stated here. The Start Menu shortcut is `CodeBlocks\CodeBlocks.lnk`. A desktop shortcut exists too. Both point at that `codeblocks.exe`. Their working directory is the Start Menu folder. Machine `PATH` and user `PATH` have no Code::Blocks entry. `.cbp` is associated with that executable, including Build and Rebuild verbs. v3.4 still does not add a desktop shortcut or a file association.
+
+The uninstall registration is `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CodeBlocks`. `DisplayName` is `CodeBlocks`, `DisplayVersion` is `25.03`, and `UninstallString` is `D:\Program Files\CodeBlocks\uninstall.exe`. There is no `InstallLocation` value. `NoModify` and `NoRepair` are set. It is not an HKLM key. The uninstaller was not run, because this is the working install, and a second install was not started, because it would replace that per-user uninstall key. Our installers still request an administrator install so the default Program Files location works. They still record the selected directory and remove that directory only.
+
+The MinGW payload’s licence files are `version_info.txt`, `lib\python3.9\LICENSE.txt`, a CMake template licence, and `share\man\man7\gpl.7`. There is no GCC or GDB `COPYING` and no source offer for the r3 build. Official practice does not supply the corresponding-source method M9 is waiting for.
+
 A machine with no compiler can still open the IDE-only install. Build and debug on that install use whatever the existing search finds. The turnkey install is the one that makes Build, Run, and Debug work with no separate compiler setup.
 
 ### How the boundary is checked
@@ -250,7 +269,7 @@ M1 is this document. No installer, no stage script, no change to the IDE. It rec
 
 **A saved compiler path is not retargeted.** A master path that still contains `gcc.exe` wins over `<selected install>\MinGW`, and `PATH` is searched before that folder on a profile whose master path is empty. A master path whose `gcc.exe` is gone is not empty, so `CompilerFactory::LoadSettings` does not auto-detect. The D: test produced `Can't find compiler executable in your configured search paths (for GNU GCC Compiler)...` and left the new install’s `MinGW` unused. M10 records this. v3.4 does not change detection.
 
-**GPL corresponding source is a blocker for the turnkey installer.** The archive, its checksum, and the component licence names are known. The tree does not contain the GCC or GDB licence texts, and a notice is not corresponding source. M9 does not build `codeblocks-v3.4mingw-win64.exe` until a real conveyance method is written into this plan. The IDE-only artefact is not waiting on that.
+**GPL corresponding source is a blocker for the turnkey installer.** The archive, its checksum, and the component licence names are known. The tree does not contain the GCC or GDB licence texts, and a notice is not corresponding source. The official 25.03 MinGW installer does not include that source either. M9 does not build `codeblocks-v3.4mingw-win64.exe` until a real conveyance method is written into this plan. The IDE-only artefact is not waiting on that. Official 25.03 ships the larger LLVM WinLibs tree. v3.4 still uses the smaller intact archive.
 
 **The turnkey tree is 0.815 GiB before compression.** If stock NSIS 3 cannot pack `stage-mingw`, M9 stops and records that. The installer technology does not change inside this version.
 
