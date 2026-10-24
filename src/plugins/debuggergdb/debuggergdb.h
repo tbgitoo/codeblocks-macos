@@ -236,6 +236,8 @@ class DebuggerGDB : public cbDebuggerPlugin
         /** v2.1: set when debugging a standalone (no-project) source; cleared on project/attach. */
         bool m_UseStandaloneDebuggee;
         DebuggeeDescription m_StandaloneDebuggee;
+        /** File name of the debuggee, used to tell it apart from a console host. */
+        wxString m_DebuggeeFileName;
 
         // Linux / macOS console support
         bool     m_bIsConsole;

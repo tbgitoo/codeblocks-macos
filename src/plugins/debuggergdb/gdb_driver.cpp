@@ -73,7 +73,9 @@ static wxRegEx reChildPid1("Thread[[:blank:]]+[xA-Fa-f0-9-]+[[:blank:]]+\\(LWP (
 static wxRegEx reChildPidDarwin("of process ([0-9]+)");
 // MinGW GDB 6.8 and later
 // [New Thread 2684.0xf40] or [New thread 2684.0xf40]
-static wxRegEx reChildPid2("\\[New [tT]hread[[:blank:]]+[0-9]+\\.[xA-Fa-f0-9-]+\\]");
+// The pid is the part before the dot. Do not scrape it with AfterFirst('d'):
+// that letter is inside the word "Thread".
+static wxRegEx reChildPid2("\\[New [tT]hread[[:blank:]]+([0-9]+)\\.");
 
 // "Thread 2 received signal SIGINT, Interrupt."
 // Modern GDB, including the macOS port, reports a signal this way.
@@ -657,15 +659,20 @@ void GDB_driver::ParseOutput(const wxString& output)
 
     if (platform::windows && m_ChildPID == 0)
     {
-        if (reChildPid2.Matches(output)) // [New Thread 2684.0xf40] or [New thread 2684.0xf40]
+        // One read often ends in the middle of "[New Thread 1234.0xabc]".
+        // Matching only that chunk leaves the child pid at 0 for the session.
+        m_ChildPidTail << output;
+        if (m_ChildPidTail.length() > 2048)
+            m_ChildPidTail = m_ChildPidTail.Right(512);
+        if (reChildPid2.Matches(m_ChildPidTail))
         {
-            wxString pidStr = reChildPid2.GetMatch(output, 0);
-            pidStr = pidStr.BeforeFirst(_T('.')); //[New Thread 2684.0xf40] -> [New Thread 2684
-            pidStr = pidStr.AfterFirst(_T('d')); //[New Thread 2684 ->  2684
             long pid = 0;
-            pidStr.ToLong(&pid);
-            SetChildPID(pid);
-            m_pDBG->Log(wxString::Format(_("Child process PID: %ld"), pid));
+            if (reChildPid2.GetMatch(m_ChildPidTail, 1).ToLong(&pid) && pid > 0)
+            {
+                SetChildPID(pid);
+                m_pDBG->Log(wxString::Format(_("Child process PID: %ld"), pid));
+                m_ChildPidTail.clear();
+            }
         }
     }
     else if (!platform::windows && m_ChildPID == 0)
