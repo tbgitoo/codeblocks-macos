@@ -1,12 +1,12 @@
 # Code::Blocks macOS v3.2 — existing SDL2 wizard becomes SDL3 on Apple Silicon
 
-**Status: M5 done.** On macOS the SDL 1 wizard is not registered and is not in the recursive build. Windows and other Unix still register **SDL project**.
+**Status: M5 done.** On macOS the SDL 1 wizard is not registered and is not in the recursive build. Unix still registers **SDL project**. Windows does not; that removal is v3.3.
 
 **Question this version answers:** what is the smallest coherent change that makes the existing SDL2 project wizard create an SDL3 project in this native Apple Silicon distribution, with SDL3 discovered automatically through the Homebrew wizard infrastructure established in v3.0?
 
 **Product invariant, macOS only:** creating the project must not require the beginner to locate an `SDL2.framework`, to configure `$(#sdl2)` or `$(#sdl3)`, or to use the Global Variable Editor. A validated Homebrew SDL3 prefix supplies the include directory, the library directory, and the link name. Windows keeps a location page, now for SDL3. Other Unix keeps a config-tool line, now for SDL3. The separate SDL 1 wizard stays.
 
-**Windows is not this version.** Automated Windows setup for SDL3 is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.1 (GLFW). The plan is `plans/versioning_plan_v3_3.md`. v3.2 does not implement it. v3.3 also drops **SDL project** on Windows. Unix keeps it.
+**Windows is not this version.** Automated Windows setup for SDL3 is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.1 (GLFW). The plan is `plans/versioning_plan_v3_3.md`, and that version is complete. v3.2 does not implement it. v3.3 also drops **SDL project** on Windows. Unix keeps it.
 
 This wizard is the third client of the v3.0 helper. v3.2 does not add a second SDL wizard beside the SDL2 one. The registered SDL2 entry becomes the SDL3 entry. v3.2 does not change SFML, GLFW, the helper, or the global-variable system.
 

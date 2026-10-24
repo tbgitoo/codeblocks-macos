@@ -6,7 +6,7 @@
 
 **Product invariant, macOS only:** creating a GLFW project must not require the beginner to configure `$(#glfw)` or to use the Global Variable Editor. A validated Homebrew GLFW prefix supplies the include directory, the library directory, and the link name. Windows and other Unix keep the location page and `$(#glfw)`.
 
-**Windows is not this version.** Automated Windows setup for GLFW is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.2 (SDL3). The plan is `plans/versioning_plan_v3_3.md`. v3.1 does not implement it.
+**Windows is not this version.** Automated Windows setup for GLFW is **v3.3**, jointly with the Windows side of v3.0 (SFML) and v3.2 (SDL3). The plan is `plans/versioning_plan_v3_3.md`, and that version is complete. v3.1 does not implement it.
 
 GLFW is the second client of the v3.0 helper. v3.1 does not add a GLFW wizard. `config.script` already registers it. v3.1 does not change SFML, the helper, or the global-variable system.
 
