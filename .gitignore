@@ -70,3 +70,5 @@ CodeBlocks-macos-arm64.dmg
 build.log
 packaging/windows/*
 !packaging/windows/stage.bat
+!packaging/windows/codeblocks.nsi
+!packaging/windows/build-installer.bat
