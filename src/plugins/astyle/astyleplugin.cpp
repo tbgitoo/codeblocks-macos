@@ -27,6 +27,7 @@
     #include "editormanager.h"
     #include "manager.h"
     #include "projectmanager.h"
+    #include "sdk_events.h"
 #endif
 
 #include <wx/progdlg.h>
@@ -42,11 +43,14 @@ using std::string;
 
 namespace
 {
+    const int idCodeFormatterReindent = wxNewId();
     const int idCodeFormatterActiveFile = wxNewId();
     const int idCodeFormatterProject = wxNewId();
 }
 
 BEGIN_EVENT_TABLE( AStylePlugin, cbPlugin )
+    EVT_MENU( idCodeFormatterReindent, AStylePlugin::OnReindentActiveFile )
+    EVT_UPDATE_UI( idCodeFormatterReindent, AStylePlugin::OnReindentUpdateUI )
     EVT_MENU( idCodeFormatterActiveFile, AStylePlugin::OnFormatActiveFile )
     EVT_MENU( idCodeFormatterProject, AStylePlugin::OnFormatProject )
 END_EVENT_TABLE()
@@ -71,6 +75,68 @@ AStylePlugin::~AStylePlugin()
     //dtor
 }
 
+void AStylePlugin::OnAttach()
+{
+    Manager::Get()->RegisterEventSink(cbEVT_MENUBAR_CREATE_END, new cbEventFunctor<AStylePlugin, CodeBlocksEvent>(this, &AStylePlugin::OnMenubarCreateEnd));
+    // The Edit menu already exists: tool plugins are attached after the first menubar is built,
+    // and that build does not call BuildMenu for them.
+    InsertReindentEditMenuItem();
+}
+
+void AStylePlugin::OnRelease(bool appShutDown)
+{
+    if (!appShutDown)
+        RemoveReindentEditMenuItem();
+}
+
+void AStylePlugin::OnMenubarCreateEnd(CodeBlocksEvent& /*event*/)
+{
+    InsertReindentEditMenuItem();
+}
+
+void AStylePlugin::InsertReindentEditMenuItem()
+{
+    if (!IsAttached())
+        return;
+
+    wxFrame* frame = Manager::Get()->GetAppFrame();
+    if (!frame)
+        return;
+
+    wxMenuBar* menuBar = frame->GetMenuBar();
+    if (!menuBar || menuBar->FindItem(idCodeFormatterReindent))
+        return;
+
+    const int editPos = menuBar->FindMenu(_("&Edit"));
+    if (editPos == wxNOT_FOUND)
+        return;
+
+    wxMenu* editMenu = menuBar->GetMenu(editPos);
+    if (!editMenu)
+        return;
+
+    size_t position = 0;
+    if (!editMenu->FindChildItem(XRCID("idEditShowCallTip"), &position))
+        return;
+
+    editMenu->Insert(position, idCodeFormatterReindent, _("Re-indent"), _("Re-indent the selected source code (selected line) in the current file"));
+}
+
+void AStylePlugin::RemoveReindentEditMenuItem()
+{
+    wxFrame* frame = Manager::Get()->GetAppFrame();
+    if (!frame)
+        return;
+
+    wxMenuBar* menuBar = frame->GetMenuBar();
+    if (!menuBar)
+        return;
+
+    wxMenu* editMenu = nullptr;
+    if (menuBar->FindItem(idCodeFormatterReindent, &editMenu) && editMenu)
+        editMenu->Delete(idCodeFormatterReindent);
+}
+
 
 cbConfigurationPanel* AStylePlugin::GetConfigurationPanel(wxWindow* parent)
 {
@@ -89,10 +155,12 @@ void AStylePlugin::BuildModuleMenu( const ModuleType type, wxMenu* menu, const F
     {
         case mtEditorManager:
         {
-            const wxString label = _("Format use AStyle");
-            const int position = Manager::Get()->GetPluginManager()->FindSortedMenuItemPosition(*menu, label);
+            const wxString reindentLabel = _("Re-indent");
+            const wxString formatLabel = _("Format using AStyle");
+            const int position = Manager::Get()->GetPluginManager()->FindSortedMenuItemPosition(*menu, formatLabel);
 
-            menu->Insert(position, idCodeFormatterActiveFile, label, _( "Format the selected source code (selected line) in the current file" ) );
+            menu->Insert(position, idCodeFormatterReindent, reindentLabel, _("Re-indent the selected source code (selected line) in the current file"));
+            menu->Insert(position + 1, idCodeFormatterActiveFile, formatLabel, _( "Format the selected source code (selected line) in the current file" ) );
             break;
         }
 
@@ -180,6 +248,29 @@ void AStylePlugin::OnFormatActiveFile( wxCommandEvent& /*event*/ )
         Execute();
 }
 
+void AStylePlugin::OnReindentActiveFile( wxCommandEvent& /*event*/ )
+{
+    if (!IsAttached())
+        return;
+
+    cbEditor *ed = Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor();
+    if (!ed)
+        return;
+
+    FormatEditor(ed, false);
+}
+
+void AStylePlugin::OnReindentUpdateUI( wxUpdateUIEvent& event )
+{
+    if (Manager::IsAppShuttingDown())
+    {
+        event.Enable(false);
+        return;
+    }
+
+    event.Enable(Manager::Get()->GetEditorManager()->GetBuiltinActiveEditor() != nullptr);
+}
+
 int AStylePlugin::Execute()
 {
     if (!IsAttached())
@@ -213,6 +304,316 @@ void AStylePlugin::FormatFile( const wxString &filename )
             if ( !changed ) // We opened a file and it didn't change.  Close it.
                 Manager::Get()->GetEditorManager()->Close( filename );
         }
+    }
+}
+
+namespace
+{
+    struct LineHunk
+    {
+        int oldStart;
+        int oldCount;
+        int newStart;
+        int newCount;
+    };
+
+    // Scintilla keeps a final empty line when the buffer ends with an EOL.
+    void SplitDocumentLines(const wxString& text, std::vector<wxString>& lines)
+    {
+        lines.clear();
+        const size_t len = text.length();
+        size_t start = 0;
+        for (size_t i = 0; i < len; ++i)
+        {
+            const wxChar ch = text[i];
+            if (ch != _T('\n') && ch != _T('\r'))
+                continue;
+
+            if (ch == _T('\r') && i + 1 < len && text[i + 1] == _T('\n'))
+                ++i;
+
+            lines.push_back(text.Mid(start, (i + 1) - start));
+            start = i + 1;
+        }
+        lines.push_back(text.Mid(start));
+    }
+
+    void AddLineHunk(std::vector<LineHunk>& hunks, int oldStart, int oldCount, int newStart, int newCount)
+    {
+        if (oldCount == 0 && newCount == 0)
+            return;
+
+        if (!hunks.empty())
+        {
+            LineHunk& prev = hunks.back();
+            if (prev.oldStart + prev.oldCount == oldStart && prev.newStart + prev.newCount == newStart)
+            {
+                prev.oldCount += oldCount;
+                prev.newCount += newCount;
+                return;
+            }
+        }
+
+        hunks.push_back(LineHunk{oldStart, oldCount, newStart, newCount});
+    }
+
+    // A point on a shortest edit path, used to keep the diff in linear space.
+    void LineDiffMidpoint(const std::vector<wxString>& oldLines, const std::vector<wxString>& newLines,
+                          int oldBegin, int oldEnd, int newBegin, int newEnd,
+                          int& splitOld, int& splitNew)
+    {
+        const int oldSpan = oldEnd - oldBegin;
+        const int newSpan = newEnd - newBegin;
+        const int max = oldSpan + newSpan;
+        const int delta = oldSpan - newSpan;
+        const bool odd = (delta & 1) != 0;
+        const int size = 2 * max + 1;
+        std::vector<int> forward(size, 0);
+        std::vector<int> backward(size, 0);
+        const auto index = [max](int diagonal) { return diagonal + max; };
+
+        forward[index(1)] = 0;
+        backward[index(1)] = 0;
+
+        for (int depth = 0; depth <= (max + 1) / 2; ++depth)
+        {
+            for (int diagonal = -depth; diagonal <= depth; diagonal += 2)
+            {
+                int oldPos;
+                if (diagonal == -depth || (diagonal != depth && forward[index(diagonal - 1)] < forward[index(diagonal + 1)]))
+                    oldPos = forward[index(diagonal + 1)];
+                else
+                    oldPos = forward[index(diagonal - 1)] + 1;
+
+                int newPos = oldPos - diagonal;
+                while (oldPos < oldSpan && newPos < newSpan && oldLines[oldBegin + oldPos] == newLines[newBegin + newPos])
+                {
+                    ++oldPos;
+                    ++newPos;
+                }
+                forward[index(diagonal)] = oldPos;
+
+                if (odd && depth > 0 && (diagonal - delta) >= -(depth - 1) && (diagonal - delta) <= (depth - 1))
+                {
+                    if (oldPos + backward[index(delta - diagonal)] >= oldSpan)
+                    {
+                        splitOld = oldBegin + oldPos;
+                        splitNew = newBegin + (oldPos - diagonal);
+                        return;
+                    }
+                }
+            }
+
+            for (int diagonal = -depth; diagonal <= depth; diagonal += 2)
+            {
+                int oldPos;
+                if (diagonal == -depth || (diagonal != depth && backward[index(diagonal - 1)] < backward[index(diagonal + 1)]))
+                    oldPos = backward[index(diagonal + 1)];
+                else
+                    oldPos = backward[index(diagonal - 1)] + 1;
+
+                int newPos = oldPos - diagonal;
+                while (oldPos < oldSpan && newPos < newSpan
+                       && oldLines[oldEnd - 1 - oldPos] == newLines[newEnd - 1 - newPos])
+                {
+                    ++oldPos;
+                    ++newPos;
+                }
+                backward[index(diagonal)] = oldPos;
+
+                if (!odd && (diagonal - delta) >= -depth && (diagonal - delta) <= depth)
+                {
+                    if (oldPos + forward[index(delta - diagonal)] >= oldSpan)
+                    {
+                        splitOld = oldBegin + (oldSpan - oldPos);
+                        splitNew = newBegin + (newSpan - (oldPos - diagonal));
+                        return;
+                    }
+                }
+            }
+        }
+
+        splitOld = oldEnd;
+        splitNew = newEnd;
+    }
+
+    void DiffLineRange(const std::vector<wxString>& oldLines, const std::vector<wxString>& newLines,
+                       int oldBegin, int oldEnd, int newBegin, int newEnd, std::vector<LineHunk>& hunks)
+    {
+        while (oldBegin < oldEnd && newBegin < newEnd && oldLines[oldBegin] == newLines[newBegin])
+        {
+            ++oldBegin;
+            ++newBegin;
+        }
+        while (oldBegin < oldEnd && newBegin < newEnd && oldLines[oldEnd - 1] == newLines[newEnd - 1])
+        {
+            --oldEnd;
+            --newEnd;
+        }
+
+        if (oldBegin == oldEnd && newBegin == newEnd)
+            return;
+        if (oldBegin == oldEnd)
+        {
+            AddLineHunk(hunks, oldBegin, 0, newBegin, newEnd - newBegin);
+            return;
+        }
+        if (newBegin == newEnd)
+        {
+            AddLineHunk(hunks, oldBegin, oldEnd - oldBegin, newBegin, 0);
+            return;
+        }
+
+        int splitOld = oldBegin;
+        int splitNew = newBegin;
+        LineDiffMidpoint(oldLines, newLines, oldBegin, oldEnd, newBegin, newEnd, splitOld, splitNew);
+        if (splitOld < oldBegin || splitOld > oldEnd || splitNew < newBegin || splitNew > newEnd
+            || (splitOld == oldBegin && splitNew == newBegin)
+            || (splitOld == oldEnd && splitNew == newEnd))
+        {
+            AddLineHunk(hunks, oldBegin, oldEnd - oldBegin, newBegin, newEnd - newBegin);
+            return;
+        }
+
+        DiffLineRange(oldLines, newLines, oldBegin, splitOld, newBegin, splitNew, hunks);
+        DiffLineRange(oldLines, newLines, splitOld, oldEnd, splitNew, newEnd, hunks);
+    }
+
+    void SplitContentAndEOL(const wxString& line, wxString& content, wxString& eol)
+    {
+        if (line.EndsWith(wxT("\r\n")))
+        {
+            content = line.Mid(0, line.length() - 2);
+            eol = wxT("\r\n");
+        }
+        else if (!line.empty() && (line.Last() == _T('\n') || line.Last() == _T('\r')))
+        {
+            content = line.Mid(0, line.length() - 1);
+            eol = line.Last();
+        }
+        else
+        {
+            content = line;
+            eol.clear();
+        }
+    }
+
+    // Replace the text of one existing line. Keeping its EOL in place marks only that
+    // line and leaves a breakpoint on it where it is.
+    void ReplaceLineContents(cbStyledTextCtrl* control, int line, const wxString& newLine)
+    {
+        const wxString current = control->GetLine(line);
+        if (current == newLine)
+            return;
+
+        wxString oldContent, oldEol, newContent, newEol;
+        SplitContentAndEOL(current, oldContent, oldEol);
+        SplitContentAndEOL(newLine, newContent, newEol);
+
+        const int start = control->PositionFromLine(line);
+        if (oldEol == newEol)
+        {
+            const int end = control->GetLineEndPosition(line);
+            if (end > start)
+                control->DeleteRange(start, end - start);
+            if (!newContent.empty())
+                control->InsertText(start, newContent);
+            return;
+        }
+
+        int end = control->GetLength();
+        if (line + 1 < control->GetLineCount())
+            end = control->PositionFromLine(line + 1);
+        if (end > start)
+            control->DeleteRange(start, end - start);
+        if (!newLine.empty())
+            control->InsertText(start, newLine);
+    }
+
+    void ApplyLineHunk(cbStyledTextCtrl* control, const LineHunk& hunk, const std::vector<wxString>& newLines)
+    {
+        const int common = hunk.oldCount < hunk.newCount ? hunk.oldCount : hunk.newCount;
+        for (int i = 0; i < common; ++i)
+            ReplaceLineContents(control, hunk.oldStart + i, newLines[hunk.newStart + i]);
+
+        if (hunk.newCount > hunk.oldCount)
+        {
+            wxString inserted;
+            for (int i = common; i < hunk.newCount; ++i)
+                inserted += newLines[hunk.newStart + i];
+
+            const int line = hunk.oldStart + common;
+            const int pos = line >= control->GetLineCount() ? control->GetLength() : control->PositionFromLine(line);
+            if (!inserted.empty())
+                control->InsertText(pos, inserted);
+        }
+        else if (hunk.oldCount > hunk.newCount)
+        {
+            const int line = hunk.oldStart + common;
+            const int count = hunk.oldCount - common;
+            const int start = control->PositionFromLine(line);
+            const int end = (line + count >= control->GetLineCount()) ? control->GetLength()
+                                                                       : control->PositionFromLine(line + count);
+            if (end > start)
+                control->DeleteRange(start, end - start);
+        }
+    }
+
+    // Edit only the lines that differ, so the change bar does not mark the whole buffer.
+    // caretPos is restored by line and column; insertions above it move that line down.
+    bool ApplyChangedLines(cbStyledTextCtrl* control, const wxString& desiredText, int caretPos)
+    {
+        std::vector<wxString> oldLines;
+        const int lineCount = control->GetLineCount();
+        oldLines.reserve(lineCount);
+        wxString oldJoined;
+        for (int line = 0; line < lineCount; ++line)
+        {
+            const wxString text = control->GetLine(line);
+            oldLines.push_back(text);
+            oldJoined += text;
+        }
+        if (oldJoined != control->GetText())
+            return false;
+
+        std::vector<wxString> newLines;
+        SplitDocumentLines(desiredText, newLines);
+        wxString newJoined;
+        for (const wxString& line : newLines)
+            newJoined += line;
+        if (newJoined != desiredText)
+            return false;
+
+        const int caretLine = control->LineFromPosition(caretPos);
+        const int caretCol = caretPos - control->PositionFromLine(caretLine);
+
+        std::vector<LineHunk> hunks;
+        DiffLineRange(oldLines, newLines, 0, static_cast<int>(oldLines.size()), 0, static_cast<int>(newLines.size()), hunks);
+
+        int lineShift = 0;
+        for (const LineHunk& hunk : hunks)
+        {
+            if (hunk.oldStart + hunk.oldCount <= caretLine)
+                lineShift += hunk.newCount - hunk.oldCount;
+            else
+                break;
+        }
+
+        for (int i = static_cast<int>(hunks.size()) - 1; i >= 0; --i)
+            ApplyLineHunk(control, hunks[i], newLines);
+
+        int newLine = caretLine + lineShift;
+        if (newLine < 0)
+            newLine = 0;
+        if (newLine >= control->GetLineCount())
+            newLine = control->GetLineCount() - 1;
+        const int lineStart = control->PositionFromLine(newLine);
+        const int lineEnd = control->GetLineEndPosition(newLine);
+        int newPos = lineStart + caretCol;
+        if (newPos > lineEnd)
+            newPos = lineEnd;
+        control->GotoPos(newPos);
+        return true;
     }
 }
 
@@ -267,7 +668,7 @@ static bool BuffersDiffer( const wxString &a, const wxString &b )
     return false;
 }
 
-bool AStylePlugin::FormatEditor( cbEditor *ed )
+bool AStylePlugin::FormatEditor( cbEditor *ed, bool applyConfiguredOptions )
 {
     cbStyledTextCtrl* control = ed->GetControl();
     if (control->GetReadOnly())
@@ -334,9 +735,14 @@ bool AStylePlugin::FormatEditor( cbEditor *ed )
 
     astyle::ASFormatter formatter;
 
-    // load settings
-    FormatterSettings settings;
-    settings.ApplyTo(formatter);
+    // Configured formatting reads the user's stored AStyle options.
+    // Re-indent skips that and keeps the formatter's built-in defaults.
+    // The stored configuration is not read or written on that path.
+    if (applyConfiguredOptions)
+    {
+        FormatterSettings settings;
+        settings.ApplyTo(formatter);
+    }
 
     const wxString& eolChars = GetEOLStr(control->GetEOLMode());
 
@@ -398,21 +804,31 @@ bool AStylePlugin::FormatEditor( cbEditor *ed )
     if ( changed )
     {
         control->BeginUndoAction();
-        // TODO: this can be made a lot smarter (see ApplyTextDelta() in r9575), however that
-        // particular implementation contains unidentifiable bugs, and must be rewritten
+        // Replacing the whole buffer marks every line on the change bar. Apply the
+        // line diff instead, and keep SetText only if that line model does not match.
+        wxString desiredText = formattedText;
         if (onlySelected)
-            control->ReplaceSelection(formattedText);
-        else
-            control->SetText(formattedText);
+            desiredText = control->GetTextRange(0, start) + formattedText + control->GetTextRange(end, control->GetLength());
 
-        for (std::vector<int>::const_iterator i = new_bookmark.begin(); i != new_bookmark.end(); ++i)
-            ed->ToggleBookmark(*i);
+        const bool appliedInPlace = ApplyChangedLines(control, desiredText, pos);
+        if (!appliedInPlace)
+        {
+            if (onlySelected)
+                control->ReplaceSelection(formattedText);
+            else
+                control->SetText(formattedText);
 
-        for (std::vector<int>::const_iterator i = ed_breakpoints.begin(); i != ed_breakpoints.end(); ++i)
-            ed->ToggleBreakpoint(*i);
+            for (std::vector<int>::const_iterator i = new_bookmark.begin(); i != new_bookmark.end(); ++i)
+                ed->ToggleBookmark(*i);
+
+            for (std::vector<int>::const_iterator i = ed_breakpoints.begin(); i != ed_breakpoints.end(); ++i)
+                ed->ToggleBreakpoint(*i);
+
+            // SetText/ReplaceSelection drop the caret. Edits above keep it themselves.
+            control->GotoPos(pos);
+        }
 
         control->EndUndoAction();
-        control->GotoPos(pos);
         ed->SetModified(true);
     }
 

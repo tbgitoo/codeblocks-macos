@@ -16,6 +16,8 @@
 #include "cbplugin.h" // the base class we 're inheriting
 #include "settings.h" // needed to use the Code::Blocks SDK
 
+class CodeBlocksEvent;
+
 class AStylePlugin : public cbToolPlugin
 {
   public:
@@ -26,12 +28,23 @@ class AStylePlugin : public cbToolPlugin
     void BuildModuleMenu( const ModuleType type, wxMenu* menu, const FileTreeData* data = 0 );
     int Execute();
 
+    void OnAttach();
+    void OnRelease(bool appShutDown);
+
     void OnFormatActiveFile( wxCommandEvent& event );
+    void OnReindentActiveFile( wxCommandEvent& event );
+    void OnReindentUpdateUI( wxUpdateUIEvent& event );
     void OnFormatProject( wxCommandEvent& event );
+    void OnMenubarCreateEnd( CodeBlocksEvent& event );
     void FormatFile( const wxString &filename );
-    bool FormatEditor( cbEditor *ed );
+    // applyConfiguredOptions selects the user's stored AStyle options.
+    // Re-indent passes false and leaves the formatter at AStyle's defaults.
+    bool FormatEditor( cbEditor *ed, bool applyConfiguredOptions = true );
 
     DECLARE_EVENT_TABLE()
+
+    void InsertReindentEditMenuItem();
+    void RemoveReindentEditMenuItem();
 };
 
 #endif // ASTYLEPLUGIN_H
