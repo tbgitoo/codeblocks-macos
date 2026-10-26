@@ -11,6 +11,8 @@
 class CompilerErrors;
 class wxArrayString;
 class wxCommandEvent;
+class wxContextMenuEvent;
+class wxMouseEvent;
 
 class CompilerMessages : public wxEvtHandler, public ListCtrlLogger
 {
@@ -32,11 +34,25 @@ class CompilerMessages : public wxEvtHandler, public ListCtrlLogger
         void OnDoubleClick(wxCommandEvent& event);
         void OnFit(wxCommandEvent& event);
         void OnAutoFit(wxCommandEvent& event);
+        void OnRightDown(wxMouseEvent& event);
+        void OnListContextMenu(wxContextMenuEvent& event);
+        void OnSearchStackOverflow(wxCommandEvent& event);
 
         void FitColumns();
+        int MessageColumn() const;
+        wxString MessageText(long item) const;
+        wxString SelectedMessageText() const;
+        long FirstWarningItem() const;
+        void CaptureListContext(long item);
+        wxString QueryForMenu() const;
 
         CompilerErrors* m_pErrors;
         bool m_autoFit;
+        long m_rightClickItem;
+        long m_clickItem;
+        bool m_clickFromList;
+        wxString m_clickSelection;
+        wxString m_stackOverflowQuery;
 
         DECLARE_EVENT_TABLE()
 };
