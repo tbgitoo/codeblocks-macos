@@ -40,8 +40,11 @@ class CompilerMessages : public wxEvtHandler, public ListCtrlLogger
 
         void FitColumns();
         int MessageColumn() const;
+        int FileColumn() const;
         wxString MessageText(long item) const;
+        wxString FileText(long item) const;
         wxString SelectedMessageText() const;
+        wxString LanguageForFile(const wxString& filename) const;
         long FirstWarningItem() const;
         void CaptureListContext(long item);
         wxString QueryForMenu() const;
