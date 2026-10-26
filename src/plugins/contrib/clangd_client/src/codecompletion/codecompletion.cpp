@@ -1078,8 +1078,8 @@ void ClgdCompletion::BuildModuleMenu(const ModuleType type, wxMenu* menu, const 
         if (wxFound(insertId) and pEditor and (not GetLSP_Initialized(pEditor)) )
             menu->Enable(insertId, false);
 
-        // Try to append after "Format use AStyle" else append at end.
-        const wxString labelAStyle = _("Format use AStyle");
+        // Try to append after "Format using AStyle" else append at end.
+        const wxString labelAStyle = _("Format using AStyle");
         const wxString label = _("Format use Clangd"); // (christo 25/05/02)
         size_t position = Manager::Get()->GetPluginManager()->FindSortedMenuItemPosition(*menu, labelAStyle);
         //size_t menuKnt = menu->GetMenuItemCount(); // **Debugging**
