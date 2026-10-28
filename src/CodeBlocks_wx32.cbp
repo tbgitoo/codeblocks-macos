@@ -2140,7 +2140,7 @@
 		<Unit filename="plugins/scriptedwizard/resources/h_file/wizard.script">
 			<Option target="Scripted wizard" />
 		</Unit>
-		<Unit filename="plugins/scriptedwizard/resources/irrlicht/wizard.script">
+		<Unit filename="plugins/scriptedwizard/resources/raylib/wizard.script">
 			<Option target="Scripted wizard" />
 		</Unit>
 		<Unit filename="plugins/scriptedwizard/resources/lf/wizard.script">

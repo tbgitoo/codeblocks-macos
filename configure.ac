@@ -513,7 +513,7 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/scriptedwizard/resources/glut/Makefile
 	src/plugins/scriptedwizard/resources/gtk/Makefile
 	src/plugins/scriptedwizard/resources/h_file/Makefile
-	src/plugins/scriptedwizard/resources/irrlicht/Makefile
+	src/plugins/scriptedwizard/resources/raylib/Makefile
 	src/plugins/scriptedwizard/resources/java/Makefile
 	src/plugins/scriptedwizard/resources/lf/Makefile
 	src/plugins/scriptedwizard/resources/matlab_csf/Makefile

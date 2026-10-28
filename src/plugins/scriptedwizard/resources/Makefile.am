@@ -23,7 +23,6 @@ SUBDIRS = arduino \
 	glut \
 	gtk \
 	h_file \
-	irrlicht \
 	java \
 	lf \
 	matlab_csf \
@@ -38,6 +37,7 @@ SUBDIRS = arduino \
 	qt4dll \
 	qt5 \
 	$(sdl_wizard_dir) \
+	raylib \
 	sdl3 \
 	sfml \
 	smartwin \
