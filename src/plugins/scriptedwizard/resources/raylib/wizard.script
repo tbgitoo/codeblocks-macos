@@ -1,0 +1,430 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+// raylib project wizard
+//
+// First-pass analogue of the SDL3 wizard:
+//   - macOS: Homebrew detection/install and validated prefix
+//   - Windows: existing installation selected manually
+//   - other Unix-like systems: pkg-config
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// globals (Windows location page)
+RaylibPathDefault    <- _T("$(#raylib)");
+RaylibPathDefaultInc <- _T("$(#raylib.include)");
+RaylibPathDefaultLib <- _T("$(#raylib.lib)");
+RaylibPath           <- _T("");
+// Windows: exact directories accepted by the location page
+RaylibWinInclude     <- _T("");
+RaylibWinLib         <- _T("");
+
+// macOS: filled only after the installed raylib tree is accepted
+RaylibMacPrefix     <- _T("");
+RaylibMacInclude    <- _T("");
+RaylibMacLib        <- _T("");
+RaylibMacState      <- _T("");
+RaylibMacAccess     <- _T("");
+RaylibMacExecutable <- _T("");
+
+function BeginWizard()
+{
+    local intro_msg = _("Welcome to the new raylib project wizard!\n\n") +
+                      _("This wizard will guide you to create a new project\nusing the raylib library.\n\n") +
+                      _("When you're ready to proceed, please click \"Next\"...");
+
+    Wizard.AddInfoPage(_T("RaylibIntro"), intro_msg);
+
+    // A suitable Homebrew raylib installation has no dependency page.
+    // Anything else remains on the diagnostic page until resolved or cancelled.
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        local reason = RaylibMacBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("RaylibMacDiag"), RaylibMacPageText(reason));
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        Wizard.AddInfoPage(_T("RaylibWinManual"),
+            _("This first raylib wizard does not download a Windows SDK automatically.\n\n") +
+            _("The next page asks for a raylib folder you already have.\n") +
+            _("Nothing is downloaded."));
+    }
+
+    Wizard.AddProjectPathPage();
+
+    if (PLATFORM == PLATFORM_MSW)
+    {
+        local raylibpath_descr = _("Please select the folder where raylib is installed on your computer.\n\n") +
+                                 _("The selected folder must provide an include folder containing raylib.h\n") +
+                                 _("and a lib folder containing the raylib library.\n\n") +
+                                 _("You can also use a global variable, e.g. $(#raylib).\n");
+
+        Wizard.AddGenericSelectPathPage(_T("RaylibPath"), raylibpath_descr,
+                                        _("Please select raylib's location:"),
+                                        RaylibPathDefault);
+    }
+
+    Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// raylib path page (Windows)
+////////////////////////////////////////////////////////////////////////////////
+
+function OnLeave_RaylibPath(fwd)
+{
+    if (fwd)
+    {
+        local dir         = Wizard.GetTextControlValue(_T("txtFolder"));
+        local dir_nomacro = VerifyDirectory(dir);
+
+        if (dir_nomacro.IsEmpty())
+            return false;
+
+        local dir_nomacro_inc = GetCompilerIncludeDir(dir, RaylibPathDefault, RaylibPathDefaultInc);
+        if (dir_nomacro_inc.IsEmpty())
+            return false;
+
+        if (!VerifyFile(dir_nomacro_inc, _T("raylib.h"), _("raylib's include")))
+            return false;
+
+        local dir_nomacro_lib = GetCompilerLibDir(dir, RaylibPathDefault, RaylibPathDefaultLib);
+        if (dir_nomacro_lib.IsEmpty())
+            return false;
+
+        if (!VerifyLibFile(dir_nomacro_lib, _T("raylib"), _("raylib's")))
+            return false;
+
+        RaylibPath = dir;
+        RaylibWinInclude = dir_nomacro_inc;
+        RaylibWinLib = dir_nomacro_lib;
+
+        local is_macro = GetCompilerIncludeMacro(dir, RaylibPathDefault, RaylibPathDefaultInc);
+        if (is_macro.IsEmpty())
+            RaylibPathDefaultInc = dir_nomacro_inc;
+        else
+            RaylibWinInclude = RaylibPathDefaultInc;
+
+        is_macro = GetCompilerLibMacro(dir, RaylibPathDefault, RaylibPathDefaultLib);
+        if (is_macro.IsEmpty())
+            RaylibPathDefaultLib = dir_nomacro_lib;
+        else
+            RaylibWinLib = RaylibPathDefaultLib;
+    }
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Homebrew support (macOS)
+////////////////////////////////////////////////////////////////////////////////
+
+function RaylibReportField(report, key)
+{
+    local needle = key + _T("=");
+    local at = report.Find(needle);
+    if (at == -1)
+        return _T("");
+    local from = at + needle.Length();
+    local rest = report.Mid(from, report.Length() - from);
+    local nl = rest.Find(_T("\n"));
+    if (nl == -1)
+        return rest;
+    return rest.Mid(0, nl);
+}
+
+function RaylibMacClear()
+{
+    RaylibMacPrefix = _T("");
+    RaylibMacInclude = _T("");
+    RaylibMacLib = _T("");
+}
+
+// Empty string: this prefix may be written into the project.
+// Anything else: do not create a project.
+function RaylibMacPrefixDecision(prefix)
+{
+    RaylibMacClear();
+
+    if (prefix.IsEmpty() || (prefix.Find(_T("/")) != 0))
+        return _("raylib's prefix is not a directory. No project was created.");
+
+    local includeDir = prefix + _T("/include");
+    local libDir = prefix + _T("/lib");
+
+    if (!IO.FileExists(includeDir + _T("/raylib.h")))
+        return _("raylib was found, but include/raylib.h is not under ") + prefix + _(". No project was created.");
+
+    // Homebrew may provide a dynamic library, a static library, or both.
+    if (!IO.FileExists(libDir + _T("/libraylib.dylib")) &&
+        !IO.FileExists(libDir + _T("/libraylib.a")))
+    {
+        return _("raylib was found, but neither libraylib.dylib nor libraylib.a is under ") +
+               prefix + _("/lib. No project was created.");
+    }
+
+    RaylibMacPrefix = prefix;
+    RaylibMacInclude = includeDir;
+    RaylibMacLib = libDir;
+    return _T("");
+}
+
+function RaylibMacBlockReason()
+{
+    local report = Wizard.MacBrewFormula(_T("raylib"));
+    RaylibMacState = RaylibReportField(report, _T("state"));
+    RaylibMacAccess = RaylibReportField(report, _T("access"));
+    RaylibMacExecutable = RaylibReportField(report, _T("executable"));
+
+    if (RaylibMacState.Matches(_T("installed")))
+        return RaylibMacPrefixDecision(RaylibReportField(report, _T("prefix")));
+
+    RaylibMacClear();
+
+    if (RaylibMacState.Matches(_T("missing")))
+        return _("Homebrew reports that raylib is not installed. This wizard will not create a project.");
+    if (RaylibMacState.Matches(_T("brew_unavailable")))
+        return _("Homebrew could not be used. This wizard will not create a project.");
+    return _("Homebrew could not be asked about raylib. This wizard will not create a project.");
+}
+
+function RaylibMacPageText(reason)
+{
+    local text = _("Some project templates obtain libraries through Homebrew.\n") +
+                 _("Code::Blocks does not install Homebrew.\n\n");
+
+    if (RaylibMacAccess.Matches(_T("works")))
+    {
+        text = text + _("Homebrew\n    Found: ") + RaylibMacExecutable +
+               _("\n    Access from Code::Blocks: OK\n\n");
+    }
+    else if (RaylibMacAccess.Matches(_T("present_unusable")))
+    {
+        text = text + _("Homebrew\n    Found: ") + RaylibMacExecutable +
+               _("\n    Access from Code::Blocks: failed\n") +
+               _("That executable was left in place.\n\n");
+    }
+    else
+    {
+        text = text + _("Homebrew\n    Not detected\n\n");
+    }
+
+    if (RaylibMacState.Matches(_T("missing")))
+        text = text + _("raylib\n    Not installed\n\n");
+    else if (RaylibMacAccess.Matches(_T("works")) && !reason.IsEmpty())
+        text = text + reason + _("\n\n");
+
+    text = text + _("No project is created from this page.\n");
+
+    if (RaylibMacState.Matches(_T("missing")))
+    {
+        text = text + _("Press Next to install the raylib formula with Homebrew.\n") +
+                      _("Cancel on that dialog does not start the install.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    }
+    else if (RaylibMacAccess.Matches(_T("works")))
+    {
+        text = text + _("Use Cancel to close the wizard.\n");
+    }
+    else
+    {
+        text = text + _("Press Next to choose an existing brew executable, or to open https://brew.sh.\n") +
+                      _("Use Cancel to close the wizard.\n");
+    }
+
+    return text;
+}
+
+// Empty string: the path passed --version and was stored.
+function RaylibMacConsiderBrew(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+
+    local report = Wizard.MacBrewTry(path, true);
+    local access = RaylibReportField(report, _T("access"));
+
+    if (access.Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
+        return _T("");
+    }
+
+    return _("That file did not pass brew --version, so it was not remembered.") +
+           _("\n\n") + RaylibReportField(report, _T("executable")) +
+           _("\n") + RaylibReportField(report, _T("version"));
+}
+
+function RaylibMacOfferInstall()
+{
+    local explanation = _("This project needs raylib.\n\n") +
+                        _("Code::Blocks will ask Homebrew to install the formula \"raylib\".\n") +
+                        _("Nothing is installed until you choose Install raylib using Homebrew.\n") +
+                        _("Cancel on this dialog does not start Homebrew.");
+
+    local report = Wizard.MacBrewInstall(_T("raylib"), explanation,
+                                         _("Install raylib using Homebrew"));
+
+    if (RaylibReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = RaylibMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowMessage(RaylibMacPageText(reason));
+        return false;
+    }
+
+    if (RaylibReportField(report, _T("password")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
+        return false;
+    }
+
+    if (RaylibReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
+        return false;
+    }
+
+    if (RaylibReportField(report, _T("launched")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew did not finish successfully. raylib was not marked installed. No project was created.\n\n") +
+                  RaylibReportField(report, _T("output")));
+    }
+
+    return false;
+}
+
+function OnLeave_RaylibMacDiag(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (RaylibMacBlockReason().IsEmpty())
+        return true;
+
+    if (!RaylibMacAccess.Matches(_T("works")))
+    {
+        local choice = Wizard.MacBrewChoice(
+            _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
+            _("Help me find Homebrew"),
+            _("Installation instructions"));
+
+        if (choice == 1)
+        {
+            local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
+            local rejected = RaylibMacConsiderBrew(picked);
+            if (!rejected.IsEmpty())
+                ShowError(rejected);
+        }
+        else if (choice == 2)
+        {
+            wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+        }
+
+        if (RaylibMacBlockReason().IsEmpty())
+            return true;
+        return false;
+    }
+
+    if (RaylibMacState.Matches(_T("missing")))
+        return RaylibMacOfferInstall();
+
+    return false;
+}
+
+function RaylibMacAllowForward()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return true;
+
+    local reason = RaylibMacBlockReason();
+    if (reason.IsEmpty())
+        return true;
+
+    ShowError(reason);
+    return false;
+}
+
+function OnLeave_ProjectPathPage(fwd)
+{
+    if (fwd)
+        return RaylibMacAllowForward();
+    return true;
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (fwd)
+        return RaylibMacAllowForward();
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Project creation
+////////////////////////////////////////////////////////////////////////////////
+
+function GetFilesDir()
+{
+    return _T("raylib/files");
+}
+
+function SetupProject(project)
+{
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        if (RaylibMacInclude.IsEmpty() || RaylibMacLib.IsEmpty())
+            return false;
+
+        project.AddIncludeDir(RaylibMacInclude);
+        project.AddLibDir(RaylibMacLib);
+        project.AddLinkLib(_T("raylib"));
+
+        // Desktop raylib on macOS requires the native system frameworks.
+        project.AddLinkerOption(_T("-framework CoreVideo"));
+        project.AddLinkerOption(_T("-framework IOKit"));
+        project.AddLinkerOption(_T("-framework Cocoa"));
+        project.AddLinkerOption(_T("-framework GLUT"));
+        project.AddLinkerOption(_T("-framework OpenGL"));
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        // Use the exact include and library directories accepted on the path page.
+        // This avoids validating one directory and later linking against another.
+        if (RaylibWinInclude.IsEmpty() || RaylibWinLib.IsEmpty())
+            return false;
+
+        project.AddIncludeDir(RaylibWinInclude);
+        project.AddLibDir(RaylibWinLib);
+        project.AddLinkLib(_T("raylib"));
+        project.AddLinkLib(_T("opengl32"));
+        project.AddLinkLib(_T("gdi32"));
+        project.AddLinkLib(_T("winmm"));
+    }
+    else
+    {
+        project.AddCompilerOption(_T("`pkg-config --cflags raylib`"));
+        project.AddLinkerOption(_T("`pkg-config --libs raylib`"));
+    }
+
+    WarningsOn(project, Wizard.GetCompilerID());
+
+    local target = project.GetBuildTarget(Wizard.GetDebugName());
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttConsoleOnly);
+        target.SetOutputFilename(Wizard.GetDebugOutputDir() +
+                                 Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
+        DebugSymbolsOn(target, Wizard.GetCompilerID());
+    }
+
+    target = project.GetBuildTarget(Wizard.GetReleaseName());
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttExecutable);
+        target.SetOutputFilename(Wizard.GetReleaseOutputDir() +
+                                 Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
+        OptimizationsOn(target, Wizard.GetCompilerID());
+    }
+
+    return true;
+}

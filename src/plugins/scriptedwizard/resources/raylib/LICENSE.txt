@@ -1,0 +1,146 @@
+raylib wizard graphics
+======================
+
+raylib name/logo
+----------------
+
+The raylib name/logo is © its original author.
+
+The logo used as the basis for logo.png is available from Wikimedia Commons:
+
+https://commons.wikimedia.org/wiki/File:Raylib_logo.png
+
+The source image is licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0):
+
+https://creativecommons.org/licenses/by-sa/4.0/
+
+logo.png
+--------
+
+logo.png is a downsampled version of the above raylib logo.
+
+Source: Wikimedia Commons, "Raylib logo.png"
+Author: Raysan51
+Licence: CC BY-SA 4.0
+Modification: resized/downsampled for use in the Code::Blocks project wizard.
+
+wizard.png
+----------
+
+wizard.png is original wizard artwork created for Code::Blocks.
+
+The upper raylib name/logo element is derived from the raylib logo
+identified above. To avoid ambiguity concerning the derivative portion,
+wizard.png is distributed under the same CC BY-SA 4.0 licence.
+
+The remainder of the composition, including the Snake game design,
+layout, border and "CODE. BUILD. PLAY." caption, was created for the
+Code::Blocks raylib wizard by tbgitoo.
+
+Licence for wizard.png: CC BY-SA 4.0.
+Attribution: tbgitoo and the original raylib logo author as identified above.
+
+The following raylib program was used to render wizard.png:
+
+
+#include "raylib.h"
+
+int main(void)
+{
+    const int screenWidth  = 328;
+    const int screenHeight = 628;
+
+    InitWindow(screenWidth, screenHeight, "raylib wizard artwork");
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose())
+    {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        // Border
+        DrawRectangleLinesEx(
+            (Rectangle){ 8, 8, screenWidth - 16, screenHeight - 16 },
+            4,
+            BLACK
+        );
+
+        // -----------------------------------------------------------------
+        // raylib-style heading
+        // -----------------------------------------------------------------
+        DrawRectangle(44, 38, 240, 112, BLACK);
+        DrawRectangle(54, 48, 220, 92, RAYWHITE);
+        DrawText("raylib", 98, 78, 42, BLACK);
+
+        // -----------------------------------------------------------------
+        // Snake game
+        // Everything is deliberately aligned to a 24 px grid.
+        // -----------------------------------------------------------------
+        const int cell = 24;
+        const int ox = 32;
+        const int oy = 190;
+
+        // Playfield
+        DrawRectangleLinesEx(
+            (Rectangle){ ox, oy, 11*cell, 13*cell },
+            3,
+            BLACK
+        );
+
+        // Food
+        DrawRectangle(
+            ox + 8*cell + 4,
+            oy + 3*cell + 4,
+            cell - 8,
+            cell - 8,
+            BLACK
+        );
+
+        // Snake body: outlined white squares
+        Vector2 snake[] =
+        {
+            { 2, 9 },
+            { 3, 9 },
+            { 4, 9 },
+            { 5, 9 },
+            { 5, 8 },
+            { 5, 7 },
+            { 6, 7 },
+            { 7, 7 },
+            { 8, 7 },
+            { 8, 6 },
+            { 8, 5 }
+        };
+
+        const int snakeLength =
+            sizeof(snake) / sizeof(snake[0]);
+
+        for (int i = 0; i < snakeLength; ++i)
+        {
+            int x = ox + (int)snake[i].x*cell + 2;
+            int y = oy + (int)snake[i].y*cell + 2;
+
+            DrawRectangle(x, y, cell - 4, cell - 4, BLACK);
+            DrawRectangle(x + 4, y + 4, cell - 12, cell - 12, RAYWHITE);
+        }
+
+        // Head: solid black so the direction is obvious.
+        int hx = ox + (int)snake[snakeLength - 1].x*cell + 2;
+        int hy = oy + (int)snake[snakeLength - 1].y*cell + 2;
+
+        DrawRectangle(hx, hy, cell - 4, cell - 4, BLACK);
+
+        // Two tiny white eyes looking upward.
+        DrawRectangle(hx + 4,  hy + 4, 4, 4, RAYWHITE);
+        DrawRectangle(hx + 12, hy + 4, 4, 4, RAYWHITE);
+
+        // Small caption, still completely monochrome.
+        DrawText("CODE. BUILD. PLAY.", 77, 540, 14, BLACK);
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+    return 0;
+} 
