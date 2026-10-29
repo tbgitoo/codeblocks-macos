@@ -5,12 +5,8 @@
 // Project: D application
 // Original author: Yiannis Mandravellos
 // tbgitoo: macOS Homebrew discovery/install support added for DMD, GDC and LDC.
-// Instrumented build: traces the compiler-page and Homebrew control flow.
 //
 ////////////////////////////////////////////////////////////////////////////////
-
-// Set to false after diagnosis to retain the script without modal trace dialogs.
-DTraceEnabled     <- true;
 
 // Put LDC first so it is the preferred/default D compiler offered by the
 // compiler page. DMD and GDC remain available as explicit alternatives.
@@ -21,29 +17,8 @@ DMacAccess        <- _T("");
 DMacExecutable    <- _T("");
 DMacPrefix        <- _T("");
 
-function DTrace(message)
-{
-    if (DTraceEnabled)
-        ShowMessage(_T("[D wizard trace] ") + message);
-}
-
-function DTraceMacState(context)
-{
-    if (!DTraceEnabled)
-        return;
-
-    ShowMessage(_T("[D wizard trace] ") + context +
-                _T("\nformula=") + DMacFormula +
-                _T("\nstate=") + DMacState +
-                _T("\naccess=") + DMacAccess +
-                _T("\nexecutable=") + DMacExecutable +
-                _T("\nprefix=") + DMacPrefix);
-}
-
 function BeginWizard()
 {
-    DTrace(_T("BeginWizard entered"));
-
     local intro_msg = _("Welcome to the new D application wizard!\n") +
                       _("This wizard will guide you to create a new D application.\n\n") +
                       _("LDC is the preferred compiler; DMD and GDC can also be selected on the compiler page.\n\n") +
@@ -57,8 +32,6 @@ function BeginWizard()
     // The compiler page permits selection and configuration of the supported
     // Code::Blocks D compiler profiles. Ordering makes LDC the first choice.
     Wizard.AddCompilerPage(_T("ldc"), DCompilerIDs, true, true);
-
-    DTrace(_T("BeginWizard completed; pages added"));
 }
 
 function DReportField(report, key)
@@ -78,8 +51,6 @@ function DReportField(report, key)
 
 function DMacClear()
 {
-    DTrace(_T("DMacClear entered"));
-
     DMacFormula    = _T("");
     DMacState      = _T("");
     DMacAccess     = _T("");
@@ -91,8 +62,6 @@ function DMacClear()
 // Homebrew supplies GDC as part of GCC rather than as a separate formula.
 function DMacFormulaForCompiler(compilerID)
 {
-    DTrace(_T("DMacFormulaForCompiler entered; compilerID=") + compilerID);
-
     if (compilerID.Matches(_T("ldc")))
         return _T("ldc");
     if (compilerID.Matches(_T("dmd")))
@@ -105,54 +74,41 @@ function DMacFormulaForCompiler(compilerID)
 // Empty string means that the selected compiler formula is installed.
 function DMacBlockReason(compilerID)
 {
-    DTrace(_T("DMacBlockReason entered; compilerID=") + compilerID);
-
     DMacClear();
     DMacFormula = DMacFormulaForCompiler(compilerID);
     if (DMacFormula.IsEmpty())
-    {
-        DTrace(_T("DMacBlockReason: unsupported compiler profile"));
         return _("The selected compiler is not supported by the macOS automatic setup.");
-    }
 
-    DTrace(_T("Calling Wizard.MacBrewFormula; formula=") + DMacFormula);
     local report = Wizard.MacBrewFormula(DMacFormula);
-    DTrace(_T("Wizard.MacBrewFormula returned:\n") + report);
 
     DMacState      = DReportField(report, _T("state"));
     DMacAccess     = DReportField(report, _T("access"));
     DMacExecutable = DReportField(report, _T("executable"));
     DMacPrefix     = DReportField(report, _T("prefix"));
-    DTraceMacState(_T("DMacBlockReason parsed report"));
 
     if (DMacState.Matches(_T("installed")))
     {
-    if (DMacPrefix.IsEmpty() || DMacPrefix.Find(_T("/")) != 0)
-        return _("Homebrew reports the compiler as installed, but its prefix is invalid. No project was created.");
+        if (DMacPrefix.IsEmpty() || DMacPrefix.Find(_T("/")) != 0)
+            return _("Homebrew reports the compiler as installed, but its prefix is invalid. No project was created.");
 
-    DTrace(_T("Calling Wizard.AutoDetectCompiler; compilerID=") + compilerID);
-    local detectReport = Wizard.AutoDetectCompiler(compilerID);
-    DTrace(_T("Wizard.AutoDetectCompiler returned:\n") + detectReport);
+        local detectReport = Wizard.AutoDetectCompiler(compilerID);
 
-    local found    = DReportField(detectReport, _T("found"));
-    local detected = DReportField(detectReport, _T("detected"));
-    local master   = DReportField(detectReport, _T("master"));
+        local found    = DReportField(detectReport, _T("found"));
+        local detected = DReportField(detectReport, _T("detected"));
+        local master   = DReportField(detectReport, _T("master"));
 
-    if (!found.Matches(_T("1")))
-        return _("The selected Code::Blocks compiler profile could not be found.");
+        if (!found.Matches(_T("1")))
+            return _("The selected Code::Blocks compiler profile could not be found.");
 
-    if (!detected.Matches(_T("1")))
-        return _("The compiler is installed, but Code::Blocks could not auto-detect its installation directory.");
+        if (!detected.Matches(_T("1")))
+            return _("The compiler is installed, but Code::Blocks could not auto-detect its installation directory.");
 
-    if (master.IsEmpty() || master.Find(_T("/")) != 0)
-        return _("Code::Blocks detected the compiler, but returned an invalid installation directory.");
+        if (master.IsEmpty() || master.Find(_T("/")) != 0)
+            return _("Code::Blocks detected the compiler, but returned an invalid installation directory.");
 
-    DTrace(_T("Compiler auto-detection succeeded; master=") + master);
-    return _T("");
+        return _T("");
     }
-    
-    
-    
+
     if (DMacState.Matches(_T("missing")))
         return _("The selected D compiler is not installed.");
     if (DMacState.Matches(_T("brew_unavailable")))
@@ -162,23 +118,15 @@ function DMacBlockReason(compilerID)
 
 function DMacConsiderBrew(path)
 {
-    DTrace(_T("DMacConsiderBrew entered; path=") + path);
-
     if (path.IsEmpty())
-    {
-        DTrace(_T("DMacConsiderBrew: empty path"));
         return _T("");
-    }
 
-    DTrace(_T("Calling Wizard.MacBrewTry"));
     local report = Wizard.MacBrewTry(path, true);
-    DTrace(_T("Wizard.MacBrewTry returned:\n") + report);
 
     local access = DReportField(report, _T("access"));
     if (access.Matches(_T("works")))
     {
         GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
-        DTrace(_T("DMacConsiderBrew: brew accepted and remembered"));
         return _T("");
     }
 
@@ -189,42 +137,29 @@ function DMacConsiderBrew(path)
 
 function DMacOfferHomebrewHelp()
 {
-    DTrace(_T("DMacOfferHomebrewHelp entered"));
-
     local choice = Wizard.MacBrewChoice(
         _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
         _("Help me find Homebrew"),
         _("Installation instructions"));
 
-    DTrace(_T("Wizard.MacBrewChoice returned choice=") + choice.tostring());
-
     if (choice == 1)
     {
         local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
-        DTrace(_T("IO.SelectFile returned path=") + picked);
         local rejected = DMacConsiderBrew(picked);
         if (!rejected.IsEmpty())
             ShowError(rejected);
     }
     else if (choice == 2)
     {
-        DTrace(_T("Opening Homebrew website"));
         wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
-    }
-    else
-    {
-        DTrace(_T("Homebrew help dialog cancelled or closed"));
     }
 }
 
 function DMacOfferInstall(compilerID)
 {
-    DTrace(_T("DMacOfferInstall entered; compilerID=") + compilerID);
-
     DMacFormula = DMacFormulaForCompiler(compilerID);
     if (DMacFormula.IsEmpty())
     {
-        DTrace(_T("DMacOfferInstall: unsupported compiler profile"));
         ShowError(_("The selected compiler is not supported by the macOS automatic setup. No project was created."));
         return false;
     }
@@ -235,74 +170,55 @@ function DMacOfferInstall(compilerID)
                         _("Nothing is installed until you choose Install using Homebrew.\n") +
                         _("Cancel on this dialog does not start the install.");
 
-    DTrace(_T("Calling Wizard.MacBrewInstall; formula=") + DMacFormula);
     local report = Wizard.MacBrewInstall(
         DMacFormula,
         explanation,
         _("Install using Homebrew"));
-    DTrace(_T("Wizard.MacBrewInstall returned:\n") + report);
 
     if (DReportField(report, _T("success")).Matches(_T("1")))
     {
-        DTrace(_T("Install report says success=1; rechecking formula"));
         local reason = DMacBlockReason(compilerID);
         if (reason.IsEmpty())
-        {
-            DTrace(_T("Post-install formula check succeeded"));
             return true;
-        }
         ShowError(reason + _(" No project was created."));
         return false;
     }
     if (DReportField(report, _T("password")).Matches(_T("1")))
     {
-        DTrace(_T("Install report says password=1"));
         ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
         return false;
     }
     if (DReportField(report, _T("cancelled")).Matches(_T("1")))
     {
-        DTrace(_T("Install report says cancelled=1"));
         ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
         return false;
     }
     if (DReportField(report, _T("launched")).Matches(_T("1")))
     {
-        DTrace(_T("Install report says launched=1 without success"));
         ShowError(_("Homebrew did not finish successfully. The compiler was not marked installed. No project was created.\n\n") +
                   DReportField(report, _T("output")));
         return false;
     }
 
-    DTrace(_T("Install report had no recognised terminal status"));
     return false;
 }
 
 function DMacAllowForward()
 {
-    DTrace(_T("DMacAllowForward entered"));
-
     if (PLATFORM != PLATFORM_MAC)
-    {
-        DTrace(_T("Non-macOS platform; allowing forward navigation"));
         return true;
-    }
 
     local compilerID = Wizard.GetCompilerID();
-    DTrace(_T("Selected compilerID=") + compilerID);
 
     local reason = DMacBlockReason(compilerID);
-    DTrace(_T("Initial DMacBlockReason returned: ") + reason);
     if (reason.IsEmpty())
         return true;
 
     if (!DMacAccess.Matches(_T("works")))
     {
-        DTrace(_T("Homebrew access does not work; offering Homebrew help"));
         DMacOfferHomebrewHelp();
 
         reason = DMacBlockReason(compilerID);
-        DTrace(_T("After Homebrew help, DMacBlockReason returned: ") + reason);
         if (reason.IsEmpty())
             return true;
 
@@ -311,74 +227,46 @@ function DMacAllowForward()
     }
 
     if (DMacState.Matches(_T("missing")))
-    {
-        DTrace(_T("Compiler formula missing; calling DMacOfferInstall"));
         return DMacOfferInstall(compilerID);
-    }
 
-    DTrace(_T("Blocking forward navigation for unhandled state"));
     ShowError(reason + _(" No project was created."));
     return false;
 }
 
 function OnLeave_CompilerPage(fwd)
 {
-    DTrace(_T("OnLeave_CompilerPage entered; fwd=") + (fwd ? _T("true") : _T("false")));
-
     if (fwd)
-    {
-        local allowed = DMacAllowForward();
-        DTrace(_T("OnLeave_CompilerPage returning ") + (allowed ? _T("true") : _T("false")));
-        return allowed;
-    }
+        return DMacAllowForward();
 
-    DTrace(_T("Backward navigation allowed"));
     return true;
 }
 
 function GetFilesDir()
 {
-    DTrace(_T("GetFilesDir entered; returning d/console"));
     return _T("d/console");
 }
 
 function SetupProject(project)
 {
-    DTrace(_T("SetupProject entered; compilerID=") + Wizard.GetCompilerID());
-
     // Keep the original D compiler behaviour.
     if (Wizard.GetCompilerID().Matches(_T("gdc")))
-    {
-        DTrace(_T("Applying GDC warning flags"));
         WarningsOn(project, Wizard.GetCompilerID());
-    }
 
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
-        DTrace(_T("Configuring Debug target"));
         target.SetTargetType(ttConsoleOnly);
         target.SetOutputFilename(Wizard.GetDebugOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
         DebugSymbolsOn(target, Wizard.GetCompilerID());
-    }
-    else
-    {
-        DTrace(_T("Debug target is null"));
     }
 
     target = project.GetBuildTarget(Wizard.GetReleaseName());
     if (!IsNull(target))
     {
-        DTrace(_T("Configuring Release target"));
         target.SetTargetType(ttConsoleOnly);
         target.SetOutputFilename(Wizard.GetReleaseOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
         OptimizationsOn(target, Wizard.GetCompilerID());
     }
-    else
-    {
-        DTrace(_T("Release target is null"));
-    }
 
-    DTrace(_T("SetupProject completed"));
     return true;
 }
