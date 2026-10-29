@@ -24,7 +24,12 @@ function BeginWizard()
     //  2) string: semi-colon separated list of allowed compiler ids. Use _T("*") for all. * and ? wildcards allowed.
     //  3) boolean: if false, the compiler selection will be disabled
     //  4) boolean: if false, the config targets will be disabled
-    Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
+    local defaultCompiler = _T("");
+
+    if (PLATFORM == PLATFORM_MAC)
+        defaultCompiler = _T("gfortran");
+
+    Wizard.AddCompilerPage(defaultCompiler, _T("*"), true, true);
 }
 
 // return the files this project contains
