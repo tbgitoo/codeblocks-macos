@@ -496,7 +496,6 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/projectsimporter/resources/Makefile
 	src/plugins/scriptedwizard/Makefile
 	src/plugins/scriptedwizard/resources/Makefile
-	src/plugins/scriptedwizard/resources/arduino/Makefile
 	src/plugins/scriptedwizard/resources/arm/Makefile
 	src/plugins/scriptedwizard/resources/avr/Makefile
 	src/plugins/scriptedwizard/resources/c_file/Makefile
@@ -516,7 +515,6 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/scriptedwizard/resources/raylib/Makefile
 	src/plugins/scriptedwizard/resources/java/Makefile
 	src/plugins/scriptedwizard/resources/lf/Makefile
-	src/plugins/scriptedwizard/resources/matlab_csf/Makefile
 	src/plugins/scriptedwizard/resources/mcs51/Makefile
 	src/plugins/scriptedwizard/resources/msp430/Makefile
 	src/plugins/scriptedwizard/resources/ogre/Makefile

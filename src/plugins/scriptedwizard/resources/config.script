@@ -35,7 +35,6 @@ function RegisterWizards()
     RegisterWizard(wizProject,     _T("gtk"),          _("GTK+ project"),          _("GUI"));
     RegisterWizard(wizProject,     _T("java"),         _("Java application"),      _("Java"));
     RegisterWizard(wizProject,     _T("lf"),           _("Lightfeather project"),  _("2D/3D Graphics"));
-    RegisterWizard(wizProject,     _T("matlab_csf"),   _("Matlab project"),        _("Console"));
     RegisterWizard(wizProject,     _T("opencv"),       _("OpenCV project"),        _("Console"));
     RegisterWizard(wizProject,     _T("opengl"),       _("OpenGL project"),        _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("ogre"),         _("Ogre project"),          _("2D/3D Graphics"));
@@ -68,7 +67,6 @@ function RegisterWizards()
         RegisterWizard(wizTarget,  _T("dll"),          _("Dynamic Link Library"),  _("Console"));
     RegisterWizard(wizTarget,      _T("wxwidgets"),    _("wxWidgets"),             _("GUI"));
 
-    RegisterWizard(wizProject,     _T("arduino"),      _("Arduino Project"),       _("Embedded Systems"));
     RegisterWizard(wizProject,     _T("arm"),          _("ARM Project"),           _("Embedded Systems"));
     RegisterWizard(wizProject,     _T("avr"),          _("AVR Project"),           _("Embedded Systems"));
     RegisterWizard(wizProject,     _T("msp430"),       _("MSP430 Project"),        _("Embedded Systems"));
