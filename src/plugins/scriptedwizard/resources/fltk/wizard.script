@@ -1,174 +1,353 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
 // FLTK project wizard
+// Modernised using the SDL3 wizard's platform-specific dependency handling.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// globals (windows only)
-FltkPathDefault    <- _T("$(#fl)");
-FltkPathDefaultInc <- _T("$(#fl.include)");
-FltkPathDefaultLib <- _T("$(#fl.lib)");
-FltkPath <- _T("");
+// globals (Windows location page)
+FLTKPathDefault    <- _T("$(#fltk)");
+FLTKPathDefaultInc <- _T("$(#fltk.include)");
+FLTKPathDefaultLib <- _T("$(#fltk.lib)");
+FLTKPath           <- _T("");
 
-FLTKQuickProject <- true;
+// macOS: filled only after the installed Homebrew FLTK tree is accepted
+FLTKMacPrefix     <- _T("");
+FLTKMacInclude    <- _T("");
+FLTKMacLib        <- _T("");
+FLTKMacConfig     <- _T("");
+FLTKMacState      <- _T("");
+FLTKMacAccess     <- _T("");
+FLTKMacExecutable <- _T("");
 
 function BeginWizard()
 {
     local intro_msg = _("Welcome to the new FLTK project wizard!\n\n") +
-                      _("This wizard will guide you to create a new project\nusing the FLTK GUI C++ library.\n\n") +
+                      _("This wizard will guide you to create a new project using FLTK.\n\n") +
                       _("When you're ready to proceed, please click \"Next\"...");
 
-    // "select fltk project to generate" text
-    local fltkprjtype_descr = _("Please select the type of project to generate.");
-    local fltkprj_choices = _("Simple main() example;FLUID-based project");
+    Wizard.AddInfoPage(_T("FLTKIntro"), intro_msg);
 
-    Wizard.AddInfoPage(_T("FltkIntro"), intro_msg);
-    Wizard.AddProjectPathPage();
-    if (PLATFORM == PLATFORM_MSW)
+    // On macOS the accepted Homebrew prefix replaces $(#fltk), so no location
+    // page is registered. An unavailable dependency blocks project creation.
+    if (PLATFORM == PLATFORM_MAC)
     {
-        local fltkpath_descr = _("Please select the location of FLTK on your computer.\n") +
-                               _("This is the top-level folder where FLTK was installed (unpacked).\n") +
-                               _("To help you, this folder must contain the subfolders\n\"include\" and \"lib\".\n\n") +
-                               _("You can also use a global variable, p.e. $(#fl)\n");
-
-        Wizard.AddGenericSelectPathPage(_T("FltkPath"), fltkpath_descr, _("Please select FLTK's location:"), FltkPathDefault);
+        local reason = FLTKMacBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("FLTKMacDiag"), FLTKMacPageText(reason));
     }
 
-    Wizard.AddGenericSingleChoiceListPage(_T("FLTKPrjType"), fltkprjtype_descr, fltkprj_choices, 0);
+    Wizard.AddProjectPathPage();
+
+    if (PLATFORM == PLATFORM_MSW)
+    {
+        local fltkpath_descr = _("Please select the folder where FLTK is installed on your computer.\n\n") +
+                               _("The selected folder must provide FLTK's include and library directories.\n") +
+                               _("The include directory must contain FL/Fl.H.\n\n") +
+                               _("You can also use a global variable, e.g. $(#fltk).\n");
+        Wizard.AddGenericSelectPathPage(_T("FLTKPath"), fltkpath_descr,
+                                        _("Please select FLTK's location:"), FLTKPathDefault);
+    }
+
     Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// FLTK's path page
+// FLTK path page (Windows)
 ////////////////////////////////////////////////////////////////////////////////
 
-function OnLeave_FltkPath(fwd)
+function OnLeave_FLTKPath(fwd)
 {
     if (fwd)
     {
-        local dir         = Wizard.GetTextControlValue(_T("txtFolder")); // txtFolder is the text control in GenericSelectPathPage
+        local dir         = Wizard.GetTextControlValue(_T("txtFolder"));
         local dir_nomacro = VerifyDirectory(dir);
-
         if (dir_nomacro.IsEmpty())
             return false;
 
-        // verify include dependencies
-        local dir_nomacro_inc = GetCompilerIncludeDir(dir, FltkPathDefault, FltkPathDefaultInc);
+        local dir_nomacro_inc = GetCompilerIncludeDir(dir, FLTKPathDefault, FLTKPathDefaultInc);
         if (dir_nomacro_inc.IsEmpty())
             return false;
-        if (!VerifyFile(dir_nomacro_inc + wxFILE_SEP_PATH + _T("FL"), _T("Fl.H"), _("FLTK's include")))
-        {
+        if (!VerifyFile(dir_nomacro_inc, _T("FL/Fl.H"), _("FLTK's include")))
             return false;
-        }
 
-        // verify library dependencies
-        local dir_nomacro_lib = GetCompilerLibDir(dir, FltkPathDefault, FltkPathDefaultLib);
+        local dir_nomacro_lib = GetCompilerLibDir(dir, FLTKPathDefault, FLTKPathDefaultLib);
         if (dir_nomacro_lib.IsEmpty())
             return false;
-        if (!VerifyLibFile(dir_nomacro_lib, _T("fltk"), _("FLTK's"))) return false;
+        if (!VerifyLibFile(dir_nomacro_lib, _T("fltk"), _("FLTK's")))
+            return false;
 
+        FLTKPath = dir;
 
-        FltkPath = dir; // Remember the original selection.
-
-        local is_macro = _T("");
-
-        // try to resolve the include directory as macro
-        is_macro = GetCompilerIncludeMacro(dir, FltkPathDefault, FltkPathDefaultInc);
-        if (is_macro.IsEmpty())
-        {
-            // not possible -> use the real inc path we had computed instead
-            FltkPathDefaultInc = dir_nomacro_inc;
-        }
-
-        // try to resolve the library directory as macro
-        is_macro = GetCompilerLibMacro(dir, FltkPathDefault, FltkPathDefaultLib);
-        if (is_macro.IsEmpty())
-        {
-            // not possible -> use the real lib path we had computed instead
-            FltkPathDefaultLib = dir_nomacro_lib;
-        }
+        if (GetCompilerIncludeMacro(dir, FLTKPathDefault, FLTKPathDefaultInc).IsEmpty())
+            FLTKPathDefaultInc = dir_nomacro_inc;
+        if (GetCompilerLibMacro(dir, FLTKPathDefault, FLTKPathDefaultLib).IsEmpty())
+            FLTKPathDefaultLib = dir_nomacro_lib;
     }
     return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Project type to create
+// macOS Homebrew support
 ////////////////////////////////////////////////////////////////////////////////
 
-function OnLeave_FLTKPrjType(fwd)
+function FLTKReportField(report, key)
+{
+    local needle = key + _T("=");
+    local at = report.Find(needle);
+    if (at == -1)
+        return _T("");
+    local from = at + needle.Length();
+    local rest = report.Mid(from, report.Length() - from);
+    local nl = rest.Find(_T("\n"));
+    if (nl == -1)
+        return rest;
+    return rest.Mid(0, nl);
+}
+
+function FLTKMacClear()
+{
+    FLTKMacPrefix  = _T("");
+    FLTKMacInclude = _T("");
+    FLTKMacLib     = _T("");
+    FLTKMacConfig  = _T("");
+}
+
+// Empty string means that the prefix is complete and may be written into the
+// project. Any other string is a blocking diagnostic.
+function FLTKMacPrefixDecision(prefix)
+{
+    FLTKMacClear();
+    if (prefix.IsEmpty() || prefix.Find(_T("/")) != 0)
+        return _("FLTK's prefix is not a directory. No project was created.");
+
+    local includeDir = prefix + _T("/include");
+    local libDir     = prefix + _T("/lib");
+    local config     = prefix + _T("/bin/fltk-config");
+
+    if (!IO.FileExists(includeDir + _T("/FL/Fl.H")))
+        return _("FLTK was found, but include/FL/Fl.H is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(libDir + _T("/libfltk.dylib")))
+        return _("FLTK was found, but libfltk.dylib is not under ") + prefix + _("/lib. No project was created.");
+    if (!IO.FileExists(config))
+        return _("FLTK was found, but bin/fltk-config is not under ") + prefix + _(". No project was created.");
+
+    FLTKMacPrefix  = prefix;
+    FLTKMacInclude = includeDir;
+    FLTKMacLib     = libDir;
+    FLTKMacConfig  = config;
+    return _T("");
+}
+
+function FLTKMacBlockReason()
+{
+    local report = Wizard.MacBrewFormula(_T("fltk"));
+    FLTKMacState      = FLTKReportField(report, _T("state"));
+    FLTKMacAccess     = FLTKReportField(report, _T("access"));
+    FLTKMacExecutable = FLTKReportField(report, _T("executable"));
+
+    if (FLTKMacState.Matches(_T("installed")))
+        return FLTKMacPrefixDecision(FLTKReportField(report, _T("prefix")));
+
+    FLTKMacClear();
+    if (FLTKMacState.Matches(_T("missing")))
+        return _("Homebrew reports that FLTK is not installed. This wizard will not create a project.");
+    if (FLTKMacState.Matches(_T("brew_unavailable")))
+        return _("Homebrew could not be used. This wizard will not create a project.");
+    return _("Homebrew could not be asked about FLTK. This wizard will not create a project.");
+}
+
+function FLTKMacPageText(reason)
+{
+    local text = _("Some project templates obtain libraries through Homebrew.\n") +
+                 _("Code::Blocks does not install Homebrew.\n\n");
+
+    if (FLTKMacAccess.Matches(_T("works")))
+    {
+        text = text + _("Homebrew\n    Found: ") + FLTKMacExecutable +
+               _("\n    Access from Code::Blocks: OK\n\n");
+    }
+    else if (FLTKMacAccess.Matches(_T("present_unusable")))
+    {
+        text = text + _("Homebrew\n    Found: ") + FLTKMacExecutable +
+               _("\n    Access from Code::Blocks: failed\n") +
+               _("That executable was left in place.\n\n");
+    }
+    else
+        text = text + _("Homebrew\n    Not detected\n\n");
+
+    if (FLTKMacState.Matches(_T("missing")))
+        text = text + _("FLTK\n    Not installed\n\n");
+    else if (FLTKMacAccess.Matches(_T("works")) && !reason.IsEmpty())
+        text = text + reason + _("\n\n");
+
+    text = text + _("No project is created from this page.\n");
+    if (FLTKMacState.Matches(_T("missing")))
+        text = text + _("Press Next to install the fltk formula with Homebrew.\n") +
+                      _("Cancel on that dialog does not start the install.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    else if (FLTKMacAccess.Matches(_T("works")))
+        text = text + _("Use Cancel to close the wizard.\n");
+    else
+        text = text + _("Press Next to choose an existing brew executable, or to open https://brew.sh.\n") +
+                      _("Use Cancel to close the wizard.\n");
+    return text;
+}
+
+function FLTKMacConsiderBrew(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+    local report = Wizard.MacBrewTry(path, true);
+    if (FLTKReportField(report, _T("access")).Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
+        return _T("");
+    }
+    return _("That file did not pass brew --version, so it was not remembered.") +
+           _("\n\n") + FLTKReportField(report, _T("executable")) +
+           _("\n") + FLTKReportField(report, _T("version"));
+}
+
+function FLTKMacOfferInstall()
+{
+    local explanation = _("This project needs FLTK.\n\n") +
+                        _("Code::Blocks will ask Homebrew to install the formula \"fltk\".\n") +
+                        _("Nothing is installed until you choose Install FLTK using Homebrew.\n") +
+                        _("Cancel on this dialog does not start Homebrew.");
+    local report = Wizard.MacBrewInstall(_T("fltk"), explanation,
+                                         _("Install FLTK using Homebrew"));
+    if (FLTKReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = FLTKMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowMessage(FLTKMacPageText(reason));
+        return false;
+    }
+    if (FLTKReportField(report, _T("password")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
+        return false;
+    }
+    if (FLTKReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
+        return false;
+    }
+    if (FLTKReportField(report, _T("launched")).Matches(_T("1")))
+        ShowError(_("Homebrew did not finish successfully. FLTK was not marked installed. No project was created.\n\n") +
+                  FLTKReportField(report, _T("output")));
+    return false;
+}
+
+function OnLeave_FLTKMacDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKMacBlockReason().IsEmpty())
+        return true;
+
+    if (!FLTKMacAccess.Matches(_T("works")))
+    {
+        local choice = Wizard.MacBrewChoice(
+            _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
+            _("Help me find Homebrew"),
+            _("Installation instructions"));
+        if (choice == 1)
+        {
+            local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
+            local rejected = FLTKMacConsiderBrew(picked);
+            if (!rejected.IsEmpty())
+                ShowError(rejected);
+        }
+        else if (choice == 2)
+            wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+
+        if (FLTKMacBlockReason().IsEmpty())
+            return true;
+        return false;
+    }
+
+    if (FLTKMacState.Matches(_T("missing")))
+        return FLTKMacOfferInstall();
+    return false;
+}
+
+function FLTKMacAllowForward()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return true;
+    local reason = FLTKMacBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
+}
+
+function OnLeave_ProjectPathPage(fwd)
 {
     if (fwd)
-    {
-        FLTKQuickProject = Wizard.GetListboxSelection(_T("GenericChoiceList")) == 0;
-    }
+        return FLTKMacAllowForward();
     return true;
 }
 
-// return the files this project contains
-function GetFilesDir()
+function OnLeave_CompilerPage(fwd)
 {
-    if (FLTKQuickProject)
-        return _T("fltk/files");
-    return _T("fltk/fluid");
+    if (fwd)
+        return FLTKMacAllowForward();
+    return true;
 }
 
-// setup the already created project
+////////////////////////////////////////////////////////////////////////////////
+// project creation
+////////////////////////////////////////////////////////////////////////////////
+
+function GetFilesDir()
+{
+    return _T("fltk/files");
+}
+
 function SetupProject(project)
 {
-    if (PLATFORM == PLATFORM_MSW)
+    if (PLATFORM == PLATFORM_MAC)
     {
-        // set project options
-        project.AddIncludeDir(FltkPathDefaultInc);
-        project.AddLibDir(FltkPathDefaultLib);
+        if (FLTKMacInclude.IsEmpty() || FLTKMacLib.IsEmpty() || FLTKMacConfig.IsEmpty())
+            return false;
 
-        // add link libraries
+        // Use the validated Homebrew prefix directly. fltk-config supplies the
+        // complete FLTK/macOS compiler and linker contract without global vars.
+        project.AddCompilerOption(_T("`") + FLTKMacConfig + _T(" --cxxflags`"));
+        project.AddLinkerOption(_T("`") + FLTKMacConfig + _T(" --ldflags`"));
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        project.AddIncludeDir(FLTKPathDefaultInc);
+        project.AddLibDir(FLTKPathDefaultLib);
         project.AddLinkLib(_T("fltk"));
-        project.AddLinkLib(_T("ole32"));
-        project.AddLinkLib(_T("uuid"));
-        project.AddLinkLib(_T("comctl32"));
-        project.AddLinkLib(_T("wsock32"));
-        project.AddLinkLib(_T("m"));
-        project.AddLinkLib(_T("gdi32"));
-        project.AddLinkLib(_T("user32"));
-        project.AddLinkLib(_T("kernel32"));
-
-        project.AddCompilerOption(_T("-DWIN32"))
-        project.AddCompilerOption(_T("-mms-bitfields"))
     }
-    else // PLATFORM != PLATFORM_MSW
+    else
     {
-        // fltk-config based: things are ultra-simple :)
         project.AddCompilerOption(_T("`fltk-config --cxxflags`"));
-        project.AddLinkerOption(_T("`fltk-config --ldstaticflags`"));
+        project.AddLinkerOption(_T("`fltk-config --ldflags`"));
     }
 
-    // Debug
+    WarningsOn(project, Wizard.GetCompilerID());
+
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
-        target.SetTargetType(ttConsoleOnly); // ttConsoleOnly: console for debugging
+        target.SetTargetType(ttExecutable);
         target.SetOutputFilename(Wizard.GetDebugOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        if (Wizard.GetCompilerID().Matches(_T("gcc")))
-        {
-            // enable generation of debugging symbols for target
-            // Note: DebugSymbolsOn() won't work because -Wall produces far too many warnings
-            target.AddCompilerOption(_T("-g"));
-        }
+        DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
 
-    // Release
     target = project.GetBuildTarget(Wizard.GetReleaseName());
     if (!IsNull(target))
     {
-        target.SetTargetType(ttExecutable); // ttExecutable: no console
+        target.SetTargetType(ttExecutable);
         target.SetOutputFilename(Wizard.GetReleaseOutputDir() + Wizard.GetProjectName() + DOT_EXT_EXECUTABLE);
-        if (Wizard.GetCompilerID().Matches(_T("gcc")))
-        {
-            // enable optimizations for target.
-            // Note: OptimizationsOn() won't work because of -I-!
-            target.AddCompilerOption(_T("-O2"));
-            target.AddCompilerOption(_T("-s"));
-        }
+        OptimizationsOn(target, Wizard.GetCompilerID());
     }
 
     return true;
