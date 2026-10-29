@@ -6,8 +6,7 @@ else
 sdl_wizard_dir = sdl
 endif
 
-SUBDIRS = arduino \
-	arm \
+SUBDIRS = arm \
 	avr \
 	c_file \
 	console \
@@ -25,7 +24,6 @@ SUBDIRS = arduino \
 	h_file \
 	java \
 	lf \
-	matlab_csf \
 	mcs51 \
 	msp430 \
 	ogre \
