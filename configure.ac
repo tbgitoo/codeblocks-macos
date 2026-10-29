@@ -496,7 +496,6 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/projectsimporter/resources/Makefile
 	src/plugins/scriptedwizard/Makefile
 	src/plugins/scriptedwizard/resources/Makefile
-	src/plugins/scriptedwizard/resources/arm/Makefile
 	src/plugins/scriptedwizard/resources/avr/Makefile
 	src/plugins/scriptedwizard/resources/c_file/Makefile
 	src/plugins/scriptedwizard/resources/console/Makefile

@@ -16,9 +16,6 @@ dist_pkgdata_DATA = dll.cbp \
 		glut.cbp \
 		glut.template \
 		gui.png \
-		irr_gcc.cbp \
-		irrlicht.template \
-		irr_vctk.cbp \
 		ogre.template \
 		ogre_gcc.cbp \
 		ogre_vctk.cbp \

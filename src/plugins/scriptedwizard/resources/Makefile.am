@@ -6,8 +6,7 @@ else
 sdl_wizard_dir = sdl
 endif
 
-SUBDIRS = arm \
-	avr \
+SUBDIRS = avr \
 	c_file \
 	console \
 	d \

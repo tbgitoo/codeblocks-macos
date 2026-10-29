@@ -11,8 +11,6 @@ dist_pkgdata_DATA = console.cbp \
 		glfw.template \
 		glut.png \
 		glut-main.cpp \
-		irrlicht.png \
-		irr_main.cpp \
 		ogrelogo.png \
 		ogre-main.cpp \
 		qt.cbp \
