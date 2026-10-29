@@ -34,7 +34,6 @@ function RegisterWizards()
     RegisterWizard(wizProject,     _T("glut"),         _("GLUT project"),          _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("gtk"),          _("GTK+ project"),          _("GUI"));
     RegisterWizard(wizProject,     _T("java"),         _("Java application"),      _("Java"));
-    RegisterWizard(wizProject,     _T("lf"),           _("Lightfeather project"),  _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("opencv"),       _("OpenCV project"),        _("Console"));
     RegisterWizard(wizProject,     _T("opengl"),       _("OpenGL project"),        _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("ogre"),         _("Ogre project"),          _("2D/3D Graphics"));
