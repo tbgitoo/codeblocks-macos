@@ -2103,9 +2103,6 @@
 		<Unit filename="plugins/scriptedwizard/projectpathpanel.h">
 			<Option target="Scripted wizard" />
 		</Unit>
-		<Unit filename="plugins/scriptedwizard/resources/arm/wizard.script">
-			<Option target="Scripted wizard" />
-		</Unit>
 		<Unit filename="plugins/scriptedwizard/resources/avr/wizard.script">
 			<Option target="Scripted wizard" />
 		</Unit>
