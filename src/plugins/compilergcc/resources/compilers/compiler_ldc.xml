@@ -1,4 +1,4 @@
-﻿<?xml version="1.0"?>
+<?xml version="1.0"?>
 <!DOCTYPE CodeBlocks_compiler>
 <CodeBlocks_compiler name="LLVM D Compiler"
                      id="ldc"
@@ -10,8 +10,10 @@
             <Fallback path="C:\ldc"/>
         </if>
         <else>
+            <Search path="/opt/homebrew/bin"
+                        for="C"/>
             <Search path="/usr/local/bin"
-                    for="C"/>
+                        for="C"/>
             <Fallback path="/usr"/>
         </else>
     </Path>

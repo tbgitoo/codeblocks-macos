@@ -1914,6 +1914,36 @@ SQInteger Wiz_SetSpinControlValue(HSQUIRRELVM v)
     return 0;
 }
 
+SQInteger Wiz_AutoDetectCompiler(HSQUIRRELVM v)
+{
+    // this, compilerId
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::AutoDetectCompiler"))
+        return extractor.ErrorMessage();
+
+    Compiler* compiler = CompilerFactory::GetCompiler(*extractor.p1);
+
+    wxString report;
+    if (!compiler)
+    {
+        report << wxT("found=0\n");
+        report << wxT("detected=0\n");
+        report << wxT("master=\n");
+        return ConstructAndReturnInstance(v, report);
+    }
+
+    const AutoDetectResult result = compiler->AutoDetectInstallationDir();
+
+    report << wxT("found=1\n");
+    report << wxT("detected=")
+           << (result == adrDetected ? wxT("1") : wxT("0"))
+           << wxT("\n");
+    report << wxT("master=") << compiler->GetMasterPath() << wxT("\n");
+
+    return ConstructAndReturnInstance(v, report);
+}
+
+
 #if defined(__WXMAC__)
 SQInteger Wiz_MacBrewProbe(HSQUIRRELVM v)
 {
@@ -2312,6 +2342,16 @@ void Wiz::RegisterWizard()
 
         // Return the name only of the current wizard folder (this is not a path)
         BindMethod(v, _SC("GetWizardScriptFolder"), Wiz_GetString<&Wiz::GetWizardScriptFolder>, _SC("Wiz::GetWizardScriptFolder"));
+        
+        // Re-run the selected compiler profile's native installation detection.
+        // This mutates the live compiler master path but does not explicitly
+        // save the global compiler configuration.
+        BindMethod(v, _SC("AutoDetectCompiler"),
+                   Wiz_AutoDetectCompiler,
+                   _SC("Wiz::AutoDetectCompiler"));
+        
+        
+        
 
 #if defined(__WXMAC__)
         // v3.0 M2–M5. Locate, revalidate one chosen executable, optional prefix,
