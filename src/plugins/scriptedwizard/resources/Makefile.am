@@ -21,7 +21,6 @@ SUBDIRS = avr \
 	glut \
 	gtk \
 	h_file \
-	java \
 	mcs51 \
 	msp430 \
 	ogre \
