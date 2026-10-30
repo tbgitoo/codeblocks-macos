@@ -66,9 +66,12 @@ function RegisterWizards()
     RegisterWizard(wizTarget,      _T("wxwidgets"),    _("wxWidgets"),             _("GUI"));
 
     RegisterWizard(wizProject,     _T("avr"),          _("AVR Project"),           _("Embedded Systems"));
-    RegisterWizard(wizProject,     _T("msp430"),       _("MSP430 Project"),        _("Embedded Systems"));
-    RegisterWizard(wizProject,     _T("tricore"),      _("TriCore Project"),       _("Embedded Systems"));
-    RegisterWizard(wizProject,     _T("ppc"),          _("PowerPC Project"),       _("Embedded Systems"));
+    if (PLATFORM != PLATFORM_MAC)
+    {
+      RegisterWizard(wizProject,     _T("msp430"),       _("MSP430 Project"),        _("Embedded Systems"));
+      RegisterWizard(wizProject,     _T("tricore"),      _("TriCore Project"),       _("Embedded Systems"));
+      RegisterWizard(wizProject,     _T("ppc"),          _("PowerPC Project"),       _("Embedded Systems"));
+    }
     RegisterWizard(wizProject,     _T("mcs51"),        _("MCS51 Project"),         _("Embedded Systems"));
     //
     // file wizards

@@ -5,16 +5,214 @@
 // Project: MCS51 project
 // Author:  H. Metin OZER
 // Keil/IAR: Thomas Sailer
+// tbgitoo: macOS Homebrew/SDCC integration added for Code::Blocks macOS fork
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 // Global Vars
-MemoryModel <- _T("");     // The chosen memory model
-MemoryModelIndex <- 0;     // The memory model as integer
-IntelHex <- true;          // produce Intel Hex file?
+MemoryModel <- _T("");
+MemoryModelIndex <- 0;
+IntelHex <- true;
 SizeCODE <- 65536;
 SizeIDATA <- 256;
 SizeXDATA <- 4096;
+
+// macOS Homebrew state
+SDCCMacState      <- _T("");
+SDCCMacAccess     <- _T("");
+SDCCMacExecutable <- _T("");
+SDCCMacPrefix     <- _T("");
+
+////////////////////////////////////////////////////////////////////////////////
+// Homebrew support (macOS)
+////////////////////////////////////////////////////////////////////////////////
+
+function SDCCReportField(report, key)
+{
+    local needle = key + _T("=");
+    local at = report.Find(needle);
+    if (at == -1)
+        return _T("");
+
+    local from = at + needle.Length();
+    local rest = report.Mid(from, report.Length() - from);
+    local nl = rest.Find(_T("\n"));
+    if (nl == -1)
+        return rest;
+    return rest.Mid(0, nl);
+}
+
+function SDCCMacClear()
+{
+    SDCCMacState      = _T("");
+    SDCCMacAccess     = _T("");
+    SDCCMacExecutable = _T("");
+    SDCCMacPrefix     = _T("");
+}
+
+// Empty string means that SDCC is installed and the Code::Blocks compiler
+// profile has been successfully auto-detected.
+function SDCCMacBlockReason()
+{
+    SDCCMacClear();
+
+    local report = Wizard.MacBrewFormula(_T("sdcc"));
+
+    SDCCMacState      = SDCCReportField(report, _T("state"));
+    SDCCMacAccess     = SDCCReportField(report, _T("access"));
+    SDCCMacExecutable = SDCCReportField(report, _T("executable"));
+    SDCCMacPrefix     = SDCCReportField(report, _T("prefix"));
+
+    if (SDCCMacState.Matches(_T("installed")))
+    {
+        if (SDCCMacPrefix.IsEmpty() || SDCCMacPrefix.Find(_T("/")) != 0)
+            return _("Homebrew reports SDCC as installed, but its prefix is invalid. No project was created.");
+
+        // These tools are required by the existing MCS51 wizard flow.
+        if (!IO.FileExists(SDCCMacPrefix + _T("/bin/sdcc")))
+            return _("SDCC was found, but bin/sdcc is not present under its Homebrew prefix. No project was created.");
+        if (!IO.FileExists(SDCCMacPrefix + _T("/bin/sdar")))
+            return _("SDCC was found, but bin/sdar is not present under its Homebrew prefix. No project was created.");
+        if (!IO.FileExists(SDCCMacPrefix + _T("/bin/packihx")))
+            return _("SDCC was found, but bin/packihx is not present under its Homebrew prefix. No project was created.");
+
+        // Refresh the live Code::Blocks compiler object after Homebrew
+        // discovery/install. The compiler XML remains authoritative.
+        local detectReport = Wizard.AutoDetectCompiler(_T("sdcc"));
+        local found    = SDCCReportField(detectReport, _T("found"));
+        local detected = SDCCReportField(detectReport, _T("detected"));
+        local master   = SDCCReportField(detectReport, _T("master"));
+
+        if (!found.Matches(_T("1")))
+            return _("The Code::Blocks SDCC compiler profile could not be found.");
+        if (!detected.Matches(_T("1")))
+            return _("SDCC is installed, but Code::Blocks could not auto-detect its installation directory.");
+        if (master.IsEmpty() || master.Find(_T("/")) != 0)
+            return _("Code::Blocks detected SDCC, but returned an invalid installation directory.");
+
+        return _T("");
+    }
+
+    if (SDCCMacState.Matches(_T("missing")))
+        return _("SDCC is not installed.");
+    if (SDCCMacState.Matches(_T("brew_unavailable")))
+        return _("Homebrew could not be used.");
+    return _("Homebrew could not be asked about SDCC.");
+}
+
+function SDCCMacConsiderBrew(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+
+    local report = Wizard.MacBrewTry(path, true);
+    local access = SDCCReportField(report, _T("access"));
+
+    if (access.Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
+        return _T("");
+    }
+
+    return _("That file did not pass brew --version, so it was not remembered.") +
+           _("\n\n") + SDCCReportField(report, _T("executable")) +
+           _("\n") + SDCCReportField(report, _T("version"));
+}
+
+function SDCCMacOfferHomebrewHelp()
+{
+    local choice = Wizard.MacBrewChoice(
+        _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
+        _("Help me find Homebrew"),
+        _("Installation instructions"));
+
+    if (choice == 1)
+    {
+        local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
+        local rejected = SDCCMacConsiderBrew(picked);
+        if (!rejected.IsEmpty())
+            ShowError(rejected);
+    }
+    else if (choice == 2)
+    {
+        wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+    }
+}
+
+function SDCCMacOfferInstall()
+{
+    local explanation = _("This MCS51 project needs the Small Device C Compiler (SDCC).\n\n") +
+                        _("Code::Blocks will ask Homebrew to install the formula \"sdcc\".\n") +
+                        _("Nothing is installed until you choose Install SDCC using Homebrew.\n") +
+                        _("Cancel on this dialog does not start the install.");
+
+    local report = Wizard.MacBrewInstall(
+        _T("sdcc"),
+        explanation,
+        _("Install SDCC using Homebrew"));
+
+    if (SDCCReportField(report, _T("success")).Matches(_T("1")))
+    {
+        local reason = SDCCMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+        ShowError(reason + _(" No project was created."));
+        return false;
+    }
+
+    if (SDCCReportField(report, _T("password")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
+        return false;
+    }
+
+    if (SDCCReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The install was stopped. That does not undo files Homebrew may already have written. No project was created."));
+        return false;
+    }
+
+    if (SDCCReportField(report, _T("launched")).Matches(_T("1")))
+    {
+        ShowError(_("Homebrew did not finish successfully. SDCC was not marked installed. No project was created.\n\n") +
+                  SDCCReportField(report, _T("output")));
+        return false;
+    }
+
+    return false;
+}
+
+function SDCCMacAllowForward()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return true;
+
+    local reason = SDCCMacBlockReason();
+    if (reason.IsEmpty())
+        return true;
+
+    if (!SDCCMacAccess.Matches(_T("works")))
+    {
+        SDCCMacOfferHomebrewHelp();
+
+        reason = SDCCMacBlockReason();
+        if (reason.IsEmpty())
+            return true;
+
+        ShowError(reason + _(" No project was created."));
+        return false;
+    }
+
+    if (SDCCMacState.Matches(_T("missing")))
+        return SDCCMacOfferInstall();
+
+    ShowError(reason + _(" No project was created."));
+    return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Wizard
+////////////////////////////////////////////////////////////////////////////////
 
 function BeginWizard()
 {
@@ -23,16 +221,36 @@ function BeginWizard()
     if (wiz_type == wizProject)
     {
         local intro_msg = _("Welcome to the MCS51 project wizard!\n") +
-                          _("This wizard will guide you to create a new MCS51 project.\n\n") +
-                          _("When you're ready to proceed, please click \"Next\"...");
+                          _("This wizard will guide you to create a new MCS51 project.\n\n");
+
+        if (PLATFORM == PLATFORM_MAC)
+        {
+            intro_msg += _("On macOS, SDCC is the supported MCS51 compiler.\n") +
+                         _("The wizard can use Homebrew to install SDCC when it is missing.\n") +
+                         _("Code::Blocks does not install Homebrew.\n\n");
+        }
+
+        intro_msg += _("When you're ready to proceed, please click \"Next\"...");
 
         Wizard.AddInfoPage(_T("MCS51Intro"), intro_msg);
         Wizard.AddProjectPathPage();
-        Wizard.AddCompilerPage(_("SDCC Compiler"), _T("sdcc*;keil*;iar8051"), true, true);
+
+        if (PLATFORM == PLATFORM_MAC)
+            Wizard.AddCompilerPage(_T("sdcc"), _T("sdcc*"), true, true);
+        else
+            Wizard.AddCompilerPage(_T(""), _T("sdcc*;keil*;iar8051"), true, true);
+
         Wizard.AddPage(_T("memoryModelChoice"));
     }
     else
         print(wiz_type);
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (fwd)
+        return SDCCMacAllowForward();
+    return true;
 }
 
 function GetGeneratedFile(file_index)
@@ -53,13 +271,12 @@ function GetGeneratedFile(file_index)
         buffer.Replace(_T("[SYSTEM_HDR]"), hdrName);
         return _T("main.c;") + buffer;
     }
-    return _T(""); // no other files
+    return _T("");
 }
 
 function GetFilesDir()
 {
-    local result = _T(""); // file is generated
-    return result;
+    return _T("");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -74,6 +291,7 @@ function OnEnter_memoryModelChoice(fwd)
         Wizard.SetSpinControlValue(_T("spnSizeCODE"),  ConfigManager.Read(_T("/mcs51_project_wizard/codesize"), 65536));
         Wizard.SetSpinControlValue(_T("spnSizeIDATA"), ConfigManager.Read(_T("/mcs51_project_wizard/idatasize"), 256));
         Wizard.SetSpinControlValue(_T("spnSizeXDATA"), ConfigManager.Read(_T("/mcs51_project_wizard/xdatasize"), 4096));
+
         if (GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
         {
             Wizard.EnableWindow(_T("radioboxOutput"), true);
@@ -82,6 +300,7 @@ function OnEnter_memoryModelChoice(fwd)
         {
             Wizard.EnableWindow(_T("radioboxOutput"), false);
         }
+
         if (GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("iar8051")))
         {
             Wizard.EnableWindow(_T("spnSizeIDATA"), false);
@@ -103,10 +322,9 @@ function OnLeave_memoryModelChoice(fwd)
         SizeCODE = Wizard.GetSpinControlValue(_T("spnSizeCODE"));
         SizeIDATA = Wizard.GetSpinControlValue(_T("spnSizeIDATA"));
         SizeXDATA = Wizard.GetSpinControlValue(_T("spnSizeXDATA"));
-        if ( Wizard.GetRadioboxSelection(_T("radioboxOutput")) == 1 )
-        {
+        if (Wizard.GetRadioboxSelection(_T("radioboxOutput")) == 1)
             IntelHex = false;
-        }
+
         ConfigManager.Write(_T("/mcs51_project_wizard/memorymodel"), MemoryModelIndex);
         ConfigManager.Write(_T("/mcs51_project_wizard/codesize"),  SizeCODE);
         ConfigManager.Write(_T("/mcs51_project_wizard/idatasize"), SizeIDATA);
@@ -117,37 +335,30 @@ function OnLeave_memoryModelChoice(fwd)
 
 function SetupProject(project)
 {
-    //Variables
     local out_ext = ::wxString();
 
     if (GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
     {
-        // Post Build steps
         local pb_hex = ::wxString();
 
-        // Post build commands
         if (PLATFORM_MSW == PLATFORM)
             pb_hex = _T("cmd /c \"packihx <$(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).ihx >$(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).hex\"");
         else
             pb_hex = _T("packihx <$(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).ihx >$(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).hex");
 
-        // Project compiler options
         project.AddCompilerOption(_T("-mmcs51"));
         project.AddCompilerOption(_T("--model-") + MemoryModel);
         project.AddLinkerOption(_T("--xram-size " + format("%u", SizeXDATA)));
         project.AddLinkerOption(_T("--iram-size " + format("%u", SizeIDATA)));
         project.AddLinkerOption(_T("--code-size " + format("%u", SizeCODE)));
 
-        // Project linker options
-
-        // Project post-build steps
         if (IntelHex)
         {
             project.AddLinkerOption(_T("--out-fmt-ihx"));
             project.AddCommandsAfterBuild(pb_hex);
             out_ext = _T(".ihx");
         }
-        else // (MotS19)
+        else
         {
             project.AddLinkerOption(_T("--out-fmt-s19"));
             out_ext = _T(".s19");
@@ -160,29 +371,25 @@ function SetupProject(project)
                 project.AddCompilerOption(_T("SMALL"));
                 project.AddLinkLib(_T("C51S"));
                 break;
-
             case 1:
                 project.AddCompilerOption(_T("COMPACT"));
                 project.AddLinkLib(_T("C51C"));
                 break;
-
             case 2:
                 project.AddCompilerOption(_T("LARGE"));
                 project.AddLinkLib(_T("C51L"));
                 break;
-
             case 3:
                 project.AddCompilerOption(_T("LARGE"));
                 project.AddLinkerOption(_T("BANKAREA(8000H,0FFFFH)"));
                 project.AddLinkLib(_T("C51L"));
                 break;
-
             default:
                 break;
         }
-        project.AddLinkerOption(_T("RAMSIZE("   + format("%u",     SizeIDATA)     + ")"));
+        project.AddLinkerOption(_T("RAMSIZE("   + format("%u", SizeIDATA) + ")"));
         project.AddLinkerOption(_T("XDATA(0x0-" + format("0x%04X", SizeXDATA - 1) + ")"));
-        project.AddLinkerOption(_T("CODE(0x0-"  + format("0x%04X", SizeCODE - 1)  + ")"));
+        project.AddLinkerOption(_T("CODE(0x0-"  + format("0x%04X", SizeCODE - 1) + ")"));
         out_ext = _T(".omf");
     }
     else if (GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("keilcx51")))
@@ -192,23 +399,19 @@ function SetupProject(project)
                 project.AddCompilerOption(_T("SMALL"));
                 project.AddLinkLib(_T("C51S"));
                 break;
-
             case 1:
                 project.AddCompilerOption(_T("COMPACT"));
                 project.AddLinkLib(_T("C51C"));
                 break;
-
             case 2:
                 project.AddCompilerOption(_T("LARGE"));
                 project.AddLinkLib(_T("C51L"));
                 break;
-
             case 3:
                 project.AddCompilerOption(_T("LARGE"));
                 project.AddLinkerOption(_T("BANKAREA(8000H,0FFFFH)"));
                 project.AddLinkLib(_T("C51L"));
                 break;
-
             default:
                 break;
         }
@@ -229,28 +432,24 @@ function SetupProject(project)
                 project.AddCompilerOption(_T("--code_model=near"));
                 project.AddLinkLib(_T("cl-pli-nsdc-1e16x01.r51"));
                 break;
-
             case 1:
                 project.AddCompilerOption(_T("--calling_convention=pdata_reentrant"));
                 project.AddCompilerOption(_T("--data_model=large"));
                 project.AddCompilerOption(_T("--code_model=near"));
                 project.AddLinkLib(_T("cl-pli-nlpc-1e16x01.r51"));
                 break;
-
             case 2:
                 project.AddCompilerOption(_T("--calling_convention=xdata_reentrant"));
                 project.AddCompilerOption(_T("--data_model=large"));
                 project.AddCompilerOption(_T("--code_model=near"));
                 project.AddLinkLib(_T("cl-pli-nlxc-1e16x01.r51"));
                 break;
-
             case 3:
                 project.AddCompilerOption(_T("--calling_convention=xdata_reentrant"));
                 project.AddCompilerOption(_T("--data_model=large"));
                 project.AddCompilerOption(_T("--code_model=banked"));
                 project.AddLinkLib(_T("cl-pli-blxc-1e16x01.r51"));
                 break;
-
             default:
                 break;
         }
@@ -283,7 +482,6 @@ function SetupProject(project)
         out_ext = _T(".omf");
     }
 
-    // Debug build target
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
@@ -293,7 +491,6 @@ function SetupProject(project)
         DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
 
-    // Release build target
     target = project.GetBuildTarget(Wizard.GetReleaseName());
     if (!IsNull(target))
     {
