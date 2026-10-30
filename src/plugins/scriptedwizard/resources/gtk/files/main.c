@@ -1,49 +1,64 @@
-#include <stdlib.h>
 #include <gtk/gtk.h>
 
-static void helloWorld (GtkWidget *wid, GtkWidget *win)
+static void hello_world(GtkWidget *widget, gpointer data)
 {
-  GtkWidget *dialog = NULL;
+    GtkWindow *parent = GTK_WINDOW(data);
 
-  dialog = gtk_message_dialog_new (GTK_WINDOW (win), GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE, "Hello World!");
-  gtk_window_set_position (GTK_WINDOW (dialog), GTK_WIN_POS_CENTER);
-  gtk_dialog_run (GTK_DIALOG (dialog));
-  gtk_widget_destroy (dialog);
+    GtkAlertDialog *dialog =
+        gtk_alert_dialog_new("Hello World!");
+
+    gtk_alert_dialog_show(dialog, parent);
+    g_object_unref(dialog);
 }
 
-int main (int argc, char *argv[])
+static void activate(GtkApplication *app, gpointer user_data)
 {
-  GtkWidget *button = NULL;
-  GtkWidget *win = NULL;
-  GtkWidget *vbox = NULL;
+    GtkWidget *window;
+    GtkWidget *box;
+    GtkWidget *info_button;
+    GtkWidget *close_button;
 
-  /* Initialize GTK+ */
-  g_log_set_handler ("Gtk", G_LOG_LEVEL_WARNING, (GLogFunc) gtk_false, NULL);
-  gtk_init (&argc, &argv);
-  g_log_set_handler ("Gtk", G_LOG_LEVEL_WARNING, g_log_default_handler, NULL);
+    window = gtk_application_window_new(app);
+    gtk_window_set_title(GTK_WINDOW(window), "Hello World");
+    gtk_window_set_default_size(GTK_WINDOW(window), 300, 160);
 
-  /* Create the main window */
-  win = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-  gtk_container_set_border_width (GTK_CONTAINER (win), 8);
-  gtk_window_set_title (GTK_WINDOW (win), "Hello World");
-  gtk_window_set_position (GTK_WINDOW (win), GTK_WIN_POS_CENTER);
-  gtk_widget_realize (win);
-  g_signal_connect (win, "destroy", gtk_main_quit, NULL);
+    box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_top(box, 12);
+    gtk_widget_set_margin_bottom(box, 12);
+    gtk_widget_set_margin_start(box, 12);
+    gtk_widget_set_margin_end(box, 12);
+    gtk_window_set_child(GTK_WINDOW(window), box);
 
-  /* Create a vertical box with buttons */
-  vbox = gtk_vbox_new (TRUE, 6);
-  gtk_container_add (GTK_CONTAINER (win), vbox);
+    info_button = gtk_button_new_with_label("Hello World!");
+    g_signal_connect(info_button,
+                     "clicked",
+                     G_CALLBACK(hello_world),
+                     window);
+    gtk_box_append(GTK_BOX(box), info_button);
 
-  button = gtk_button_new_from_stock (GTK_STOCK_DIALOG_INFO);
-  g_signal_connect (G_OBJECT (button), "clicked", G_CALLBACK (helloWorld), (gpointer) win);
-  gtk_box_pack_start (GTK_BOX (vbox), button, TRUE, TRUE, 0);
+    close_button = gtk_button_new_with_label("Close");
+    g_signal_connect_swapped(close_button,
+                             "clicked",
+                             G_CALLBACK(gtk_window_destroy),
+                             window);
+    gtk_box_append(GTK_BOX(box), close_button);
 
-  button = gtk_button_new_from_stock (GTK_STOCK_CLOSE);
-  g_signal_connect (button, "clicked", gtk_main_quit, NULL);
-  gtk_box_pack_start (GTK_BOX (vbox), button, TRUE, TRUE, 0);
+    gtk_window_present(GTK_WINDOW(window));
+}
 
-  /* Enter the main loop */
-  gtk_widget_show_all (win);
-  gtk_main ();
-  return 0;
+int main(int argc, char *argv[])
+{
+    GtkApplication *app;
+    int status;
+
+    app = gtk_application_new("org.codeblocks.gtk4example",
+                              G_APPLICATION_DEFAULT_FLAGS);
+
+    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+
+    status = g_application_run(G_APPLICATION(app), argc, argv);
+
+    g_object_unref(app);
+
+    return status;
 }
