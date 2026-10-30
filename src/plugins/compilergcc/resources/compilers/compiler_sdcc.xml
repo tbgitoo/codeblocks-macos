@@ -1,4 +1,4 @@
-﻿<?xml version="1.0"?>
+<?xml version="1.0"?>
 <!DOCTYPE CodeBlocks_compiler>
 <CodeBlocks_compiler name="Small Device C Compiler"
                      id="sdcc"
@@ -12,7 +12,11 @@
             <Fallback path="%ProgramFiles%\sdcc"/>
         </if>
         <else>
-            <Fallback path="/usr/local/share/sdcc"/>
+            <Search path="/opt/homebrew/bin"
+                    for="C"/>
+            <Search path="/usr/local/bin"
+                    for="C"/>
+            <Fallback path="/usr"/>
         </else>
     </Path>
     <Path type="include">
