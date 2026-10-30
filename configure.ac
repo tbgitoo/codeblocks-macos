@@ -512,7 +512,6 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/scriptedwizard/resources/gtk/Makefile
 	src/plugins/scriptedwizard/resources/h_file/Makefile
 	src/plugins/scriptedwizard/resources/raylib/Makefile
-	src/plugins/scriptedwizard/resources/java/Makefile
 	src/plugins/scriptedwizard/resources/mcs51/Makefile
 	src/plugins/scriptedwizard/resources/msp430/Makefile
 	src/plugins/scriptedwizard/resources/ogre/Makefile
