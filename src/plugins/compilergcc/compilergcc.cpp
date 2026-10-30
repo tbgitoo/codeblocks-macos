@@ -2080,23 +2080,47 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
     wxString command;
 
     const bool useProgramConsole = ProgramConsole::PreferProgramConsole();
-    if (!platform::windows && !useProgramConsole)
-    {
-        // for non-win platforms, use m_ConsoleTerm to run the console app
-        wxString term = Manager::Get()->GetConfigManager("app")->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
-        term.Replace("$TITLE", "'" + exe_filename + "'");
-        command << term << strSPACE;
-    }
 
     wxString baseDir = ConfigManager::GetExecutableFolder();
-    wxString crunnStr = strQUOTE + baseDir + strSLASH + strCONSOLE_RUNNER + strQUOTE;
-    if ( !useProgramConsole && wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER) )
-        command << crunnStr << strSPACE;
+    wxString payload;
+
+    // Build the complete command payload first. For an external terminal,
+    // cb_console_runner must be inside $SCRIPT so that it launches the program
+    // and keeps the terminal open after the program exits.
+    if (!useProgramConsole &&
+        wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER))
+    {
+        payload << EscapeSpaces(baseDir + strSLASH + strCONSOLE_RUNNER)
+                << strSPACE;
+    }
+
+    payload << EscapeSpaces(exe_filename);
 
     if (useProgramConsole)
-        command << strQUOTE << exe_filename << strQUOTE;
-    else if (!command.Replace("$SCRIPT", exe_filename))
-        command << strQUOTE << exe_filename << strQUOTE; // if they didn't specify $SCRIPT, append:
+    {
+        // The integrated Program Console remains visible after the process exits,
+        // so it does not need cb_console_runner or an "any key" pause.
+        command = payload;
+    }
+    else if (!platform::windows)
+    {
+        // Substitute the complete payload, including cb_console_runner, into the
+        // external-terminal command. Do not append cb_console_runner afterwards.
+        wxString term = Manager::Get()
+                            ->GetConfigManager("app")
+                            ->Read("/console_terminal", DEFAULT_CONSOLE_TERM);
+
+        term.Replace("$TITLE", "'" + exe_filename + "'");
+
+        if (!term.Replace("$SCRIPT", payload))
+            term << strSPACE << payload;
+
+        command = term;
+    }
+    else
+    {
+        command = payload;
+    }
 
     Manager::Get()->GetLogManager()->Log(_("Checking for existence: ") + exe_filename, m_PageIndex);
     if ( !wxFileExists(exe_filename) )
@@ -2352,41 +2376,40 @@ int CompilerGCC::RunActiveProjectAfterPrepare(ProjectBuildTarget* target)
         }
     }
 
-    if (   target->GetTargetType() == ttDynamicLib
-        || target->GetTargetType() == ttStaticLib )
-    {
-        // check for hostapp
-        if (target->GetHostApplication().IsEmpty())
-        {
-            cbMessageBox(_("You must select a host application to \"run\" a library..."));
-            m_pProject->SetCurrentlyCompilingTarget(nullptr);
-            return -1;
-        }
+    const TargetType targetType = target->GetTargetType();
+    const bool isLibrary =
+           targetType == ttDynamicLib
+        || targetType == ttStaticLib;
+    const bool isCommandsOnly = targetType == ttCommandsOnly;
+    const bool hasHostApplication = !target->GetHostApplication().IsEmpty();
 
+    if (hasHostApplication)
+    {
+        // A configured host application takes precedence over directly
+        // executing the target output. This supports libraries,
+        // commands-only targets, simulators, emulators and interpreters.
         command << hostapStr << strSPACE;
         command << target->GetExecutionParameters();
     }
-    else if (target->GetTargetType() != ttCommandsOnly)
+    else if (isLibrary)
     {
-        command << execStr << strSPACE;
-        command << target->GetExecutionParameters();
-        // each shell execution must be enclosed to "":
-        // xterm -T X -e /bin/sh -c "/usr/bin/cb_console_runner X"
-        // here is last \"
-        if (commandIsQuoted)
-            command << strQUOTE;
+        cbMessageBox(_("You must select a host application to \"run\" a library..."));
+        m_pProject->SetCurrentlyCompilingTarget(nullptr);
+        return -1;
+    }
+    else if (isCommandsOnly)
+    {
+        cbMessageBox(_("You must select a host application to \"run\" a commands-only target..."));
+        m_pProject->SetCurrentlyCompilingTarget(nullptr);
+        return -1;
     }
     else
     {
-        // commands-only target?
-        if (target->GetHostApplication().IsEmpty())
-        {
-            cbMessageBox(_("You must select a host application to \"run\" a commands-only target..."));
-            m_pProject->SetCurrentlyCompilingTarget(nullptr);
-            return -1;
-        }
-        command << hostapStr << strSPACE;
+        command << execStr << strSPACE;
         command << target->GetExecutionParameters();
+
+        if (commandIsQuoted)
+            command << strQUOTE;
     }
     Manager::Get()->GetMacrosManager()->ReplaceMacros(command, target);
     wxString script = command;
@@ -2439,15 +2462,18 @@ int CompilerGCC::RunActiveProjectAfterPrepare(ProjectBuildTarget* target)
     runCmd->useProgramConsole = useProgramConsole;
     {
         wxString launched = f.GetFullPath();
-        const TargetType kind = target->GetTargetType();
-        if (kind == ttDynamicLib || kind == ttStaticLib || kind == ttCommandsOnly)
+
+        if (!target->GetHostApplication().IsEmpty())
         {
             launched = target->GetHostApplication();
+
             wxFileName host(launched);
             if (host.IsRelative())
                 host.MakeAbsolute(m_pProject->GetBasePath());
+
             launched = host.GetFullPath();
         }
+
         runCmd->runTarget = launched;
     }
     m_CommandQueue.Add(runCmd);

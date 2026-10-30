@@ -333,6 +333,26 @@ function OnLeave_memoryModelChoice(fwd)
     return true;
 }
 
+function ConfigureSDCCSimulator(target, imagePath)
+{
+    if (PLATFORM == PLATFORM_MAC &&
+        IntelHex &&
+        !SDCCMacPrefix.IsEmpty() &&
+        GetCompilerFactory().CompilerInheritsFrom(
+            Wizard.GetCompilerID(),
+            _T("sdcc*")))
+    {
+        target.SetHostApplication(
+            SDCCMacPrefix + _T("/bin/s51"));
+
+        target.SetExecutionParameters(
+   		 _T("\"$(PROJECT_DIR)") + imagePath + _T("\""));
+
+        target.SetRunHostApplicationInTerminal(true);
+        target.SetUseConsoleRunner(true);
+    }
+}
+
 function SetupProject(project)
 {
     local out_ext = ::wxString();
@@ -485,20 +505,36 @@ function SetupProject(project)
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
-        target.SetTargetType(ttNative);
-        target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
-        target.SetOutputFilename(Wizard.GetDebugOutputDir() + Wizard.GetProjectName() + out_ext);
-        DebugSymbolsOn(target, Wizard.GetCompilerID());
+    target.SetTargetType(ttNative);
+    target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
+
+    local outputFile =
+        Wizard.GetDebugOutputDir() +
+        Wizard.GetProjectName() +
+        out_ext;
+
+    target.SetOutputFilename(outputFile);
+    DebugSymbolsOn(target, Wizard.GetCompilerID());
+
+    ConfigureSDCCSimulator(target, outputFile);
     }
 
     target = project.GetBuildTarget(Wizard.GetReleaseName());
-    if (!IsNull(target))
-    {
-        target.SetTargetType(ttNative);
-        target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
-        target.SetOutputFilename(Wizard.GetReleaseOutputDir() + Wizard.GetProjectName() + out_ext);
-        OptimizationsOn(target, Wizard.GetCompilerID());
-    }
+   if (!IsNull(target))
+   {
+    target.SetTargetType(ttNative);
+    target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
+
+    local outputFile =
+        Wizard.GetReleaseOutputDir() +
+        Wizard.GetProjectName() +
+        out_ext;
+
+    target.SetOutputFilename(outputFile);
+    OptimizationsOn(target, Wizard.GetCompilerID());
+
+    ConfigureSDCCSimulator(target, outputFile);
+   }
 
     return true;
 }

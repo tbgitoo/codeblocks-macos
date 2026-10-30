@@ -2611,6 +2611,10 @@ namespace ScriptBindings
             BindMethod(v, _SC("SetHostApplication"),
                        Generic_SetString<CompileTargetBase, &CompileTargetBase::SetHostApplication>,
                        _SC("CompileTargetBase::SetHostApplication"));
+            BindMethod(v, _SC("SetRunHostApplicationInTerminal"),
+                       Generic_SetBool<CompileTargetBase,
+                                       &CompileTargetBase::SetRunHostApplicationInTerminal>,
+                       _SC("CompileTargetBase::SetRunHostApplicationInTerminal"));
             BindMethod(v, _SC("SetCompilerID"),
                        Generic_SetString<CompileTargetBase, &CompileTargetBase::SetCompilerID>,
                        _SC("CompileTargetBase::SetCompilerID"));
