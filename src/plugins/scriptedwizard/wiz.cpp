@@ -46,6 +46,7 @@
 #include "wiz.h"
 #include "wizpage.h"
 #include "macbrew.h"
+#include "macgit.h"
 #include "winsdk.h"
 
 #include "scripting/bindings/sc_utils.h"
@@ -1994,6 +1995,58 @@ SQInteger Wiz_MacBrewInstall(HSQUIRRELVM v)
     const MacBrewInstallResult result = InstallMacBrewFormula(*extractor.p1, *extractor.p2, *extractor.p3);
     return ConstructAndReturnInstance(v, FormatMacBrewInstall(result));
 }
+
+SQInteger Wiz_MacGitProbe(HSQUIRRELVM v)
+{
+    // this
+    ExtractParams1<Wiz*> extractor(v);
+    if (!extractor.Process("Wiz::MacGitProbe"))
+        return extractor.ErrorMessage();
+
+    const MacGitProbe probe = ProbeMacGit();
+    return ConstructAndReturnInstance(v, FormatMacGitProbe(probe));
+}
+
+SQInteger Wiz_MacGitTry(HSQUIRRELVM v)
+{
+    // this, executable
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::MacGitTry"))
+        return extractor.ErrorMessage();
+
+    const MacGitProbe probe = ProbeMacGitPath(*extractor.p1);
+    return ConstructAndReturnInstance(v, FormatMacGitProbe(probe));
+}
+
+SQInteger Wiz_MacGitClone(HSQUIRRELVM v)
+{
+    // this, url, tag, destination, explanation, confirmLabel
+    ExtractParams6<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacGitClone"))
+        return extractor.ErrorMessage();
+
+    const MacGitCloneResult result =
+        CloneMacGitRepository(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4,
+            *extractor.p5);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacGitClone(result));
+}
+
+
 #endif
 
 #if defined(__WXMSW__)
@@ -2362,6 +2415,11 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacBrewTry"), Wiz_MacBrewTry, _SC("Wiz::MacBrewTry"));
         BindMethod(v, _SC("MacBrewChoice"), Wiz_MacBrewChoice, _SC("Wiz::MacBrewChoice"));
         BindMethod(v, _SC("MacBrewInstall"), Wiz_MacBrewInstall, _SC("Wiz::MacBrewInstall"));
+        
+        BindMethod(v, _SC("MacGitProbe"), Wiz_MacGitProbe, _SC("Wiz::MacGitProbe"));
+        BindMethod(v, _SC("MacGitTry"), Wiz_MacGitTry, _SC("Wiz::MacGitTry"));
+        BindMethod(v, _SC("MacGitClone"), Wiz_MacGitClone, _SC("Wiz::MacGitClone"));
+        
 #endif
 #if defined(__WXMSW__)
         // v3.3. Compiler identity, one saved unpack directory, one https zip

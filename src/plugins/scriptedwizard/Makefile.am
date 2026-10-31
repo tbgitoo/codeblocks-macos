@@ -23,6 +23,7 @@ libscriptedwizard_la_SOURCES = buildtargetpanel.cpp \
 								wiz.cpp \
 								wizpage.cpp \
 								macbrew.cpp \
+								macgit.cpp \
 								winsdk.cpp
 
 noinst_HEADERS = buildtargetpanel.h \
@@ -35,4 +36,5 @@ noinst_HEADERS = buildtargetpanel.h \
 					wiz.h \
 					wizpage.h \
 					macbrew.h \
+					macgit.h \
 					winsdk.h
