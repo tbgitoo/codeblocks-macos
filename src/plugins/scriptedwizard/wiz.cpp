@@ -2113,6 +2113,94 @@ SQInteger Wiz_MacCMakePaths(
         FormatMacCMakePaths(paths));
 }
 
+SQInteger Wiz_MacCMakeConfigure(HSQUIRRELVM v)
+{
+    // this, source, build, install, buildType, explanation, confirmLabel
+    ExtractParams7<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacCMakeConfigure"))
+        return extractor.ErrorMessage();
+
+    const MacCMakeRunResult result =
+        ConfigureMacCMake(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4,
+            *extractor.p5,
+            *extractor.p6);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeRun(result));
+}
+
+SQInteger Wiz_MacCMakeBuild(
+    HSQUIRRELVM v)
+{
+    // this, build, explanation, confirmLabel
+    ExtractParams4<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process(
+            "Wiz::MacCMakeBuild"))
+    {
+        return extractor.ErrorMessage();
+    }
+
+    const MacCMakeRunResult result =
+        BuildMacCMake(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeRun(result));
+}
+
+SQInteger Wiz_MacCMakeInstall(
+    HSQUIRRELVM v)
+{
+    // this, build, install, explanation, confirmLabel
+    ExtractParams5<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process(
+            "Wiz::MacCMakeInstall"))
+    {
+        return extractor.ErrorMessage();
+    }
+
+    const MacCMakeRunResult result =
+        InstallMacCMake(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeRun(result));
+}
+
 
 #endif
 
@@ -2493,6 +2581,12 @@ void Wiz::RegisterWizard()
 
         BindMethod(v, _SC("MacCMakePaths"), Wiz_MacCMakePaths,_SC("Wiz::MacCMakePaths"));
         
+        BindMethod(v, _SC("MacCMakeConfigure"), Wiz_MacCMakeConfigure, _SC("Wiz::MacCMakeConfigure"));
+        
+        BindMethod(v, _SC("MacCMakeBuild"), Wiz_MacCMakeBuild, _SC("Wiz::MacCMakeBuild"));
+        
+        BindMethod(v, _SC("MacCMakeInstall"), Wiz_MacCMakeInstall, _SC("Wiz::MacCMakeInstall"));
+        
 #endif
 #if defined(__WXMSW__)
         // v3.3. Compiler identity, one saved unpack directory, one https zip
@@ -2502,6 +2596,7 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("WinSdkFetch"), Wiz_WinSdkFetch, _SC("Wiz::WinSdkFetch"));
         BindMethod(v, _SC("WinSdkStage"), Wiz_WinSdkStage, _SC("Wiz::WinSdkStage"));
         BindMethod(v, _SC("WinSdkPublish"), Wiz_WinSdkPublish, _SC("Wiz::WinSdkPublish"));
+        
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);

@@ -68,6 +68,47 @@ MacCMakePaths ResolveMacCMakePaths(
 wxString FormatMacCMakePaths(
     const MacCMakePaths& paths);
 
+
+struct MacCMakeRunResult
+{
+    bool launched;
+    bool cancelled;
+    long exitCode;
+    bool success;
+    wxString operation;
+    wxString output;
+
+    MacCMakeRunResult()
+        : launched(false),
+          cancelled(false),
+          exitCode(-1),
+          success(false)
+    {}
+};
+
+MacCMakeRunResult ConfigureMacCMake(
+    const wxString& source,
+    const wxString& build,
+    const wxString& install,
+    const wxString& buildType,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+
+MacCMakeRunResult BuildMacCMake(
+    const wxString& build,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+MacCMakeRunResult InstallMacCMake(
+    const wxString& build,
+    const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+wxString FormatMacCMakeRun(
+    const MacCMakeRunResult& result);
+
 #endif // __WXMAC__
 
 #endif // MACCMAKE_H
