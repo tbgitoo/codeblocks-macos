@@ -47,6 +47,7 @@
 #include "wizpage.h"
 #include "macbrew.h"
 #include "macgit.h"
+#include "maccmake.h"
 #include "winsdk.h"
 
 #include "scripting/bindings/sc_utils.h"
@@ -2046,6 +2047,72 @@ SQInteger Wiz_MacGitClone(HSQUIRRELVM v)
         FormatMacGitClone(result));
 }
 
+SQInteger Wiz_MacCMakeProbe(
+    HSQUIRRELVM v)
+{
+    ExtractParams1<Wiz*> extractor(v);
+
+    if (!extractor.Process(
+            "Wiz::MacCMakeProbe"))
+    {
+        return extractor.ErrorMessage();
+    }
+
+    const MacCMakeProbe probe =
+        ProbeMacCMake();
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeProbe(probe));
+}
+
+SQInteger Wiz_MacCMakeTry(
+    HSQUIRRELVM v)
+{
+    ExtractParams2<
+        Wiz*,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process(
+            "Wiz::MacCMakeTry"))
+    {
+        return extractor.ErrorMessage();
+    }
+
+    const MacCMakeProbe probe =
+        ProbeMacCMakePath(*extractor.p1);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeProbe(probe));
+}
+
+SQInteger Wiz_MacCMakePaths(
+    HSQUIRRELVM v)
+{
+    ExtractParams3<
+        Wiz*,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process(
+            "Wiz::MacCMakePaths"))
+    {
+        return extractor.ErrorMessage();
+    }
+
+    const MacCMakePaths paths =
+        ResolveMacCMakePaths(
+            *extractor.p1,
+            *extractor.p2);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakePaths(paths));
+}
+
 
 #endif
 
@@ -2419,6 +2486,12 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacGitProbe"), Wiz_MacGitProbe, _SC("Wiz::MacGitProbe"));
         BindMethod(v, _SC("MacGitTry"), Wiz_MacGitTry, _SC("Wiz::MacGitTry"));
         BindMethod(v, _SC("MacGitClone"), Wiz_MacGitClone, _SC("Wiz::MacGitClone"));
+        
+        BindMethod(v, _SC("MacCMakeProbe"), Wiz_MacCMakeProbe,_SC("Wiz::MacCMakeProbe"));
+
+        BindMethod(v, _SC("MacCMakeTry"), Wiz_MacCMakeTry, _SC("Wiz::MacCMakeTry"));
+
+        BindMethod(v, _SC("MacCMakePaths"), Wiz_MacCMakePaths,_SC("Wiz::MacCMakePaths"));
         
 #endif
 #if defined(__WXMSW__)
