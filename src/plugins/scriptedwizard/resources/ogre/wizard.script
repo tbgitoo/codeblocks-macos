@@ -2,14 +2,14 @@
 //
 // Ogre3D project wizard
 //
-// v3.8 / M2 step 2:
+// v3.8 / M3 step 1:
 //   - verifies/installs cmake, pkgconf and sdl2 through Homebrew
 //   - detects or validates an existing Git executable
 //   - explicitly clones the official OGRE v14.6.2 release
+//   - validates CMake natively
+//   - resolves source/build/install paths through Code::Blocks
 //   - installs neither Homebrew nor Git
 //   - does not yet configure, build or install OGRE
-//
-// The legacy non-macOS project path is retained for later modernisation.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,10 +28,21 @@ OgreMacSDL2Prefix <- _T("");
 OgreMacGitAccess <- _T("");
 OgreMacGitExecutable <- _T("");
 OgreMacGitVersion <- _T("");
+
+OgreMacNativeCMakeAccess <- _T("");
+OgreMacNativeCMakeExecutable <- _T("");
+OgreMacNativeCMakeVersion <- _T("");
+
+OgreMacRoot <- _T("");
 OgreMacSource <- _T("");
+OgreMacBuild <- _T("");
+OgreMacInstall <- _T("");
+OgreMacPathsValid <- false;
 
 OgreMacRepository <- _T("https://github.com/OGRECave/ogre.git");
 OgreMacTag <- _T("v14.6.2");
+OgreMacSourceLeaf <- _T("ogre-source-14.6.2");
+OgreMacInstallLeaf <- _T("ogre-14.6.2");
 
 function OgreReportField(report, key)
 {
@@ -39,7 +50,6 @@ function OgreReportField(report, key)
     local at = report.Find(needle);
     if (at == -1)
         return _T("");
-
     local from = at + needle.Length();
     local rest = report.Mid(from, report.Length() - from);
     local nl = rest.Find(_T("\n"));
@@ -68,7 +78,6 @@ function OgreMacRememberBrew(report)
 {
     local access = OgreReportField(report, _T("access"));
     local executable = OgreReportField(report, _T("executable"));
-
     if (!access.IsEmpty())
         OgreMacAccess = access;
     if (!executable.IsEmpty())
@@ -89,11 +98,8 @@ function OgreMacValidatePkgconf(prefix)
 {
     if (prefix.IsEmpty() || prefix.Find(_T("/")) != 0)
         return _("Homebrew reports pkgconf as installed, but its prefix is invalid.");
-    if (!IO.FileExists(prefix + _T("/bin/pkgconf")) &&
-        !IO.FileExists(prefix + _T("/bin/pkg-config")))
-    {
+    if (!IO.FileExists(prefix + _T("/bin/pkgconf")) && !IO.FileExists(prefix + _T("/bin/pkg-config")))
         return _("pkgconf was found, but neither bin/pkgconf nor bin/pkg-config is present under its Homebrew prefix.");
-    }
     OgreMacPkgconfPrefix = prefix;
     return _T("");
 }
@@ -113,380 +119,317 @@ function OgreMacValidateSDL2(prefix)
 function OgreMacBlockReason()
 {
     OgreMacClear();
-
-    local cmakeReport = Wizard.MacBrewFormula(_T("cmake"));
-    OgreMacRememberBrew(cmakeReport);
-    OgreMacCMakeState = OgreReportField(cmakeReport, _T("state"));
-
+    local report = Wizard.MacBrewFormula(_T("cmake"));
+    OgreMacRememberBrew(report);
+    OgreMacCMakeState = OgreReportField(report, _T("state"));
     if (!OgreMacAccess.Matches(_T("works")))
-    {
-        if (OgreMacAccess.Matches(_T("present_unusable")))
-            return _("Homebrew was found but could not be used from Code::Blocks.");
-        return _("Homebrew could not be used.");
-    }
-
+        return OgreMacAccess.Matches(_T("present_unusable")) ? _("Homebrew was found but could not be used from Code::Blocks.") : _("Homebrew could not be used.");
     if (OgreMacCMakeState.Matches(_T("installed")))
     {
-        local reason = OgreMacValidateCMake(OgreReportField(cmakeReport, _T("prefix")));
-        if (!reason.IsEmpty())
-            return reason;
+        local reason = OgreMacValidateCMake(OgreReportField(report, _T("prefix")));
+        if (!reason.IsEmpty()) return reason;
     }
-    else if (OgreMacCMakeState.Matches(_T("missing")))
-        return _("CMake is not installed.");
-    else
-        return _("Homebrew could not be asked about CMake.");
+    else if (OgreMacCMakeState.Matches(_T("missing"))) return _("CMake is not installed.");
+    else return _("Homebrew could not be asked about CMake.");
 
-    local pkgconfReport = Wizard.MacBrewFormula(_T("pkgconf"));
-    OgreMacRememberBrew(pkgconfReport);
-    OgreMacPkgconfState = OgreReportField(pkgconfReport, _T("state"));
-
+    report = Wizard.MacBrewFormula(_T("pkgconf"));
+    OgreMacRememberBrew(report);
+    OgreMacPkgconfState = OgreReportField(report, _T("state"));
     if (OgreMacPkgconfState.Matches(_T("installed")))
     {
-        local reason = OgreMacValidatePkgconf(OgreReportField(pkgconfReport, _T("prefix")));
-        if (!reason.IsEmpty())
-            return reason;
+        local reason = OgreMacValidatePkgconf(OgreReportField(report, _T("prefix")));
+        if (!reason.IsEmpty()) return reason;
     }
-    else if (OgreMacPkgconfState.Matches(_T("missing")))
-        return _("pkgconf is not installed.");
-    else
-        return _("Homebrew could not be asked about pkgconf.");
+    else if (OgreMacPkgconfState.Matches(_T("missing"))) return _("pkgconf is not installed.");
+    else return _("Homebrew could not be asked about pkgconf.");
 
-    local sdl2Report = Wizard.MacBrewFormula(_T("sdl2"));
-    OgreMacRememberBrew(sdl2Report);
-    OgreMacSDL2State = OgreReportField(sdl2Report, _T("state"));
-
+    report = Wizard.MacBrewFormula(_T("sdl2"));
+    OgreMacRememberBrew(report);
+    OgreMacSDL2State = OgreReportField(report, _T("state"));
     if (OgreMacSDL2State.Matches(_T("installed")))
     {
-        local reason = OgreMacValidateSDL2(OgreReportField(sdl2Report, _T("prefix")));
-        if (!reason.IsEmpty())
-            return reason;
+        local reason = OgreMacValidateSDL2(OgreReportField(report, _T("prefix")));
+        if (!reason.IsEmpty()) return reason;
     }
-    else if (OgreMacSDL2State.Matches(_T("missing")))
-        return _("SDL2 is not installed.");
-    else
-        return _("Homebrew could not be asked about SDL2.");
-
+    else if (OgreMacSDL2State.Matches(_T("missing"))) return _("SDL2 is not installed.");
+    else return _("Homebrew could not be asked about SDL2.");
     return _T("");
 }
 
 function OgreMacStatusLine(label, state, prefix)
 {
-    if (state.Matches(_T("installed")) && !prefix.IsEmpty())
-        return label + _("\n    Installed: ") + prefix + _("\n\n");
-    if (state.Matches(_T("missing")))
-        return label + _("\n    Not installed\n\n");
+    if (state.Matches(_T("installed")) && !prefix.IsEmpty()) return label + _("\n    Installed: ") + prefix + _("\n\n");
+    if (state.Matches(_T("missing"))) return label + _("\n    Not installed\n\n");
     return label + _("\n    Could not be checked\n\n");
 }
 
 function OgreMacPageText(reason)
 {
     local text = _("The macOS OGRE workflow builds current upstream OGRE from source.\n") +
-                 _("Before OGRE can be acquired and built, Code::Blocks needs three Homebrew formulas:\n") +
-                 _("    cmake\n    pkgconf\n    sdl2\n\n") +
+                 _("Required Homebrew formulas:\n    cmake\n    pkgconf\n    sdl2\n\n") +
                  _("Code::Blocks does not install Homebrew.\n\n");
-
-    if (OgreMacAccess.Matches(_T("works")))
-        text += _("Homebrew\n    Found: ") + OgreMacExecutable +
-                _("\n    Access from Code::Blocks: OK\n\n");
-    else if (OgreMacAccess.Matches(_T("present_unusable")))
-        text += _("Homebrew\n    Found: ") + OgreMacExecutable +
-                _("\n    Access from Code::Blocks: failed\n\n");
-    else
-        text += _("Homebrew\n    Not detected\n\n");
-
+    if (OgreMacAccess.Matches(_T("works"))) text += _("Homebrew\n    Found: ") + OgreMacExecutable + _("\n    Access from Code::Blocks: OK\n\n");
+    else if (OgreMacAccess.Matches(_T("present_unusable"))) text += _("Homebrew\n    Found: ") + OgreMacExecutable + _("\n    Access from Code::Blocks: failed\n\n");
+    else text += _("Homebrew\n    Not detected\n\n");
     text += OgreMacStatusLine(_("CMake"), OgreMacCMakeState, OgreMacCMakePrefix);
     text += OgreMacStatusLine(_("pkgconf"), OgreMacPkgconfState, OgreMacPkgconfPrefix);
     text += OgreMacStatusLine(_("SDL2"), OgreMacSDL2State, OgreMacSDL2Prefix);
-
-    if (!reason.IsEmpty())
-        text += reason + _("\n\n");
-
-    if (!OgreMacAccess.Matches(_T("works")))
-        text += _("Press Next to choose an existing brew executable or open the Homebrew site.\n") +
-                _("Use Cancel to close the wizard.\n");
-    else
-        text += _("Press Next to install the next missing prerequisite with Homebrew.\n") +
-                _("Cancel on the installation dialog does not start Homebrew.\n");
-
+    if (!reason.IsEmpty()) text += reason + _("\n\n");
+    if (!OgreMacAccess.Matches(_T("works"))) text += _("Press Next to choose an existing brew executable or open the Homebrew site.\n");
+    else text += _("Press Next to install the next missing prerequisite with Homebrew.\n");
     return text;
 }
 
 function OgreMacConsiderBrew(path)
 {
-    if (path.IsEmpty())
-        return _T("");
-
+    if (path.IsEmpty()) return _T("");
     local report = Wizard.MacBrewTry(path, true);
     if (OgreReportField(report, _T("access")).Matches(_T("works")))
     {
         GetConfigManager().Write(_T("/macos/homebrew/executable"), path);
         return _T("");
     }
-
-    return _("That file did not pass brew --version, so it was not remembered.") +
-           _("\n\n") + OgreReportField(report, _T("executable")) +
-           _("\n") + OgreReportField(report, _T("version"));
+    return _("That file did not pass brew --version, so it was not remembered.") + _("\n\n") + OgreReportField(report, _T("version"));
 }
 
 function OgreMacOfferHomebrewHelp()
 {
-    local choice = Wizard.MacBrewChoice(
-        _("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."),
-        _("Help me find Homebrew"),
-        _("Installation instructions"));
-
+    local choice = Wizard.MacBrewChoice(_("Code::Blocks will not install Homebrew.\n\nChoose an existing brew executable, or open the Homebrew site."), _("Help me find Homebrew"), _("Installation instructions"));
     if (choice == 1)
     {
         local picked = IO.SelectFile(_("Choose the brew executable"), _T(""), _("All files (*)|*"));
         local rejected = OgreMacConsiderBrew(picked);
-        if (!rejected.IsEmpty())
-            ShowError(rejected);
+        if (!rejected.IsEmpty()) ShowError(rejected);
     }
-    else if (choice == 2)
-        wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
+    else if (choice == 2) wxLaunchDefaultBrowser(_T("https://brew.sh"), 0);
 }
 
 function OgreMacInstallFormula(formula, displayName)
 {
-    local explanation = _("The macOS OGRE workflow needs ") + displayName + _(".\n\n") +
-                        _("Code::Blocks will ask Homebrew to install the formula \"") + formula + _("\".\n") +
-                        _("Nothing is installed until you choose the Homebrew installation button.\n") +
-                        _("Cancel on this dialog does not start Homebrew.");
-
-    local button = _("Install ") + displayName + _(" using Homebrew");
-    local report = Wizard.MacBrewInstall(formula, explanation, button);
-
-    if (OgreReportField(report, _T("success")).Matches(_T("1")))
-        return true;
-
-    if (OgreReportField(report, _T("password")).Matches(_T("1")))
-        ShowError(_("Homebrew asked for a password. The install was stopped and is not treated as successful. No project was created."));
-    else if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
-        ShowMessage(_("The install was stopped. Files already written by Homebrew are left in place. No project was created."));
-    else if (OgreReportField(report, _T("launched")).Matches(_T("1")))
-        ShowError(displayName + _(" was not installed successfully. No project was created.\n\n") +
-                  OgreReportField(report, _T("output")));
-
+    local explanation = _("The macOS OGRE workflow needs ") + displayName + _(".\n\nCode::Blocks will ask Homebrew to install the formula \"") + formula + _("\".\nNothing is installed until you approve it.");
+    local report = Wizard.MacBrewInstall(formula, explanation, _("Install ") + displayName + _(" using Homebrew"));
+    if (OgreReportField(report, _T("success")).Matches(_T("1"))) return true;
+    if (OgreReportField(report, _T("password")).Matches(_T("1"))) ShowError(_("Homebrew asked for a password. The install was stopped."));
+    else if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("The install was stopped. Files already written are left in place."));
+    else if (OgreReportField(report, _T("launched")).Matches(_T("1"))) ShowError(displayName + _(" was not installed successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
 function OgreMacOfferNextMissingInstall()
 {
-    if (OgreMacCMakeState.Matches(_T("missing")))
-        return OgreMacInstallFormula(_T("cmake"), _("CMake"));
-    if (OgreMacPkgconfState.Matches(_T("missing")))
-        return OgreMacInstallFormula(_T("pkgconf"), _("pkgconf"));
-    if (OgreMacSDL2State.Matches(_T("missing")))
-        return OgreMacInstallFormula(_T("sdl2"), _("SDL2"));
+    if (OgreMacCMakeState.Matches(_T("missing"))) return OgreMacInstallFormula(_T("cmake"), _("CMake"));
+    if (OgreMacPkgconfState.Matches(_T("missing"))) return OgreMacInstallFormula(_T("pkgconf"), _("pkgconf"));
+    if (OgreMacSDL2State.Matches(_T("missing"))) return OgreMacInstallFormula(_T("sdl2"), _("SDL2"));
     return false;
 }
 
 function OnLeave_OgreMacPrerequisites(fwd)
 {
-    if (!fwd)
-        return true;
-
+    if (!fwd) return true;
     local reason = OgreMacBlockReason();
-    if (reason.IsEmpty())
-        return true;
-
+    if (reason.IsEmpty()) return true;
     if (!OgreMacAccess.Matches(_T("works")))
     {
         OgreMacOfferHomebrewHelp();
         return OgreMacBlockReason().IsEmpty();
     }
-
-    if (!OgreMacOfferNextMissingInstall())
-        return false;
-
+    if (!OgreMacOfferNextMissingInstall()) return false;
     reason = OgreMacBlockReason();
-    if (reason.IsEmpty())
-        return true;
-
+    if (reason.IsEmpty()) return true;
     ShowMessage(OgreMacPageText(reason));
     return false;
 }
 
-function OgreMacAllowForward()
+////////////////////////////////////////////////////////////////////////////////
+// M3.1 native CMake validation and path resolution
+////////////////////////////////////////////////////////////////////////////////
+
+function OgreMacResolvePaths()
 {
-    if (PLATFORM != PLATFORM_MAC)
-        return true;
+    OgreMacPathsValid = false;
+    OgreMacRoot = _T("");
+    OgreMacSource = _T("");
+    OgreMacBuild = _T("");
+    OgreMacInstall = _T("");
 
-    local reason = OgreMacBlockReason();
-    if (reason.IsEmpty())
-        return true;
+    local report = Wizard.MacCMakePaths(OgreMacSourceLeaf, OgreMacInstallLeaf);
+    if (!OgreReportField(report, _T("valid")).Matches(_T("1")))
+        return OgreReportField(report, _T("error"));
 
-    ShowError(reason + _(" No project was created."));
-    return false;
+    OgreMacRoot = OgreReportField(report, _T("root"));
+    OgreMacSource = OgreReportField(report, _T("source"));
+    OgreMacBuild = OgreReportField(report, _T("build"));
+    OgreMacInstall = OgreReportField(report, _T("install"));
+
+    if (OgreMacRoot.IsEmpty() || OgreMacSource.IsEmpty() || OgreMacBuild.IsEmpty() || OgreMacInstall.IsEmpty())
+        return _("CMake path resolution returned an incomplete result.");
+
+    OgreMacPathsValid = true;
+    return _T("");
+}
+
+function OgreMacNativeCMakeBlockReason()
+{
+    local report = Wizard.MacCMakeProbe();
+    OgreMacNativeCMakeAccess = OgreReportField(report, _T("access"));
+    OgreMacNativeCMakeExecutable = OgreReportField(report, _T("executable"));
+    OgreMacNativeCMakeVersion = OgreReportField(report, _T("version"));
+    if (OgreMacNativeCMakeAccess.Matches(_T("works"))) return OgreMacResolvePaths();
+    if (OgreMacNativeCMakeAccess.Matches(_T("present_unusable"))) return _("CMake was found but failed cmake --version.");
+    return _("CMake could not be found by the native CMake helper.");
+}
+
+function OgreMacConsiderNativeCMake(path)
+{
+    if (path.IsEmpty()) return _T("");
+    local report = Wizard.MacCMakeTry(path);
+    if (OgreReportField(report, _T("access")).Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/macos/cmake/executable"), path);
+        return _T("");
+    }
+    return _("That file did not pass cmake --version, so it was not remembered.") + _("\n\n") + OgreReportField(report, _T("version")) + _("\n") + OgreReportField(report, _T("error"));
+}
+
+function OgreMacCMakePageText(reason)
+{
+    local text = _("M3.1 validates CMake and resolves Code::Blocks-owned paths.\n\n");
+    if (OgreMacNativeCMakeAccess.Matches(_T("works"))) text += _("CMake\n    Found: ") + OgreMacNativeCMakeExecutable + _("\n    Version: ") + OgreMacNativeCMakeVersion + _("\n\n");
+    else text += _("CMake\n    Not usable through the native helper\n\n");
+    if (OgreMacPathsValid)
+    {
+        text += _("Root:\n    ") + OgreMacRoot + _("\n\n");
+        text += _("Source:\n    ") + OgreMacSource + _("\n\n");
+        text += _("Build:\n    ") + OgreMacBuild + _("\n\n");
+        text += _("Install:\n    ") + OgreMacInstall + _("\n\n");
+    }
+    if (!reason.IsEmpty()) text += reason + _("\n\nPress Next to choose an existing CMake executable.\n");
+    else text += _("M3.1 is ready. Configure, build and install are not performed yet.\n");
+    return text;
+}
+
+function OnLeave_OgreMacCMake(fwd)
+{
+    if (!fwd) return true;
+    local reason = OgreMacNativeCMakeBlockReason();
+    if (reason.IsEmpty()) return true;
+    if (!OgreMacNativeCMakeAccess.Matches(_T("works")))
+    {
+        local picked = IO.SelectFile(_("Choose the CMake executable"), _T(""), _("All files (*)|*"));
+        local rejected = OgreMacConsiderNativeCMake(picked);
+        if (!rejected.IsEmpty()) ShowError(rejected);
+    }
+    reason = OgreMacNativeCMakeBlockReason();
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Git and official source acquisition
 ////////////////////////////////////////////////////////////////////////////////
 
-function OgreMacSetSourcePath()
-{
-    OgreMacSource =
-        _T("/Users/thomasbraschler/Library/CodeBlocks/ogre-source-14.6.2");
-}
-
 function OgreMacGitBlockReason()
 {
     local report = Wizard.MacGitProbe();
-
     OgreMacGitAccess = OgreReportField(report, _T("access"));
     OgreMacGitExecutable = OgreReportField(report, _T("executable"));
     OgreMacGitVersion = OgreReportField(report, _T("version"));
-
-    if (OgreMacGitAccess.Matches(_T("works")))
-        return _T("");
-    if (OgreMacGitAccess.Matches(_T("present_unusable")))
-        return _("Git was found but could not be used from Code::Blocks.");
+    if (OgreMacGitAccess.Matches(_T("works"))) return _T("");
+    if (OgreMacGitAccess.Matches(_T("present_unusable"))) return _("Git was found but could not be used from Code::Blocks.");
     return _("Git could not be found. Code::Blocks does not install Git.");
 }
 
 function OgreMacConsiderGit(path)
 {
-    if (path.IsEmpty())
-        return _T("");
-
+    if (path.IsEmpty()) return _T("");
     local report = Wizard.MacGitTry(path);
     if (OgreReportField(report, _T("access")).Matches(_T("works")))
     {
         GetConfigManager().Write(_T("/macos/git/executable"), path);
         return _T("");
     }
-
-    return _("That file did not pass git --version, so it was not remembered.") +
-           _("\n\n") + OgreReportField(report, _T("executable")) +
-           _("\n") + OgreReportField(report, _T("version")) +
-           _("\n") + OgreReportField(report, _T("error"));
+    return _("That file did not pass git --version, so it was not remembered.") + _("\n\n") + OgreReportField(report, _T("version")) + _("\n") + OgreReportField(report, _T("error"));
 }
 
 function OgreMacGitPageText(reason)
 {
     local text = _("OGRE 14.6.2 is obtained from the official upstream Git repository.\n\n");
-
-    if (OgreMacGitAccess.Matches(_T("works")))
-        text += _("Git\n    Found: ") + OgreMacGitExecutable +
-                _("\n    Version: ") + OgreMacGitVersion +
-                _("\n    Access from Code::Blocks: OK\n\n");
-    else if (OgreMacGitAccess.Matches(_T("present_unusable")))
-        text += _("Git\n    Found: ") + OgreMacGitExecutable +
-                _("\n    Access from Code::Blocks: failed\n\n");
-    else
-        text += _("Git\n    Not detected\n\n");
-
-    if (!reason.IsEmpty())
-        text += reason + _("\n\n");
-
-    text += _("Code::Blocks does not install Git.\n") +
-            _("Press Next to choose an existing Git executable.\n") +
-            _("Use Cancel to close the wizard.\n");
+    if (OgreMacGitAccess.Matches(_T("works"))) text += _("Git\n    Found: ") + OgreMacGitExecutable + _("\n    Version: ") + OgreMacGitVersion + _("\n    Access from Code::Blocks: OK\n\n");
+    else text += _("Git\n    Not usable\n\n");
+    if (!reason.IsEmpty()) text += reason + _("\n\n");
+    text += _("Code::Blocks does not install Git.\nPress Next to choose an existing Git executable.\n");
     return text;
 }
 
 function OgreMacSourceReady()
 {
-    OgreMacSetSourcePath();
-    return IO.FileExists(OgreMacSource + _T("/.git/HEAD")) &&
-           IO.FileExists(OgreMacSource + _T("/CMakeLists.txt"));
+    if (!OgreMacPathsValid)
+    {
+        local reason = OgreMacResolvePaths();
+        if (!reason.IsEmpty()) return false;
+    }
+    return IO.FileExists(OgreMacSource + _T("/.git/HEAD")) && IO.FileExists(OgreMacSource + _T("/CMakeLists.txt"));
 }
 
 function OgreMacAcquirePageText()
 {
-    OgreMacSetSourcePath();
-    return _("The official OGRE 14.6.2 source is not present yet.\n\n") +
-           _("Repository:\n    ") + OgreMacRepository + _("\n\n") +
-           _("Release tag:\n    ") + OgreMacTag + _("\n\n") +
-           _("Destination:\n    ") + OgreMacSource + _("\n\n") +
-           _("Press Next to approve a shallow tagged clone.\n") +
-           _("This step downloads source only. OGRE is not built or installed yet.\n") +
-           _("Cancel on the confirmation dialog does not start Git.\n");
+    local reason = OgreMacResolvePaths();
+    if (!reason.IsEmpty()) return reason;
+    return _("The official OGRE 14.6.2 source is not present yet.\n\nRepository:\n    ") + OgreMacRepository + _("\n\nRelease tag:\n    ") + OgreMacTag + _("\n\nDestination:\n    ") + OgreMacSource + _("\n\nPress Next to approve a shallow tagged clone.\nThis step downloads source only.\n");
 }
 
 function OgreMacCloneOgre()
 {
-    OgreMacSetSourcePath();
-
-    local explanation =
-        _("Code::Blocks will download the official OGRE 14.6.2 source release.\n\n") +
-        _("Repository:\n") + OgreMacRepository + _("\n\n") +
-        _("Release tag:\n") + OgreMacTag + _("\n\n") +
-        _("Destination:\n") + OgreMacSource + _("\n\n") +
-        _("This step downloads the source only. OGRE is not built yet.");
-
-    local report = Wizard.MacGitClone(
-        OgreMacRepository,
-        OgreMacTag,
-        OgreMacSource,
-        explanation,
-        _("Download OGRE 14.6.2"));
-
-    if (OgreReportField(report, _T("success")).Matches(_T("1")))
-        return OgreMacSourceReady();
-
-    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+    local reason = OgreMacResolvePaths();
+    if (!reason.IsEmpty())
     {
-        ShowMessage(_("The OGRE download was stopped. Files already written by Git are left in place. No project was created."));
+        ShowError(reason);
         return false;
     }
-
-    local output = OgreReportField(report, _T("output"));
-    if (output.IsEmpty())
-        output = _("Git did not clone the requested release.");
-
-    ShowError(_("OGRE 14.6.2 was not downloaded successfully. No project was created.\n\n") + output);
+    local explanation = _("Code::Blocks will download the official OGRE 14.6.2 source release.\n\nRepository:\n") + OgreMacRepository + _("\n\nRelease tag:\n") + OgreMacTag + _("\n\nDestination:\n") + OgreMacSource + _("\n\nThis step downloads the source only.");
+    local report = Wizard.MacGitClone(OgreMacRepository, OgreMacTag, OgreMacSource, explanation, _("Download OGRE 14.6.2"));
+    if (OgreReportField(report, _T("success")).Matches(_T("1"))) return OgreMacSourceReady();
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("The OGRE download was stopped. Partial files are left in place."));
+    else ShowError(_("OGRE 14.6.2 was not downloaded successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
 function OnLeave_OgreMacGit(fwd)
 {
-    if (!fwd)
-        return true;
-    if (OgreMacGitBlockReason().IsEmpty())
-        return true;
-
+    if (!fwd) return true;
+    if (OgreMacGitBlockReason().IsEmpty()) return true;
     local picked = IO.SelectFile(_("Choose the Git executable"), _T(""), _("All files (*)|*"));
     local rejected = OgreMacConsiderGit(picked);
-    if (!rejected.IsEmpty())
-        ShowError(rejected);
-
+    if (!rejected.IsEmpty()) ShowError(rejected);
     return OgreMacGitBlockReason().IsEmpty();
 }
 
 function OnLeave_OgreMacAcquire(fwd)
 {
-    if (!fwd)
-        return true;
-    if (OgreMacSourceReady())
-        return true;
+    if (!fwd) return true;
+    if (OgreMacSourceReady()) return true;
     if (!OgreMacGitBlockReason().IsEmpty())
     {
-        ShowError(_("Git is not ready. No project was created."));
+        ShowError(_("Git is not ready."));
         return false;
     }
     return OgreMacCloneOgre();
 }
 
-function OgreMacGitAndSourceAllowForward()
+function OgreMacAllReady()
 {
-    if (PLATFORM != PLATFORM_MAC)
-        return true;
-
-    local reason = OgreMacGitBlockReason();
-    if (!reason.IsEmpty())
-    {
-        ShowError(reason + _(" No project was created."));
-        return false;
-    }
-
-    if (!OgreMacSourceReady())
-    {
-        ShowError(_("The official OGRE 14.6.2 source has not been acquired. No project was created."));
-        return false;
-    }
-
+    if (PLATFORM != PLATFORM_MAC) return true;
+    local reason = OgreMacBlockReason();
+    if (!reason.IsEmpty()) { ShowError(reason); return false; }
+    reason = OgreMacNativeCMakeBlockReason();
+    if (!reason.IsEmpty()) { ShowError(reason); return false; }
+    reason = OgreMacGitBlockReason();
+    if (!reason.IsEmpty()) { ShowError(reason); return false; }
+    if (!OgreMacSourceReady()) { ShowError(_("The official OGRE 14.6.2 source has not been acquired.")); return false; }
     return true;
 }
 
@@ -496,43 +439,32 @@ function OgreMacGitAndSourceAllowForward()
 
 function BeginWizard()
 {
-    local intro_msg = _("Welcome to the new OGRE project wizard!\n\n") +
-                      _("This wizard will guide you to create a new project\nusing the OGRE 3D rendering engine.\n\n");
-
-    if (PLATFORM == PLATFORM_MAC)
-        intro_msg += _("On macOS, this step verifies build prerequisites, validates Git, and acquires the official OGRE 14.6.2 source.\n\n");
-
-    intro_msg += _("When you're ready to proceed, please click \"Next\"...");
-    Wizard.AddInfoPage(_T("OgreIntro"), intro_msg);
+    local intro = _("Welcome to the new OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.2 source release.\n\nM3.1 validates prerequisites, Git, CMake and Code::Blocks-owned paths.\n");
+    Wizard.AddInfoPage(_T("OgreIntro"), intro);
 
     if (PLATFORM == PLATFORM_MAC)
     {
         local reason = OgreMacBlockReason();
-        if (!reason.IsEmpty())
-            Wizard.AddInfoPage(_T("OgreMacPrerequisites"), OgreMacPageText(reason));
+        if (!reason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacPrerequisites"), OgreMacPageText(reason));
+
+        reason = OgreMacNativeCMakeBlockReason();
+        Wizard.AddInfoPage(_T("OgreMacCMake"), OgreMacCMakePageText(reason));
 
         local gitReason = OgreMacGitBlockReason();
-        if (!gitReason.IsEmpty())
-            Wizard.AddInfoPage(_T("OgreMacGit"), OgreMacGitPageText(gitReason));
+        if (!gitReason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacGit"), OgreMacGitPageText(gitReason));
 
-        if (!OgreMacSourceReady())
-            Wizard.AddInfoPage(_T("OgreMacAcquire"), OgreMacAcquirePageText());
+        if (!OgreMacSourceReady()) Wizard.AddInfoPage(_T("OgreMacAcquire"), OgreMacAcquirePageText());
     }
 
     Wizard.AddProjectPathPage();
 
     if (PLATFORM != PLATFORM_MAC)
     {
-        local sdk_descr = _("OGRE might exist on your system as a source package\n(you built it yourself), or as a pre-made SDK which you installed.\n\n") +
-                          _("It is important for this wizard to know which SDK type is\ninstalled so that it can setup your project properly.");
-        local sdk_choices = _("I have a folder with the OGRE source code;I have installed a pre-made OGRE SDK");
-        local ogrepath_descr = _("Please select the location of OGRE on your computer.\n") +
-                               _("This is the top-level folder where OGRE was installed\n(unpacked).\n") +
-                               _("To help you, this folder must contain the subfolders\n\"include\" and \"lib\".\n") +
-                               _("If you have setup an environment variable named\nOGRE_HOME, it will automatically be used below.");
-
-        Wizard.AddGenericSingleChoiceListPage(_T("OgreSDKType"), sdk_descr, sdk_choices, OgreIsSource ? 0 : 1);
-        Wizard.AddGenericSelectPathPage(_T("OgrePath"), ogrepath_descr, _("Please select OGRE's location:"), _T("$(OGRE_HOME)"));
+        local sdkDescr = _("OGRE may exist as a source package or as a pre-made SDK.");
+        local sdkChoices = _("I have a folder with the OGRE source code;I have installed a pre-made OGRE SDK");
+        local pathDescr = _("Please select the top-level OGRE folder.");
+        Wizard.AddGenericSingleChoiceListPage(_T("OgreSDKType"), sdkDescr, sdkChoices, OgreIsSource ? 0 : 1);
+        Wizard.AddGenericSelectPathPage(_T("OgrePath"), pathDescr, _("Please select OGRE's location:"), _T("$(OGRE_HOME)"));
     }
 
     local compilers = PLATFORM == PLATFORM_MSW ? _T("gcc*;msv*") : _T("*");
@@ -542,17 +474,14 @@ function BeginWizard()
 function OnGetNextPage_OgreSDKType()
 {
     OgreIsSource = Wizard.GetListboxSelection(_T("lstSelections")) == 0;
-    if (PLATFORM != PLATFORM_MSW && !OgreIsSource)
-        return _T("CompilerPage");
+    if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("CompilerPage");
     return _T("OgrePath");
 }
 
 function OnGetPrevPage_CompilerPage()
 {
-    if (PLATFORM == PLATFORM_MAC)
-        return _T("ProjectPathPage");
-    if (PLATFORM != PLATFORM_MSW && !OgreIsSource)
-        return _T("OgreSDKType");
+    if (PLATFORM == PLATFORM_MAC) return _T("ProjectPathPage");
+    if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("OgreSDKType");
     return _T("OgrePath");
 }
 
@@ -561,11 +490,10 @@ function OnLeave_OgrePath(fwd)
     if (fwd)
     {
         local dir = Wizard.GetTextControlValue(_T("txtFolder"));
-        local dirNomacro = ReplaceMacros(dir);
-        if ((OgreIsSource && !IO.FileExists(dirNomacro + _T("/OgreMain/include/Ogre.h"))) ||
-            (!OgreIsSource && !IO.FileExists(dirNomacro + _T("/include/Ogre.h"))))
+        local raw = ReplaceMacros(dir);
+        if ((OgreIsSource && !IO.FileExists(raw + _T("/OgreMain/include/Ogre.h"))) || (!OgreIsSource && !IO.FileExists(raw + _T("/include/Ogre.h"))))
         {
-            ShowError(_("The path you entered seems valid, but this wizard\ncan't locate OGRE's files in it..."));
+            ShowError(_("This wizard cannot locate OGRE files in that path."));
             return false;
         }
         OgrePath = dir;
@@ -575,24 +503,12 @@ function OnLeave_OgrePath(fwd)
 
 function OnLeave_ProjectPathPage(fwd)
 {
-    if (fwd)
-    {
-        if (!OgreMacAllowForward())
-            return false;
-        return OgreMacGitAndSourceAllowForward();
-    }
-    return true;
+    return !fwd || OgreMacAllReady();
 }
 
 function OnLeave_CompilerPage(fwd)
 {
-    if (fwd)
-    {
-        if (!OgreMacAllowForward())
-            return false;
-        return OgreMacGitAndSourceAllowForward();
-    }
-    return true;
+    return !fwd || OgreMacAllReady();
 }
 
 function GetFilesDir()
@@ -601,15 +517,14 @@ function GetFilesDir()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Legacy project generation remains for non-macOS only.
-// macOS stops after prerequisites and official source acquisition in M2.
+// Legacy project setup retained for non-macOS.
 ////////////////////////////////////////////////////////////////////////////////
 
 function SetupProject(project)
 {
     if (PLATFORM == PLATFORM_MAC)
     {
-        ShowError(_("The OGRE macOS prerequisites and official source checkout are ready, but OGRE build/install and modern project generation are not implemented in this step. No project was created."));
+        ShowError(_("M3.1 is ready, but configure/build/install and modern project generation are not implemented yet. No project was created."));
         return false;
     }
 
@@ -622,7 +537,6 @@ function SetupProject(project)
             project.AddIncludeDir(OgrePath + _T("/samples/refapp/include"));
             project.AddLibDir(OgrePath + _T("/lib"));
         }
-
         project.AddCompilerOption(_T("-mthreads"));
         project.AddCompilerOption(_T("-fmessage-length=0"));
         project.AddCompilerOption(_T("-fexceptions"));
@@ -657,19 +571,11 @@ function SetupProject(project)
     if (!IsNull(target))
     {
         target.SetTargetType(ttConsoleOnly);
-
-        if (OgreIsSource)
-            target.SetWorkingDir(OgrePath + _T("/Samples/Common/bin/Debug"));
-        else if (PLATFORM == PLATFORM_MSW)
-            target.SetWorkingDir(OgrePath + _T("/bin/Debug"));
-
+        if (OgreIsSource) target.SetWorkingDir(OgrePath + _T("/Samples/Common/bin/Debug"));
+        else if (PLATFORM == PLATFORM_MSW) target.SetWorkingDir(OgrePath + _T("/bin/Debug"));
         project.AddLibDir(OgrePath + _T("/bin/Debug"));
-
-        if (target.GetWorkingDir().Matches(_T("")))
-            target.SetOutputFilename(target.SuggestOutputFilename());
-        else
-            target.SetOutputFilename(target.GetWorkingDir() + wxFILE_SEP_PATH + target.SuggestOutputFilename());
-
+        if (target.GetWorkingDir().Matches(_T(""))) target.SetOutputFilename(target.SuggestOutputFilename());
+        else target.SetOutputFilename(target.GetWorkingDir() + wxFILE_SEP_PATH + target.SuggestOutputFilename());
         if (PLATFORM == PLATFORM_MSW)
         {
             target.AddLinkLib(_T("OgreMain_d"));
@@ -681,10 +587,7 @@ function SetupProject(project)
             target.AddLinkLib(_T("OgreMain"));
             target.AddLinkLib(_T("OIS"));
         }
-
-        if (OgreIsSource)
-            target.AddLibDir(OgrePath + _T("/OgreMain/lib/Debug"));
-
+        if (OgreIsSource) target.AddLibDir(OgrePath + _T("/OgreMain/lib/Debug"));
         DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
 
@@ -692,29 +595,16 @@ function SetupProject(project)
     if (!IsNull(target))
     {
         target.SetTargetType(ttExecutable);
-
-        if (OgreIsSource)
-            target.SetWorkingDir(OgrePath + _T("/Samples/Common/bin/Release"));
-        else if (PLATFORM == PLATFORM_MSW)
-            target.SetWorkingDir(OgrePath + _T("/bin/Release"));
-
+        if (OgreIsSource) target.SetWorkingDir(OgrePath + _T("/Samples/Common/bin/Release"));
+        else if (PLATFORM == PLATFORM_MSW) target.SetWorkingDir(OgrePath + _T("/bin/Release"));
         project.AddLibDir(OgrePath + _T("/bin/Release"));
-
-        if (target.GetWorkingDir().Matches(_T("")))
-            target.SetOutputFilename(target.SuggestOutputFilename());
-        else
-            target.SetOutputFilename(target.GetWorkingDir() + wxFILE_SEP_PATH + target.SuggestOutputFilename());
-
+        if (target.GetWorkingDir().Matches(_T(""))) target.SetOutputFilename(target.SuggestOutputFilename());
+        else target.SetOutputFilename(target.GetWorkingDir() + wxFILE_SEP_PATH + target.SuggestOutputFilename());
         target.AddLinkLib(_T("OgreMain"));
         target.AddLinkLib(_T("OIS"));
-
-        if (PLATFORM == PLATFORM_MSW)
-            target.AddCompilerOption(_T("-DNDEBUG"));
-        if (OgreIsSource)
-            target.AddLibDir(OgrePath + _T("/OgreMain/lib/Release"));
-
+        if (PLATFORM == PLATFORM_MSW) target.AddCompilerOption(_T("-DNDEBUG"));
+        if (OgreIsSource) target.AddLibDir(OgrePath + _T("/OgreMain/lib/Release"));
         OptimizationsOn(target, Wizard.GetCompilerID());
     }
-
     return true;
 }
