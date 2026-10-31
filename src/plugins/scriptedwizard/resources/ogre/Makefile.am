@@ -6,4 +6,6 @@ dist_pkgdata_DATA = logo.png \
 
 filesdir = $(pkgdatadir)/files
 
-dist_files_DATA = files/main.cpp
+dist_files_DATA = files/main.cpp \
+                  files/plugins.cfg \
+                  files/resources.cfg

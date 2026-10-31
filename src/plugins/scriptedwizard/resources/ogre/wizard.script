@@ -457,7 +457,192 @@ function OnGetPrevPage_CompilerPage() { if (PLATFORM == PLATFORM_MAC) return _T(
 function OnLeave_OgrePath(fwd) { if (fwd) { local dir = Wizard.GetTextControlValue(_T("txtFolder")); local raw = ReplaceMacros(dir); if ((OgreIsSource && !IO.FileExists(raw + _T("/OgreMain/include/Ogre.h"))) || (!OgreIsSource && !IO.FileExists(raw + _T("/include/Ogre.h")))) { ShowError(_("This wizard cannot locate OGRE files in that path.")); return false; } OgrePath = dir; } return true; }
 function OnLeave_ProjectPathPage(fwd) { return !fwd || OgreMacAllReady(); }
 function OnLeave_CompilerPage(fwd) { return !fwd || OgreMacAllReady(); }
-function GetFilesDir() { return _T("ogre/files"); }
+
+
+function GetFilesDir()
+{
+    if (PLATFORM == PLATFORM_MAC)
+        return _T("");
+
+    return _T("ogre/files");
+}
+
+// Each call returns "filename;contents".
+// Return an empty string when there are no more files.
+function GetGeneratedFile(file_index)
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return _T("");
+
+    local filename = _T("");
+    local templateFile = _T("");
+
+    switch (file_index)
+    {
+        case 0:
+            filename = _T("main.cpp");
+            templateFile = _T("ogre/files/main.cpp");
+            break;
+
+        case 1:
+            filename = _T("plugins.cfg");
+            templateFile = _T("ogre/files/plugins.cfg");
+            break;
+
+        case 2:
+            filename = _T("resources.cfg");
+            templateFile = _T("ogre/files/resources.cfg");
+            break;
+
+        default:
+            return _T("");
+    }
+
+    local path =
+        Wizard.FindTemplateFile(
+            templateFile);
+
+    local buffer =
+        IO.ReadFileContents(
+            path);
+
+    buffer.Replace(
+        _T("[OGRE_PLUGIN_FOLDER]"),
+        OgreMacInstall +
+        _T("/lib/macosx/Release"));
+
+    buffer.Replace(
+        _T("[OGRE_MEDIA_FOLDER]"),
+        OgreMacInstall +
+        _T("/Media"));
+
+    return filename +
+           _T(";") +
+           buffer;
+}
+
+function SetupMacOgreProject(project)
+{
+    if (!OgreMacAllReady())
+        return false;
+
+    local frameworkDir =
+        OgreMacInstall +
+        _T("/lib/macosx/Release");
+
+    project.AddIncludeDir(
+        OgreMacInstall +
+        _T("/include/OGRE/Bites"));
+
+    project.AddIncludeDir(
+        OgreMacInstall +
+        _T("/include/OGRE"));
+
+    project.AddIncludeDir(
+        OgreMacInstall +
+        _T("/include/OGRE/Overlay"));
+
+    project.AddIncludeDir(
+        OgreMacInstall +
+        _T("/include/OGRE/RTShaderSystem"));
+
+    project.AddCompilerOption(
+        _T("-std=gnu++17"));
+
+    project.AddCompilerOption(
+        _T("-iframework ") +
+        frameworkDir);
+
+    project.AddLinkerOption(
+        _T("-F") +
+        frameworkDir);
+
+    project.AddLinkerOption(
+        _T("-Wl,-rpath,") +
+        frameworkDir);
+
+    project.AddLinkerOption(
+        frameworkDir +
+        _T("/OgreBites.framework/OgreBites"));
+
+    project.AddLinkerOption(
+        frameworkDir +
+        _T("/OgreOverlay.framework/OgreOverlay"));
+
+    project.AddLinkerOption(
+        frameworkDir +
+        _T("/OgreRTShaderSystem.framework/OgreRTShaderSystem"));
+
+    project.AddLinkerOption(
+        frameworkDir +
+        _T("/Ogre.framework/Ogre"));
+
+    project.AddLinkerOption(
+        _T("-framework CoreFoundation"));
+
+    project.AddLinkerOption(
+        _T("-framework Foundation"));
+
+    project.AddLinkerOption(
+        _T("-Wl,-search_paths_first"));
+
+    project.AddLinkerOption(
+        _T("-Wl,-headerpad_max_install_names"));
+
+    WarningsOn(
+        project,
+        Wizard.GetCompilerID());
+
+    CppExceptionsOn(
+        project,
+        Wizard.GetCompilerID());
+
+    local target =
+        project.GetBuildTarget(
+            Wizard.GetDebugName());
+
+    if (!IsNull(target))
+    {
+        target.SetTargetType(
+            ttConsoleOnly);
+
+        target.SetWorkingDir(
+    		Wizard.GetProjectPath());
+
+	target.SetOutputFilename(
+    		target.SuggestOutputFilename());
+
+        DebugSymbolsOn(
+            target,
+            Wizard.GetCompilerID());
+    }
+
+    target =
+        project.GetBuildTarget(
+            Wizard.GetReleaseName());
+
+    if (!IsNull(target))
+    {
+        target.SetTargetType(
+            ttExecutable);
+
+        target.SetWorkingDir(
+    		Wizard.GetProjectPath());
+
+	target.SetOutputFilename(
+    		target.SuggestOutputFilename());
+
+        target.AddCompilerOption(
+            _T("-DNDEBUG"));
+
+        OptimizationsOn(
+            target,
+            Wizard.GetCompilerID());
+    }
+
+    return true;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Legacy project setup retained for non-macOS.
@@ -465,7 +650,8 @@ function GetFilesDir() { return _T("ogre/files"); }
 
 function SetupProject(project)
 {
-    if (PLATFORM == PLATFORM_MAC) { ShowError(_("M3.4 installed and validated the OGRE SDK, but modern project generation is not implemented yet. No project was created.")); return false; }
+   if (PLATFORM == PLATFORM_MAC)
+    return SetupMacOgreProject(project);
     if (PLATFORM == PLATFORM_MSW)
     {
         if (!OgreIsSource) { project.AddIncludeDir(OgrePath + _T("/include")); project.AddIncludeDir(OgrePath + _T("/samples/include")); project.AddIncludeDir(OgrePath + _T("/samples/refapp/include")); project.AddLibDir(OgrePath + _T("/lib")); }
