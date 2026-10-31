@@ -4,9 +4,9 @@
 
 **Question this version answers:** can Code::Blocks hide the otherwise substantial OGRE setup burden well enough that a user can choose New Project -> OGRE application and reach an impressive, editable 3D C++ example without first learning OGRE's dependency and build infrastructure?
 
-The evidence is now strong: pristine upstream OGRE **v14.6.2** builds from its official release tag on the tested Apple Silicon Mac without source patches; the upstream `SampleBrowser.app` runs and renders correctly; OGRE installs to a versioned Code::Blocks-owned SDK prefix; a completely external probe renders a textured, illuminated, slowly rotating `ogrehead.mesh`; and the wizard now verifies its Homebrew prerequisites, validates Git without installing it, and acquires the exact official `v14.6.2` source release through an explicitly approved shallow clone.
+The evidence is now strong: pristine upstream OGRE **v14.6.2** builds from its official release tag on the tested Apple Silicon Mac without source patches; the upstream `SampleBrowser.app` runs and renders correctly; OGRE installs to a versioned Code::Blocks-owned SDK prefix; a completely external probe renders a textured, illuminated, slowly rotating `ogrehead.mesh`; the wizard verifies its Homebrew prerequisites, validates Git without installing it, acquires the exact official `v14.6.2` source release, resolves the native source/build/install hierarchy under `~/Library/CodeBlocks`, and now configures the Release build tree with the final install prefix fixed at configure time.
 
-The remaining work is to automate the proven CMake configure/build/install procedure and then generate the modern beginner project without making Code::Blocks responsible for maintaining OGRE itself.
+The remaining M3 work is to automate the proven CMake build and install operations using the configured build tree, with explicit consent, diagnostics and cancellation. M4 then generates the modern beginner project.
 
 ---
 
@@ -21,30 +21,14 @@ Code::Blocks
     |
     +-- macOS dependency workflow
             |
-            +-- Homebrew helper: build dependencies
+            +-- macbrew helper: build dependencies
             +-- macgit helper: official tagged source checkout
-            +-- CMake helper: configure, build and install OGRE
+            +-- maccmake helper: paths, configure, build and install
             |
             +-- versioned installed upstream OGRE SDK
 ```
 
 OGRE remains an external C++ graphics engine. Code::Blocks must not fork OGRE, carry private macOS patches, or reproduce OGRE's build logic.
-
-The intended user experience is:
-
-```text
-New Project -> OGRE application
-        |
-        +-- verify prerequisite tools
-        +-- offer explicit dependency setup if required
-        +-- clone the official versioned OGRE release
-        +-- configure, build and install it with CMake
-        +-- generate a small ordinary C++ project
-        v
-Build and Run
-        v
-textured, illuminated, animated 3D example
-```
 
 The wizard should hide installation complexity, not the interesting C++ and 3D programming.
 
@@ -141,14 +125,14 @@ A residual path in `<SDK>/lib/cmake/bullet/BulletConfig.cmake` refers to `build-
 
 ### 4.1 Homebrew prerequisites
 
-**M2 step 1: DONE.** The OGRE wizard now has OGRE-specific prerequisite UI based on:
+**M2 step 1: DONE.** The OGRE wizard uses:
 
 ```text
 src/plugins/scriptedwizard/macbrew.cpp
 src/plugins/scriptedwizard/macbrew.h
 ```
 
-It verifies and, with explicit consent, installs:
+to verify and, with explicit consent, install:
 
 ```text
 cmake
@@ -160,14 +144,14 @@ Code::Blocks does not install Homebrew. macOS no longer asks the obsolete source
 
 ### 4.2 macgit helper and source acquisition
 
-**M2 step 2: DONE.** The new helper is:
+**M2 step 2: DONE.** The helper:
 
 ```text
 src/plugins/scriptedwizard/macgit.cpp
 src/plugins/scriptedwizard/macgit.h
 ```
 
-It is integrated through `wiz.cpp`, Squirrel wrappers, `BindMethod(...)`, and `Makefile.am` and exposes only:
+exposes only:
 
 ```text
 Wizard.MacGitProbe()
@@ -175,21 +159,7 @@ Wizard.MacGitTry(path)
 Wizard.MacGitClone(url, tag, destination, explanation, confirmLabel)
 ```
 
-There is no generic Git command API.
-
-The helper:
-
-- revalidates Git with `git --version`;
-- treats a saved Git path only as a hint;
-- permits selection and validation of an existing Git executable;
-- never installs Git, including through Homebrew;
-- asks for explicit consent before acquisition;
-- constructs the clone argv natively rather than accepting shell syntax;
-- rejects invalid/control-character inputs;
-- requires a safe absolute destination;
-- refuses `/`, existing files and non-empty destinations;
-- captures output, cancellation and exit status;
-- sets `GIT_TERMINAL_PROMPT=0` for the clone process.
+It revalidates Git with `git --version`, never installs Git, requires explicit consent, constructs argv natively, rejects unsafe clone destinations and supports responsive output/cancellation.
 
 The successful operation is equivalent to:
 
@@ -199,73 +169,160 @@ git clone --branch v14.6.2 --depth 1 \
     "$HOME/Library/CodeBlocks/ogre-source-14.6.2"
 ```
 
-The resulting checkout was independently verified:
+The resulting checkout was independently verified as a clean detached checkout at exact tag `v14.6.2`.
+
+**M2 status: DONE.**
+
+### 4.3 M3.1 native CMake validation and path resolution
+
+**M3.1: DONE.** The helper:
 
 ```text
-not currently on any branch
-working tree clean
-exact tag: v14.6.2
+src/plugins/scriptedwizard/maccmake.cpp
+src/plugins/scriptedwizard/maccmake.h
 ```
 
-Detached HEAD is the intended state for this immutable SDK-source checkout.
-
-### 4.3 M2 lessons and open path issue
-
-The Git UI, native process launch, output capture, cancellation and safe tagged clone all work end to end. The implementation also proved that a long-running clone can remain responsive even under unstable network conditions.
-
-One path issue remains open for M3:
+currently exposes:
 
 ```text
-/Users/thomasbraschler/Library/CodeBlocks/ogre-source-14.6.2
+Wizard.MacCMakeProbe()
+Wizard.MacCMakeTry(path)
+Wizard.MacCMakePaths(sourceLeaf, installLeaf)
+Wizard.MacCMakeConfigure(source, build, install, buildType, explanation, confirmLabel)
 ```
 
-was temporarily hard-coded in `wizard.script` because `wxGetHomeDir()` is not exposed to the Squirrel environment. That path is acceptable only as the M2 test wiring. It must not remain user-specific.
-
-M3 must establish a native, reusable and user-independent way to resolve the Code::Blocks-owned root directory and derive all three locations consistently:
+`MacCMakeProbe()` and `MacCMakeTry()` validate CMake through `cmake --version`. On the tested Mac, the native probe resolves and validates:
 
 ```text
-source:  <CodeBlocks user root>/ogre-source-14.6.2
-build:   <source>/build-codeblocks
-install: <CodeBlocks user root>/ogre-14.6.2
+/opt/homebrew/bin/cmake
+cmake version 4.4.5
 ```
 
-Possible implementation forms include returning a native resolved root/path in the CMake helper report or adding a narrow general Scripted Wizard path helper. M3 should choose the smallest reusable capability and must not add another username-specific script literal.
+`MacCMakePaths()` accepts constrained leaf names rather than arbitrary script-supplied paths. The final convention uses native `wxGetHomeDir()` in `maccmake.cpp` and constructs the dedicated external-SDK root:
 
-**M2 status: DONE.** M2 stops after safe exact-tag source acquisition. It does not configure, build or install OGRE.
+```text
+~/Library/CodeBlocks
+```
 
-### 4.4 M3 CMake helper: next
+The proven resolved layout is:
 
-Add a narrow reusable macOS CMake helper, expected to use platform-specific names analogous to `macbrew` and `macgit`, and automate the proven sequence:
+```text
+root:
+~/Library/CodeBlocks
+
+source:
+~/Library/CodeBlocks/ogre-source-14.6.2
+
+build:
+~/Library/CodeBlocks/ogre-source-14.6.2/build-codeblocks
+
+install:
+~/Library/CodeBlocks/ogre-14.6.2
+```
+
+Technical lessons from M3.1:
+
+- `ConfigManager::GetUserDataFolder()` is protected and is not a plug-in API.
+- `ConfigManager::GetFolder(sdDataUser)` is public but represents Code::Blocks application data, not the intended external-SDK warehouse.
+- `wxGetHomeDir()` belongs in native C++, not Squirrel, for this macOS-specific convention.
+- `wxFILE_SEP_PATH` should be appended to a `wxString` explicitly; beginning a `+` expression with it causes character/pointer arithmetic rather than string concatenation.
+- Compiling a native helper is insufficient by itself: the Squirrel wrapper and `BindMethod(...)` entries must be in the installed Scripted Wizard plug-in, and Code::Blocks must be restarted before the new methods exist at runtime.
+- The M2 checkout is naturally rediscovered when M3.1 resolves the intended source path, so acquisition is not repeated.
+
+### 4.4 M3.2 configure
+
+**M3.2: DONE.** `maccmake` now exposes the constrained configure operation:
+
+```text
+Wizard.MacCMakeConfigure(source, build, install, buildType, explanation, confirmLabel)
+```
+
+The helper validates absolute and distinct source/build/install locations, requires the OGRE `CMakeLists.txt`, accepts only recognised build types, requires explicit consent, constructs argv natively, redirects live output, supports cancellation and invokes no shell command.
+
+The successful operation is equivalent to:
 
 ```bash
-cmake -S <source> -B <build> \
+cmake \
+    -S "$HOME/Library/CodeBlocks/ogre-source-14.6.2" \
+    -B "$HOME/Library/CodeBlocks/ogre-source-14.6.2/build-codeblocks" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=<install>
+    -DCMAKE_INSTALL_PREFIX="$HOME/Library/CodeBlocks/ogre-14.6.2"
+```
 
+Configuration success requires:
+
+```text
+process launched
+not cancelled
+exit code 0
+<build>/CMakeCache.txt exists
+```
+
+The resulting cache was independently verified to contain:
+
+```text
+CMAKE_BUILD_TYPE:STRING=Release
+CMAKE_INSTALL_PREFIX:PATH=/Users/thomasbraschler/Library/CodeBlocks/ogre-14.6.2
+```
+
+This proves the crucial M1 requirement that the final install prefix is fixed during configuration rather than substituted later during installation. M3.2 does not build or install OGRE.
+
+Technical lessons from M3.2:
+
+- The native configure primitive also required a dedicated wizard page and an `OnLeave_OgreMacConfigure()` call path; implementing the C++ method alone did not execute configuration.
+- `CMakeCache.txt` is the practical milestone marker and is checked both by the native result and by the wizard before proceeding.
+- Literal comparison of separately normalised directory strings was too brittle. The first safety check rejected the correct build directory as not being `source/build-codeblocks`.
+- The corrected guard constructs and normalises both expected and actual build paths with `wxFileName` before comparison.
+- The failed path comparison occurred before consent/process launch, confirming that native invariant validation prevents unintended CMake execution.
+- The final dialog saying that build/install and project generation are not implemented is the intentional M3.2 stop barrier reached after successful configuration, despite being presented by the wizard as a `Script error`. The UX should be improved later, but the current control-flow boundary is correct.
+
+### 4.5 M3.3 build: next
+
+With configuration now proven, add the constrained equivalent of:
+
+```bash
 cmake --build <build> -j<bounded-host-job-count>
+```
 
+Parallelism should be determined natively and bounded. The long-running build must retain responsive output and cancellation behaviour analogous to the proven `macgit` operation.
+
+M3.3 success should require more than process launch. It should confirm successful exit and one or more build outputs that establish that the OGRE build completed sufficiently for the subsequent install target.
+
+### 4.6 M3.4 install and installed-SDK validation
+
+Finally add:
+
+```bash
 cmake --install <build>
 ```
 
-The helper must expose progress/output, cancellation and clear configure/build/install results while keeping source, build and install paths distinct. It must set the install prefix during configuration, not override it only during installation.
+Do not pass a replacement `--prefix`; the final prefix was fixed during M3.2 configuration.
+
+After installation, verify the installed contract used by M1 rather than relying solely on process exit status. At minimum the validation should cover the CMake package, installed headers/libraries, Media/resources and the macOS Release renderer plug-in location needed by the proven external probe.
 
 ---
 
 ## 5. Dependency locations and lifecycle
 
-The now-proven acquisition/install model is:
-
 ```text
-Code::Blocks-owned versioned source checkout
-        |
-        +-- versioned/disposable build directory
-        v
-~/Library/CodeBlocks/ogre-14.6.2
-        v
-Code::Blocks OGRE projects
+~/Library/CodeBlocks/
+    |
+    +-- ogre-source-14.6.2/
+    |       |
+    |       +-- build-codeblocks/
+    |
+    +-- ogre-14.6.2/
+            |
+            +-- CMake/
+            +-- Media/
+            +-- bin/
+            +-- include/
+            +-- lib/
 ```
 
-The exact native resolution of the Code::Blocks user root is an M3 requirement. Generated projects must depend only on the installed SDK contract, never on the source checkout or build directory.
+This dedicated SDK root is separate from Code::Blocks' own `Application Support/.../share/codeblocks` application resources.
+
+Generated projects must depend only on the installed SDK contract, never on the source checkout or build directory.
 
 No hand-built OGRE files should be installed into Homebrew-owned prefixes such as `/opt/homebrew`.
 
@@ -297,7 +354,7 @@ The generated application remains an ordinary Code::Blocks C++ project with norm
 | Existing OGRE Scripted Wizard resources | Modernise registration, platform workflow and starter generation. |
 | `src/plugins/scriptedwizard/macbrew.cpp` / `.h` | Proven prerequisite discovery and explicit formula installation. |
 | `src/plugins/scriptedwizard/macgit.cpp` / `.h` | Proven Git discovery/validation and safe shallow tagged clone. |
-| New macOS CMake helper | Resolve reusable source/build/install locations and perform configure/build/install. |
+| `src/plugins/scriptedwizard/maccmake.cpp` / `.h` | Proven CMake discovery, native paths and configure; next add build/install with diagnostics and cancellation. |
 | `wiz.cpp`, `Makefile.am`, maintained project files | Bind and compile the narrow native helper APIs. |
 | OGRE `main.cpp` template | Textured, illuminated and slowly rotating Ogre-head example. |
 | Generated `plugins.cfg` | Rebase the installed macOS Release plug-in directory. |
@@ -310,8 +367,8 @@ The generated application remains an ordinary Code::Blocks C++ project with norm
 | | Objective | Check | Status |
 |---|---|---|---|
 | M1 | Characterise the legacy wizard and prove the external installed-SDK contract. | Independent external project builds and renders the textured, illuminated, rotating Ogre head using the installed SDK. | **DONE** |
-| M2 | Add reusable prerequisite/acquisition helpers. | Homebrew prerequisites are verified/installed; `macgit` validates existing Git without installing it and safely clones the official exact `v14.6.2` tag into a Code::Blocks-owned test location. | **DONE** |
-| M3 | Add the reusable CMake build/install workflow. | Resolve non-user-specific Code::Blocks-owned source/build/install paths; reproduce the proven prefix-aware Release configure/build/install sequence with cancellation and diagnostics. | **PLANNED** |
+| M2 | Add reusable prerequisite/acquisition helpers. | Homebrew prerequisites are verified/installed; `macgit` validates existing Git without installing it and safely clones exact tag `v14.6.2`. | **DONE** |
+| M3 | Add the reusable CMake build/install workflow. | M3.1 native path/CMake resolution and M3.2 prefix-aware Release configuration are proven; M3.3-M3.4 must perform build/install with cancellation, diagnostics and SDK-contract validation. | **IN PROGRESS** |
 | M4 | Modernise the OGRE wizard and starter project. | Generate the compact current-API rotating-Ogre project with correct macOS plug-in/resource/runtime configuration. | **PLANNED** |
 | M5 | Validate the complete beginner path. | From a clean supported Mac, explicit setup completes and Build and Run displays the 3D example without manual repair. | **PLANNED** |
 
@@ -325,7 +382,7 @@ v3.8 is accepted only if:
 2. Homebrew supplies only declared build dependencies.
 3. Git is discovered or selected but never installed by Code::Blocks.
 4. OGRE is cloned at an explicit release tag using a shallow checkout.
-5. Source/build/install locations are resolved without a username-specific path literal.
+5. Source/build/install locations are resolved natively without a username-specific path literal and use the dedicated `~/Library/CodeBlocks` SDK root.
 6. CMake receives the final SDK prefix before building and installs through the supported target.
 7. OGRE source remains pristine; no Code::Blocks patchset or fork is required.
 8. Generated projects consume the installed SDK without requiring source/build checkout access.
@@ -341,8 +398,9 @@ v3.8 is accepted only if:
 - Maintaining an OGRE fork or private macOS patches.
 - Patching installed upstream metadata merely to remove non-operative paths.
 - Installing Git automatically.
-- Exposing a generic Git command API to wizard scripts.
-- Leaving Thomas-specific or any username-specific filesystem literals in the final workflow.
+- Exposing generic Git or CMake command APIs to wizard scripts.
+- Leaving username-specific filesystem literals in the final workflow.
+- Storing source/build/install trees under Code::Blocks' `Application Support/.../share/codeblocks` application-data location.
 - Installing hand-built OGRE into Homebrew-owned prefixes.
 - Making generated projects depend on source/build directories.
 - Silently cloning/building without explicit user action.
@@ -364,5 +422,4 @@ Stop and hide/disable the macOS OGRE wizard if a reliable workflow requires modi
 
 The intended end state is:
 
-**Homebrew supplies build prerequisites; `macgit` safely acquires the official tagged release without installing Git; a reusable native CMake/path helper performs the prefix-aware upstream build/install into user-independent Code::Blocks-owned locations; OGRE remains upstream's engine; and the generated project exposes the interesting 3D C++ code rather than the installation machinery.**
-
+**Homebrew supplies build prerequisites; `macgit` safely acquires the official tagged release without installing Git; `maccmake` resolves the dedicated `~/Library/CodeBlocks` SDK hierarchy and performs the prefix-aware upstream configure/build/install with bounded native operations; OGRE remains upstream's engine; and the generated project exposes the interesting 3D C++ code rather than the installation machinery.**
