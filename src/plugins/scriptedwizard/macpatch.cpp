@@ -25,6 +25,7 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/utils.h>
+#include <wx/window.h>
 
 #include "macgit.h"
 #include "macpatch.h"
@@ -144,11 +145,18 @@ bool SourceRootOk(const wxString& sourceRoot, wxString& normalised, wxString& er
         return false;
     }
 
-    const wxFileName target(normalised, kOgreAssimpTargetFile);
+    wxFileName target(
+        normalised + wxFILE_SEP_PATH + kOgreAssimpTargetFile);
+
+    target.Normalize(
+        wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
 
     if (!target.FileExists())
     {
-        error = wxT("expected patch target does not exist");
+        error =
+            wxT("expected patch target does not exist: ")
+            + target.GetFullPath();
+
         return false;
     }
 
@@ -322,8 +330,18 @@ bool RunPatchApply(const wxString& executable,
 bool ConfirmPatch(const wxString& explanation,
                   const wxString& confirmLabel)
 {
+    wxWindow* parent = nullptr;
+
+    wxWindow* focused = wxWindow::FindFocus();
+
+    if (focused)
+        parent = wxGetTopLevelParent(focused);
+
+    if (!parent)
+        parent = Manager::Get()->GetAppWindow();
+
     wxDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         wxID_ANY,
         _("Compatibility patch"),
         wxDefaultPosition,
@@ -372,7 +390,16 @@ bool ConfirmPatch(const wxString& explanation,
     dlg.SetInitialSize(wxSize(580, -1));
     dlg.CentreOnParent();
 
-    return dlg.ShowModal() == wxID_OK;
+    const bool approved =
+        dlg.ShowModal() == wxID_OK;
+
+    if (parent)
+    {
+        parent->Raise();
+        parent->SetFocus();
+    }
+
+    return approved;
 }
 
 wxString StateName(int state)

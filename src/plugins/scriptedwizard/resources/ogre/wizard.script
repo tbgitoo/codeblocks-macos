@@ -23,6 +23,13 @@ OgreMacGitAccess <- _T("");
 OgreMacGitExecutable <- _T("");
 OgreMacGitVersion <- _T("");
 
+OgreMacPatchId <- _T("ogre-14.6.2-assimp-sidecar");
+OgreMacPatchState <- _T("");
+OgreMacPatchError <- _T("");
+OgreMacRebuildRequired <- false;
+OgreMacPatchPendingKey <- _T("/macos/ogre/patch_rebuild_required");
+
+
 OgreMacNativeCMakeAccess <- _T("");
 OgreMacNativeCMakeExecutable <- _T("");
 OgreMacNativeCMakeVersion <- _T("");
@@ -360,8 +367,20 @@ function OgreMacBuildOgre()
 
 function OnLeave_OgreMacBuild(fwd)
 {
-    if (!fwd) return true;
-    if (OgreMacBuildSucceeded || OgreMacBuilt()) { OgreMacBuildSucceeded = true; return true; }
+    if (!fwd)
+        return true;
+
+    OgreMacLoadPatchBuildState();
+
+    if (OgreMacRebuildRequired)
+        return OgreMacBuildOgre();
+
+    if (OgreMacBuildSucceeded || OgreMacBuilt())
+    {
+        OgreMacBuildSucceeded = true;
+        return true;
+    }
+
     return OgreMacBuildOgre();
 }
 
@@ -389,8 +408,26 @@ function OgreMacInstallOgre()
 
 function OnLeave_OgreMacInstall(fwd)
 {
-    if (!fwd) return true;
-    if (OgreMacInstallSucceeded || OgreMacInstalled()) { OgreMacInstallSucceeded = true; return true; }
+    if (!fwd)
+        return true;
+
+    OgreMacLoadPatchBuildState();
+
+    if (OgreMacRebuildRequired)
+    {
+        if (!OgreMacInstallOgre())
+            return false;
+
+        OgreMacSetRebuildRequired(false);
+        return true;
+    }
+
+    if (OgreMacInstallSucceeded || OgreMacInstalled())
+    {
+        OgreMacInstallSucceeded = true;
+        return true;
+    }
+
     return OgreMacInstallOgre();
 }
 
@@ -460,6 +497,224 @@ function OnLeave_OgreMacAcquire(fwd)
     return OgreMacCloneOgre();
 }
 
+function OgreMacPatchProbe()
+{
+    OgreMacPatchState = _T("");
+    OgreMacPatchError = _T("");
+
+    local reason = OgreMacResolvePaths();
+
+    if (!reason.IsEmpty())
+    {
+        OgreMacPatchError = reason;
+        return _T("");
+    }
+
+    if (!OgreMacSourceReady())
+    {
+        OgreMacPatchError = _("The OGRE source checkout is not present.");
+        return _T("");
+    }
+
+    local report =
+        Wizard.MacPatchProbe(
+            OgreMacPatchId,
+            OgreMacSource);
+
+    OgreMacPatchState =
+        OgreReportField(
+            report,
+            _T("state"));
+
+    OgreMacPatchError =
+        OgreReportField(
+            report,
+            _T("error"));
+
+    return report;
+}
+
+function OgreMacPatchPageText()
+{
+    OgreMacPatchProbe();
+
+    local text =
+        _("Optional OGRE 14.6.2 compatibility patch\n\nThe official OGRE 14.6.2 source contains a known issue in the Assimp resource-loading path. OBJ geometry can be converted, but an accompanying MTL file may not be found when Assimp requests the sidecar using an absolute path.\n\nThe compatibility patch converts sidecar paths beneath the model source directory back to resource-relative names before OGRE asks ResourceGroupManager to open them.\n\nThe patch modifies only:\n    PlugIns/Assimp/src/AssimpLoader.cpp\n\n");
+
+    if (OgreMacPatchState.Matches(_T("applicable")))
+    {
+        text +=
+            _("Patch state:\n    Available for this exact OGRE 14.6.2 checkout\n\nPress Next to choose whether to apply the patch.\nDeclining leaves the official upstream source unchanged.\n");
+    }
+    else if (OgreMacPatchState.Matches(_T("already_applied")))
+    {
+        text +=
+            _("Patch state:\n    Already applied\n\nNo additional source change is required.\n");
+    }
+    else if (OgreMacPatchState.Matches(_T("unsupported_version")))
+    {
+        text +=
+            _("Patch state:\n    Unsupported OGRE source version\n\nThe patch will not be applied.\n");
+    }
+    else if (OgreMacPatchState.Matches(_T("git_unavailable")))
+    {
+        text +=
+            _("Patch state:\n    Git is unavailable\n\nThe patch will not be applied.\n");
+    }
+    else if (OgreMacPatchState.Matches(_T("unexpected_source")))
+    {
+        text +=
+            _("Patch state:\n    The target source file is neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify this source tree.\n");
+    }
+    else
+    {
+        text +=
+            _("Patch state:\n    Not yet available\n\nThe source state will be checked again when leaving this page.\n");
+    }
+
+    if (!OgreMacPatchError.IsEmpty())
+    {
+        text +=
+            _("\nDetails:\n    ") +
+            OgreMacPatchError +
+            _("\n");
+    }
+
+    text +=
+        _("\nThis local patch is temporary and is intended to be removed once the selected official OGRE release contains the correction.");
+
+    return text;
+}
+
+function OgreMacLoadPatchBuildState()
+{
+    OgreMacRebuildRequired =
+        GetConfigManager()
+            .Read(
+                OgreMacPatchPendingKey,
+                _T(""))
+            .Matches(_T("1"));
+}
+
+function OgreMacSetRebuildRequired(required)
+{
+    OgreMacRebuildRequired = required;
+
+    GetConfigManager().Write(
+        OgreMacPatchPendingKey,
+        required ? _T("1") : _T("0"));
+}
+
+
+function OgreMacApplyPatch()
+{
+    local explanation =
+        _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.2 source checkout.\n\nThe patch addresses OBJ/MTL sidecar resolution in OGRE's Assimp integration.\n\nSource:\n") +
+        OgreMacSource +
+        _("\n\nModified file:\nPlugIns/Assimp/src/AssimpLoader.cpp\n\nThe source modification remains visible in Git as an uncommitted working-tree change.\n\nAfter applying the patch, Code::Blocks will rebuild and reinstall OGRE. CMake configuration does not need to be repeated.\n\nChoose Cancel to continue without applying the patch.");
+
+    local report =
+        Wizard.MacPatchApply(
+            OgreMacPatchId,
+            OgreMacSource,
+            explanation,
+            _("Apply OGRE compatibility patch"));
+
+    if (OgreReportField(
+            report,
+            _T("success")).Matches(_T("1")))
+    {
+        OgreMacPatchProbe();
+
+        if (!OgreMacPatchState.Matches(_T("already_applied")))
+            return false;
+
+        if (OgreReportField(
+                report,
+                _T("launched")).Matches(_T("1")))
+        {
+            OgreMacSetRebuildRequired(true);
+            OgreMacBuildSucceeded = false;
+            OgreMacInstallSucceeded = false;
+        }
+
+        return true;
+    }
+
+    if (OgreReportField(
+            report,
+            _T("cancelled")).Matches(_T("1")))
+    {
+        return true;
+    }
+
+    local error =
+        OgreReportField(
+            report,
+            _T("error"));
+
+    if (error.IsEmpty())
+    {
+        error =
+            OgreReportField(
+                report,
+                _T("output"));
+    }
+
+    ShowError(
+        _("The OGRE compatibility patch was not applied.\n\n") +
+        error);
+
+    return false;
+}
+
+function OnLeave_OgreMacPatch(fwd)
+{
+    if (!fwd)
+        return true;
+
+    OgreMacPatchProbe();
+
+    if (OgreMacPatchState.Matches(_T("already_applied")))
+        return true;
+
+    if (OgreMacPatchState.Matches(_T("applicable")))
+        return OgreMacApplyPatch();
+
+    if (OgreMacPatchState.Matches(_T("unexpected_source")))
+    {
+        ShowMessage(
+            _("The OGRE source file is neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify the source tree. The wizard will continue without the compatibility patch."));
+
+        return true;
+    }
+
+    if (OgreMacPatchState.Matches(_T("unsupported_version")))
+    {
+        ShowMessage(
+            _("The compatibility patch does not support this OGRE source version. The wizard will continue without it."));
+
+        return true;
+    }
+
+    if (OgreMacPatchState.Matches(_T("git_unavailable")))
+    {
+        ShowMessage(
+            _("Git is not available for compatibility-patch validation. The wizard will continue without the patch."));
+
+        return true;
+    }
+
+    ShowMessage(
+        _("The compatibility patch could not be validated. The wizard will continue without modifying the OGRE source tree.\n\n") +
+        OgreMacPatchError);
+
+    return true;
+}
+
+
+
+
 function OgreMacAllReady()
 {
     if (PLATFORM != PLATFORM_MAC) return true;
@@ -479,37 +734,90 @@ function OgreMacAllReady()
 
 function BeginWizard()
 {
-    Wizard.AddInfoPage(_T("OgreIntro"), _("Welcome to the new OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.2 source release.\n\nM3.4 validates prerequisites, configures, builds, installs and validates the OGRE SDK.\n"));
+    Wizard.AddInfoPage(
+    _T("OgreIntro"),
+    _("Welcome to the new OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.2 source release.\n\nv3.8.1 validates prerequisites, optionally applies the OGRE Assimp compatibility patch, configures, builds, installs and validates the OGRE SDK.\n"));
+
     if (PLATFORM == PLATFORM_MAC)
     {
-        local reason = OgreMacBlockReason(); if (!reason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacPrerequisites"), OgreMacPageText(reason));
-        reason = OgreMacNativeCMakeBlockReason(); Wizard.AddInfoPage(_T("OgreMacCMake"), OgreMacCMakePageText(reason));
-        local gitReason = OgreMacGitBlockReason(); if (!gitReason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacGit"), OgreMacGitPageText(gitReason));
-	if (!OgreMacSourceReady())
-    Wizard.AddInfoPage(
-        _T("OgreMacAcquire"),
-        OgreMacAcquirePageText());
+    
+        OgreMacLoadPatchBuildState();
+        local reason = OgreMacBlockReason();
 
-Wizard.AddInfoPage(
-    _T("OgreMacConfigure"),
-    OgreMacConfigurePageText());
+        if (!reason.IsEmpty())
+        {
+            Wizard.AddInfoPage(
+                _T("OgreMacPrerequisites"),
+                OgreMacPageText(reason));
+        }
 
-Wizard.AddInfoPage(
-    _T("OgreMacBuild"),
-    OgreMacBuildPageText());
+        reason = OgreMacNativeCMakeBlockReason();
 
-Wizard.AddInfoPage(
-    _T("OgreMacInstall"),
-    OgreMacInstallPageText());
+        Wizard.AddInfoPage(
+            _T("OgreMacCMake"),
+            OgreMacCMakePageText(reason));
+
+        local gitReason = OgreMacGitBlockReason();
+
+        if (!gitReason.IsEmpty())
+        {
+            Wizard.AddInfoPage(
+                _T("OgreMacGit"),
+                OgreMacGitPageText(gitReason));
+        }
+
+        if (!OgreMacSourceReady())
+        {
+            Wizard.AddInfoPage(
+                _T("OgreMacAcquire"),
+                OgreMacAcquirePageText());
+        }
+
+        Wizard.AddInfoPage(
+            _T("OgreMacPatch"),
+            OgreMacPatchPageText());
+
+        Wizard.AddInfoPage(
+            _T("OgreMacConfigure"),
+            OgreMacConfigurePageText());
+
+        Wizard.AddInfoPage(
+            _T("OgreMacBuild"),
+            OgreMacBuildPageText());
+
+        Wizard.AddInfoPage(
+            _T("OgreMacInstall"),
+            OgreMacInstallPageText());
     }
+
     Wizard.AddProjectPathPage();
+
     if (PLATFORM != PLATFORM_MAC)
     {
-        Wizard.AddGenericSingleChoiceListPage(_T("OgreSDKType"), _("OGRE may exist as a source package or as a pre-made SDK."), _("I have a folder with the OGRE source code;I have installed a pre-made OGRE SDK"), OgreIsSource ? 0 : 1);
-        Wizard.AddGenericSelectPathPage(_T("OgrePath"), _("Please select the top-level OGRE folder."), _("Please select OGRE's location:"), _T("$(OGRE_HOME)"));
+        Wizard.AddGenericSingleChoiceListPage(
+            _T("OgreSDKType"),
+            _("OGRE may exist as a source package or as a pre-made SDK."),
+            _("I have a folder with the OGRE source code;"
+              "I have installed a pre-made OGRE SDK"),
+            OgreIsSource ? 0 : 1);
+
+        Wizard.AddGenericSelectPathPage(
+            _T("OgrePath"),
+            _("Please select the top-level OGRE folder."),
+            _("Please select OGRE's location:"),
+            _T("$(OGRE_HOME)"));
     }
-    local compilers = PLATFORM == PLATFORM_MSW ? _T("gcc*;msv*") : _T("*");
-    Wizard.AddCompilerPage(_T(""), compilers, true, true);
+
+    local compilers =
+        PLATFORM == PLATFORM_MSW
+            ? _T("gcc*;msv*")
+            : _T("*");
+
+    Wizard.AddCompilerPage(
+        _T(""),
+        compilers,
+        true,
+        true);
 }
 
 function OnGetNextPage_OgreSDKType() { OgreIsSource = Wizard.GetListboxSelection(_T("lstSelections")) == 0; if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("CompilerPage"); return _T("OgrePath"); }
