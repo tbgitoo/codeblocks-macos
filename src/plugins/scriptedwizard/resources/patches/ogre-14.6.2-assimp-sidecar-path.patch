@@ -1,0 +1,47 @@
+diff --git a/PlugIns/Assimp/src/AssimpLoader.cpp b/PlugIns/Assimp/src/AssimpLoader.cpp
+index d3fcdf2..a7b6aa5 100644
+--- a/PlugIns/Assimp/src/AssimpLoader.cpp
++++ b/PlugIns/Assimp/src/AssimpLoader.cpp
+@@ -102,15 +102,30 @@ struct OgreIOSystem : public Assimp::IOSystem
+     DataStreamPtr source;
+     std::vector<OgreIOStream*> streams;
+     String _group;
++    String _sourceDirectory;
+ 
+-    OgreIOSystem(const DataStreamPtr& _source, const String& group) : source(_source), _group(group) {}
++    OgreIOSystem(const DataStreamPtr& _source, const String& group)
++        : source(_source), _group(group)
++    {
++        String basename, extension;
++        StringUtil::splitFullFilename(source->getName(), basename, extension, _sourceDirectory);
++        _sourceDirectory = StringUtil::normalizeFilePath(_sourceDirectory, false);
++    }
++
++    String getResourceName(const String& requestedFile) const
++    {
++        String file = StringUtil::normalizeFilePath(requestedFile, false);
++        if (!_sourceDirectory.empty() && file.compare(0, _sourceDirectory.size(), _sourceDirectory) == 0)
++            file.erase(0, _sourceDirectory.size());
++        return file;
++    }
+ 
+     bool Exists(const char* pFile) const override
+     {
+         String file = StringUtil::normalizeFilePath(pFile, false);
+         if (file == source->getName())
+             return true;
+-        return ResourceGroupManager::getSingleton().resourceExists(_group, file);
++        return ResourceGroupManager::getSingleton().resourceExists(_group, getResourceName(file));
+     }
+     char getOsSeparator() const override { return '/'; }
+ 
+@@ -126,7 +141,8 @@ struct OgreIOSystem : public Assimp::IOSystem
+             source->seek(0);
+         }
+         if (!res)
+-            res = ResourceGroupManager::getSingleton().openResource(file, _group, NULL, false);
++            res = ResourceGroupManager::getSingleton().openResource(
++                getResourceName(file), _group, NULL, false);
+ 
+         if (res)
+         {

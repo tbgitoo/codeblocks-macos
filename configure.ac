@@ -517,6 +517,7 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/scriptedwizard/resources/ogre/Makefile
 	src/plugins/scriptedwizard/resources/opencv/Makefile
 	src/plugins/scriptedwizard/resources/opengl/Makefile
+	src/plugins/scriptedwizard/resources/patches/Makefile
 	src/plugins/scriptedwizard/resources/plugins/Makefile
 	src/plugins/scriptedwizard/resources/ppc/Makefile
 	src/plugins/scriptedwizard/resources/qt4/Makefile

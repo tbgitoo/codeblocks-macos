@@ -12,9 +12,12 @@ OgreMacExecutable <- _T("");
 OgreMacCMakeState <- _T("");
 OgreMacPkgconfState <- _T("");
 OgreMacSDL2State <- _T("");
+OgreMacAssimpState <- _T("");
+
 OgreMacCMakePrefix <- _T("");
 OgreMacPkgconfPrefix <- _T("");
 OgreMacSDL2Prefix <- _T("");
+OgreMacAssimpPrefix <- _T("");
 
 OgreMacGitAccess <- _T("");
 OgreMacGitExecutable <- _T("");
@@ -54,8 +57,8 @@ function OgreReportField(report, key)
 function OgreMacClear()
 {
     OgreMacAccess = _T(""); OgreMacExecutable = _T("");
-    OgreMacCMakeState = _T(""); OgreMacPkgconfState = _T(""); OgreMacSDL2State = _T("");
-    OgreMacCMakePrefix = _T(""); OgreMacPkgconfPrefix = _T(""); OgreMacSDL2Prefix = _T("");
+    OgreMacCMakeState = _T(""); OgreMacPkgconfState = _T(""); OgreMacSDL2State = _T(""); OgreMacAssimpState = _T("");
+    OgreMacCMakePrefix = _T(""); OgreMacPkgconfPrefix = _T(""); OgreMacSDL2Prefix = _T(""); OgreMacAssimpPrefix = _T("");
 }
 
 function OgreMacRememberBrew(report)
@@ -88,6 +91,18 @@ function OgreMacValidateSDL2(prefix)
     OgreMacSDL2Prefix = prefix; return _T("");
 }
 
+function OgreMacValidateAssimp(prefix)
+{
+    if (prefix.IsEmpty() || prefix.Find(_T("/")) != 0)
+        return _("Homebrew reports Assimp as installed, but its prefix is invalid.");
+
+    if (!IO.FileExists(prefix + _T("/include/assimp/Importer.hpp")))
+        return _("Assimp was found, but include/assimp/Importer.hpp is not present under its Homebrew prefix.");
+
+    OgreMacAssimpPrefix = prefix;
+    return _T("");
+}
+
 function OgreMacBlockReason()
 {
     OgreMacClear();
@@ -106,7 +121,27 @@ function OgreMacBlockReason()
     OgreMacRememberBrew(report); OgreMacSDL2State = OgreReportField(report, _T("state"));
     if (OgreMacSDL2State.Matches(_T("installed"))) { local r = OgreMacValidateSDL2(OgreReportField(report, _T("prefix"))); if (!r.IsEmpty()) return r; }
     else if (OgreMacSDL2State.Matches(_T("missing"))) return _("SDL2 is not installed."); else return _("Homebrew could not be asked about SDL2.");
-    return _T("");
+    
+    
+     report = Wizard.MacBrewFormula(_T("assimp"));
+    OgreMacRememberBrew(report);
+    OgreMacAssimpState = OgreReportField(report, _T("state"));
+
+    if (OgreMacAssimpState.Matches(_T("installed")))
+    {
+        local r = OgreMacValidateAssimp(
+            OgreReportField(report, _T("prefix")));
+
+        if (!r.IsEmpty())
+            return r;
+    }
+    else if (OgreMacAssimpState.Matches(_T("missing")))
+        return _("Assimp is not installed.");
+    else
+        return _("Homebrew could not be asked about Assimp.");
+        
+     return _T("");
+    
 }
 
 function OgreMacStatusLine(label, state, prefix)
@@ -118,11 +153,15 @@ function OgreMacStatusLine(label, state, prefix)
 
 function OgreMacPageText(reason)
 {
-    local text = _("The macOS OGRE workflow builds current upstream OGRE from source.\nRequired Homebrew formulas:\n    cmake\n    pkgconf\n    sdl2\n\nCode::Blocks does not install Homebrew.\n\n");
+    local text = _("The macOS OGRE workflow builds current upstream OGRE from source.\nRequired Homebrew formulas:\n    cmake\n    pkgconf\n    sdl2\nassimp\n\nCode::Blocks does not install Homebrew.\n\n");
     text += OgreMacAccess.Matches(_T("works")) ? _("Homebrew\n    Found: ") + OgreMacExecutable + _("\n    Access from Code::Blocks: OK\n\n") : _("Homebrew\n    Not usable\n\n");
     text += OgreMacStatusLine(_("CMake"), OgreMacCMakeState, OgreMacCMakePrefix);
     text += OgreMacStatusLine(_("pkgconf"), OgreMacPkgconfState, OgreMacPkgconfPrefix);
     text += OgreMacStatusLine(_("SDL2"), OgreMacSDL2State, OgreMacSDL2Prefix);
+    text += OgreMacStatusLine(
+    _("Assimp"),
+    OgreMacAssimpState,
+    OgreMacAssimpPrefix);
     if (!reason.IsEmpty()) text += reason + _("\n\n");
     text += !OgreMacAccess.Matches(_T("works")) ? _("Press Next to choose an existing brew executable or open the Homebrew site.\n") : _("Press Next to install the next missing prerequisite with Homebrew.\n");
     return text;
@@ -156,9 +195,18 @@ function OgreMacInstallFormula(formula, displayName)
 
 function OgreMacOfferNextMissingInstall()
 {
-    if (OgreMacCMakeState.Matches(_T("missing"))) return OgreMacInstallFormula(_T("cmake"), _("CMake"));
-    if (OgreMacPkgconfState.Matches(_T("missing"))) return OgreMacInstallFormula(_T("pkgconf"), _("pkgconf"));
-    if (OgreMacSDL2State.Matches(_T("missing"))) return OgreMacInstallFormula(_T("sdl2"), _("SDL2"));
+    if (OgreMacCMakeState.Matches(_T("missing")))
+        return OgreMacInstallFormula(_T("cmake"), _("CMake"));
+
+    if (OgreMacPkgconfState.Matches(_T("missing")))
+        return OgreMacInstallFormula(_T("pkgconf"), _("pkgconf"));
+
+    if (OgreMacSDL2State.Matches(_T("missing")))
+        return OgreMacInstallFormula(_T("sdl2"), _("SDL2"));
+
+    if (OgreMacAssimpState.Matches(_T("missing")))
+        return OgreMacInstallFormula(_T("assimp"), _("Assimp"));
+
     return false;
 }
 
@@ -437,10 +485,22 @@ function BeginWizard()
         local reason = OgreMacBlockReason(); if (!reason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacPrerequisites"), OgreMacPageText(reason));
         reason = OgreMacNativeCMakeBlockReason(); Wizard.AddInfoPage(_T("OgreMacCMake"), OgreMacCMakePageText(reason));
         local gitReason = OgreMacGitBlockReason(); if (!gitReason.IsEmpty()) Wizard.AddInfoPage(_T("OgreMacGit"), OgreMacGitPageText(gitReason));
-        if (!OgreMacSourceReady()) Wizard.AddInfoPage(_T("OgreMacAcquire"), OgreMacAcquirePageText());
-        if (OgreMacSourceReady() && !OgreMacConfigured()) Wizard.AddInfoPage(_T("OgreMacConfigure"), OgreMacConfigurePageText());
-        if (OgreMacSourceReady() && OgreMacConfigured() && !OgreMacBuilt()) Wizard.AddInfoPage(_T("OgreMacBuild"), OgreMacBuildPageText());
-        if (OgreMacSourceReady() && OgreMacConfigured() && OgreMacBuilt() && !OgreMacInstalled()) Wizard.AddInfoPage(_T("OgreMacInstall"), OgreMacInstallPageText());
+	if (!OgreMacSourceReady())
+    Wizard.AddInfoPage(
+        _T("OgreMacAcquire"),
+        OgreMacAcquirePageText());
+
+Wizard.AddInfoPage(
+    _T("OgreMacConfigure"),
+    OgreMacConfigurePageText());
+
+Wizard.AddInfoPage(
+    _T("OgreMacBuild"),
+    OgreMacBuildPageText());
+
+Wizard.AddInfoPage(
+    _T("OgreMacInstall"),
+    OgreMacInstallPageText());
     }
     Wizard.AddProjectPathPage();
     if (PLATFORM != PLATFORM_MAC)
