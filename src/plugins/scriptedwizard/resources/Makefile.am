@@ -26,6 +26,7 @@ SUBDIRS = avr \
 	ogre \
 	opencv \
 	opengl \
+	patches \
 	plugins \
 	ppc \
 	qt4 \

@@ -47,6 +47,7 @@
 #include "wizpage.h"
 #include "macbrew.h"
 #include "macgit.h"
+#include "macpatch.h"
 #include "maccmake.h"
 #include "winsdk.h"
 
@@ -2047,6 +2048,54 @@ SQInteger Wiz_MacGitClone(HSQUIRRELVM v)
         FormatMacGitClone(result));
 }
 
+SQInteger Wiz_MacPatchProbe(HSQUIRRELVM v)
+{
+    // this, patchId, sourceRoot
+    ExtractParams3<
+        Wiz*,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacPatchProbe"))
+        return extractor.ErrorMessage();
+
+    const MacPatchProbe probe =
+        ProbeMacPatch(
+            *extractor.p1,
+            *extractor.p2);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacPatchProbe(probe));
+}
+
+SQInteger Wiz_MacPatchApply(HSQUIRRELVM v)
+{
+    // this, patchId, sourceRoot, explanation, confirmLabel
+    ExtractParams5<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacPatchApply"))
+        return extractor.ErrorMessage();
+
+    const MacPatchApplyResult result =
+        ApplyMacPatch(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacPatchApply(result));
+}
+
 SQInteger Wiz_MacCMakeProbe(
     HSQUIRRELVM v)
 {
@@ -2575,6 +2624,9 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacGitTry"), Wiz_MacGitTry, _SC("Wiz::MacGitTry"));
         BindMethod(v, _SC("MacGitClone"), Wiz_MacGitClone, _SC("Wiz::MacGitClone"));
         
+        BindMethod(v, _SC("MacPatchProbe"), Wiz_MacPatchProbe, _SC("Wiz::MacPatchProbe"));
+        BindMethod(v, _SC("MacPatchApply"), Wiz_MacPatchApply, _SC("Wiz::MacPatchApply"));
+
         BindMethod(v, _SC("MacCMakeProbe"), Wiz_MacCMakeProbe,_SC("Wiz::MacCMakeProbe"));
 
         BindMethod(v, _SC("MacCMakeTry"), Wiz_MacCMakeTry, _SC("Wiz::MacCMakeTry"));
