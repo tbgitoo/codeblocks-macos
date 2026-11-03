@@ -160,7 +160,7 @@ function OgreMacStatusLine(label, state, prefix)
 
 function OgreMacPageText(reason)
 {
-    local text = _("The macOS OGRE workflow builds current upstream OGRE from source.\nRequired Homebrew formulas:\n    cmake\n    pkgconf\n    sdl2\nassimp\n\nCode::Blocks does not install Homebrew.\n\n");
+    local text = _("The macOS OGRE workflow builds the official OGRE v14.6.3 from source.\nRequired Homebrew formulas:\n    cmake\n    pkgconf\n    sdl2\nassimp\n\nCode::Blocks does not install Homebrew.\n\n");
     text += OgreMacAccess.Matches(_T("works")) ? _("Homebrew\n    Found: ") + OgreMacExecutable + _("\n    Access from Code::Blocks: OK\n\n") : _("Homebrew\n    Not usable\n\n");
     text += OgreMacStatusLine(_("CMake"), OgreMacCMakeState, OgreMacCMakePrefix);
     text += OgreMacStatusLine(_("pkgconf"), OgreMacPkgconfState, OgreMacPkgconfPrefix);
@@ -540,7 +540,7 @@ function OgreMacPatchPageText()
     OgreMacPatchProbe();
 
     local text =
-        _("Optional OGRE 14.6.3 compatibility patch\n\nThe official OGRE 14.6.3 OgreAssimpConverter registers the model directory as a non-recursive resource location. As a result, OBJ geometry may be converted successfully while referenced material files in child directories are not found.\n\nThe compatibility patch makes the existing model resource location recursive. This allows Assimp sidecars beneath the model directory to be resolved through OGRE's resource system without expanding the registered filesystem root.\n\nThe patch modifies only:\n    Tools/AssimpConverter/main.cpp\n\n");
+    _("Optional OGRE 14.6.3 compatibility patch\n\nThe official OGRE 14.6.3 Assimp integration passes absolute sidecar paths to OGRE's resource system, which expects names relative to the registered model resource location. OgreAssimpConverter also registers that location as non-recursive.\n\nAs a result, OBJ geometry may be converted successfully while referenced material files are not found, including material files beside the OBJ and in child directories beneath the model directory.\n\nThe compatibility patch translates sidecar requests beneath the model directory into OGRE resource names and makes the existing model resource location recursive. It does not add another filesystem root or provide unrestricted filesystem access.\n\nThe patch modifies:\n    PlugIns/Assimp/src/AssimpLoader.cpp\n    Tools/AssimpConverter/main.cpp\n\n");
 
     if (OgreMacPatchState.Matches(_T("applicable")))
     {
@@ -565,7 +565,8 @@ function OgreMacPatchPageText()
     else if (OgreMacPatchState.Matches(_T("unexpected_source")))
     {
         text +=
-            _("Patch state:\n    The target source file is neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify this source tree.\n");
+            _("Patch state:\n    The target source files are neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify this source tree.\n");
+
     }
     else
     {
@@ -610,9 +611,9 @@ function OgreMacSetRebuildRequired(required)
 function OgreMacApplyPatch()
 {
     local explanation =
-        _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.3 source checkout.\n\nOgreAssimpConverter currently registers the model directory as a non-recursive resource location. The patch makes that existing resource location recursive so material and texture sidecars in child directories can be resolved through OGRE's resource system.\n\nSource:\n") +
-        OgreMacSource +
-        _("\n\nModified file:\nTools/AssimpConverter/main.cpp\n\nThe patch does not add another filesystem root or provide unrestricted filesystem access.\n\nThe source modification remains visible in Git as an uncommitted working-tree change.\n\nAfter applying the patch, Code::Blocks will rebuild and reinstall OGRE. CMake configuration does not need to be repeated.\n\nChoose Cancel to continue without applying the patch.");
+    _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.3 source checkout.\n\nThe OGRE Assimp integration currently passes absolute sidecar paths to OGRE's resource system, although that system expects resource names relative to the registered model directory. OgreAssimpConverter also registers that directory as a non-recursive resource location.\n\nThe patch translates sidecar requests beneath the model directory into OGRE resource names and makes the existing resource location recursive. This allows material and texture sidecars beside the model and in child directories beneath it to be resolved correctly.\n\nSource:\n") +
+    OgreMacSource +
+    _("\n\nModified files:\n    PlugIns/Assimp/src/AssimpLoader.cpp\n    Tools/AssimpConverter/main.cpp\n\nThe patch does not add another filesystem root or provide unrestricted filesystem access.\n\nThe source modifications remain visible in Git as uncommitted working-tree changes.\n\nAfter applying the patch, Code::Blocks will rebuild and reinstall OGRE. CMake configuration does not need to be repeated.\n\nChoose Cancel to continue without applying the patch.");
 
     local report =
         Wizard.MacPatchApply(
@@ -685,7 +686,7 @@ function OnLeave_OgreMacPatch(fwd)
     if (OgreMacPatchState.Matches(_T("unexpected_source")))
     {
         ShowMessage(
-            _("The OGRE source file is neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify the source tree. The wizard will continue without the compatibility patch."));
+            _("The OGRE source files are neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify the source tree. The wizard will continue without the compatibility patch."));
 
         return true;
     }
@@ -735,9 +736,9 @@ function OgreMacAllReady()
 
 function BeginWizard()
 {
-Wizard.AddInfoPage(
+    Wizard.AddInfoPage(
     _T("OgreIntro"),
-    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.1 validates prerequisites, optionally enables recursive asset-sidecar resources in OgreAssimpConverter, configures, builds, installs and validates the OGRE SDK.\n"));
+    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.1 validates prerequisites, optionally applies an asset-sidecar compatibility patch, configures, builds, installs and validates the OGRE SDK.\n"));
 
     if (PLATFORM == PLATFORM_MAC)
     {
