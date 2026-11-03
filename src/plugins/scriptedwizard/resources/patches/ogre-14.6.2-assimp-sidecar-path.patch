@@ -1,47 +1,13 @@
-diff --git a/PlugIns/Assimp/src/AssimpLoader.cpp b/PlugIns/Assimp/src/AssimpLoader.cpp
-index d3fcdf2..a7b6aa5 100644
---- a/PlugIns/Assimp/src/AssimpLoader.cpp
-+++ b/PlugIns/Assimp/src/AssimpLoader.cpp
-@@ -102,15 +102,30 @@ struct OgreIOSystem : public Assimp::IOSystem
-     DataStreamPtr source;
-     std::vector<OgreIOStream*> streams;
-     String _group;
-+    String _sourceDirectory;
+diff --git a/Tools/AssimpConverter/main.cpp b/Tools/AssimpConverter/main.cpp
+index b1784e2..7d5e513 100644
+--- a/Tools/AssimpConverter/main.cpp
++++ b/Tools/AssimpConverter/main.cpp
+@@ -213,7 +213,7 @@ int main(int numargs, char** args)
  
--    OgreIOSystem(const DataStreamPtr& _source, const String& group) : source(_source), _group(group) {}
-+    OgreIOSystem(const DataStreamPtr& _source, const String& group)
-+        : source(_source), _group(group)
-+    {
-+        String basename, extension;
-+        StringUtil::splitFullFilename(source->getName(), basename, extension, _sourceDirectory);
-+        _sourceDirectory = StringUtil::normalizeFilePath(_sourceDirectory, false);
-+    }
-+
-+    String getResourceName(const String& requestedFile) const
-+    {
-+        String file = StringUtil::normalizeFilePath(requestedFile, false);
-+        if (!_sourceDirectory.empty() && file.compare(0, _sourceDirectory.size(), _sourceDirectory) == 0)
-+            file.erase(0, _sourceDirectory.size());
-+        return file;
-+    }
+         auto codec = Codec::getCodec(ext);
  
-     bool Exists(const char* pFile) const override
-     {
-         String file = StringUtil::normalizeFilePath(pFile, false);
-         if (file == source->getName())
-             return true;
--        return ResourceGroupManager::getSingleton().resourceExists(_group, file);
-+        return ResourceGroupManager::getSingleton().resourceExists(_group, getResourceName(file));
-     }
-     char getOsSeparator() const override { return '/'; }
+-        ResourceGroupManager::getSingleton().addResourceLocation(path, "FileSystem", RGN_DEFAULT);
++        ResourceGroupManager::getSingleton().addResourceLocation(path, "FileSystem", RGN_DEFAULT, true);
  
-@@ -126,7 +141,8 @@ struct OgreIOSystem : public Assimp::IOSystem
-             source->seek(0);
-         }
-         if (!res)
--            res = ResourceGroupManager::getSingleton().openResource(file, _group, NULL, false);
-+            res = ResourceGroupManager::getSingleton().openResource(
-+                getResourceName(file), _group, NULL, false);
- 
-         if (res)
-         {
+         MeshPtr mesh = MeshManager::getSingleton().createManual(basename + "." + ext, RGN_DEFAULT);
+         mesh->getUserObjectBindings().setUserAny("_AssimpLoaderOptions", opts.options);
