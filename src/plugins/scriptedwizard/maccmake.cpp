@@ -561,7 +561,15 @@ public:
         const wxString installArgument =
             wxT("-DCMAKE_INSTALL_PREFIX=") + install;
 
-        const wxChar* argv[8];
+        const wxString installRpathArgument =
+            wxT("-DCMAKE_INSTALL_RPATH=")
+            + install
+            + wxT("/lib/macosx/Release");
+
+        const wxString pluginsPathArgument =
+            wxT("-DOGRE_PLUGINS_PATH=lib/macosx/Release");
+
+        const wxChar* argv[10];
 
         argv[0] = executable.wx_str();
         argv[1] = wxT("-S");
@@ -570,7 +578,9 @@ public:
         argv[4] = build.wx_str();
         argv[5] = buildTypeArgument.wx_str();
         argv[6] = installArgument.wx_str();
-        argv[7] = nullptr;
+        argv[7] = installRpathArgument.wx_str();
+        argv[8] = pluginsPathArgument.wx_str();
+        argv[9] = nullptr;
 
         m_pid = wxExecute(
             argv,
