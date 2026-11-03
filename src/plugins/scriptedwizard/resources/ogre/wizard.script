@@ -540,61 +540,37 @@ function OgreMacPatchPageText()
     OgreMacPatchProbe();
 
     local text =
-        _("Optional OGRE 14.6.2 compatibility patch\n\n"
-          "The official OGRE 14.6.2 OgreAssimpConverter registers the model "
-          "directory as a non-recursive resource location. As a result, OBJ "
-          "geometry may be converted successfully while referenced material "
-          "files in child directories are not found.\n\n"
-          "The compatibility patch makes the existing model resource location "
-          "recursive. This allows Assimp sidecars beneath the model directory "
-          "to be resolved through OGRE's resource system without expanding the "
-          "registered filesystem root.\n\n"
-          "The patch modifies only:\n"
-          "    Tools/AssimpConverter/main.cpp\n\n");
+        _("Optional OGRE 14.6.2 compatibility patch\n\nThe official OGRE 14.6.2 OgreAssimpConverter registers the model directory as a non-recursive resource location. As a result, OBJ geometry may be converted successfully while referenced material files in child directories are not found.\n\nThe compatibility patch makes the existing model resource location recursive. This allows Assimp sidecars beneath the model directory to be resolved through OGRE's resource system without expanding the registered filesystem root.\n\nThe patch modifies only:\n    Tools/AssimpConverter/main.cpp\n\n");
 
     if (OgreMacPatchState.Matches(_T("applicable")))
     {
         text +=
-            _("Patch state:\n"
-              "    Available for this exact OGRE 14.6.2 checkout\n\n"
-              "Press Next to choose whether to apply the patch.\n"
-              "Declining leaves the official upstream source unchanged.\n");
+            _("Patch state:\n    Available for this exact OGRE 14.6.2 checkout\n\nPress Next to choose whether to apply the patch.\nDeclining leaves the official upstream source unchanged.\n");
     }
     else if (OgreMacPatchState.Matches(_T("already_applied")))
     {
         text +=
-            _("Patch state:\n"
-              "    Already applied\n\n"
-              "No additional source change is required.\n");
+            _("Patch state:\n    Already applied\n\nNo additional source change is required.\n");
     }
     else if (OgreMacPatchState.Matches(_T("unsupported_version")))
     {
         text +=
-            _("Patch state:\n"
-              "    Unsupported OGRE source version\n\n"
-              "The patch will not be applied.\n");
+            _("Patch state:\n    Unsupported OGRE source version\n\nThe patch will not be applied.\n");
     }
     else if (OgreMacPatchState.Matches(_T("git_unavailable")))
     {
         text +=
-            _("Patch state:\n"
-              "    Git is unavailable\n\n"
-              "The patch will not be applied.\n");
+            _("Patch state:\n    Git is unavailable\n\nThe patch will not be applied.\n");
     }
     else if (OgreMacPatchState.Matches(_T("unexpected_source")))
     {
         text +=
-            _("Patch state:\n"
-              "    The target source file is neither pristine nor recognised "
-              "as already patched.\n\n"
-              "Code::Blocks will not modify this source tree.\n");
+            _("Patch state:\n    The target source file is neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify this source tree.\n");
     }
     else
     {
         text +=
-            _("Patch state:\n"
-              "    Not yet available\n\n"
-              "The source state will be checked again when leaving this page.\n");
+            _("Patch state:\n    Not yet available\n\nThe source state will be checked again when leaving this page.\n");
     }
 
     if (!OgreMacPatchError.IsEmpty())
@@ -606,8 +582,7 @@ function OgreMacPatchPageText()
     }
 
     text +=
-        _("\nThis local patch is temporary and is intended to be removed once "
-          "the selected official OGRE release contains the correction.");
+        _("\nThis local patch is temporary and is intended to be removed once the selected official OGRE release contains the correction.");
 
     return text;
 }
@@ -634,25 +609,11 @@ function OgreMacSetRebuildRequired(required)
 
 function OgreMacApplyPatch()
 {
-        local explanation =
-        _("Code::Blocks can apply a compatibility patch to the official "
-          "OGRE 14.6.2 source checkout.\n\n"
-          "OgreAssimpConverter currently registers the model directory as a "
-          "non-recursive resource location. The patch makes that existing "
-          "resource location recursive so material and texture sidecars in "
-          "child directories can be resolved through OGRE's resource system.\n\n"
-          "Source:\n") +
+    local explanation =
+        _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.2 source checkout.\n\nOgreAssimpConverter currently registers the model directory as a non-recursive resource location. The patch makes that existing resource location recursive so material and texture sidecars in child directories can be resolved through OGRE's resource system.\n\nSource:\n") +
         OgreMacSource +
-        _("\n\nModified file:\n"
-          "Tools/AssimpConverter/main.cpp\n\n"
-          "The patch does not add another filesystem root or provide "
-          "unrestricted filesystem access.\n\n"
-          "The source modification remains visible in Git as an uncommitted "
-          "working-tree change.\n\n"
-          "After applying the patch, Code::Blocks will rebuild and reinstall "
-          "OGRE. CMake configuration does not need to be repeated.\n\n"
-          "Choose Cancel to continue without applying the patch.");
-          
+        _("\n\nModified file:\nTools/AssimpConverter/main.cpp\n\nThe patch does not add another filesystem root or provide unrestricted filesystem access.\n\nThe source modification remains visible in Git as an uncommitted working-tree change.\n\nAfter applying the patch, Code::Blocks will rebuild and reinstall OGRE. CMake configuration does not need to be repeated.\n\nChoose Cancel to continue without applying the patch.");
+
     local report =
         Wizard.MacPatchApply(
             OgreMacPatchId,
@@ -774,13 +735,9 @@ function OgreMacAllReady()
 
 function BeginWizard()
 {
-    Wizard.AddInfoPage(
+Wizard.AddInfoPage(
     _T("OgreIntro"),
-    _("Welcome to the  OGRE project wizard!\n\n"
-  "This wizard uses the official OGRE 14.6.2 source release.\n\n"
-  "v3.8.1 validates prerequisites, optionally enables recursive asset-sidecar "
-  "resources in OgreAssimpConverter, configures, builds, installs and "
-  "validates the OGRE SDK.\n"));
+    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.2 source release.\n\nv3.8.1 validates prerequisites, optionally enables recursive asset-sidecar resources in OgreAssimpConverter, configures, builds, installs and validates the OGRE SDK.\n"));
 
     if (PLATFORM == PLATFORM_MAC)
     {
