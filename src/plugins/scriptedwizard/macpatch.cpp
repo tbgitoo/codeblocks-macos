@@ -36,10 +36,10 @@ namespace
 {
 
 const wxString kOgreAssimpPatchId =
-    wxT("ogre-14.6.2-assimp-sidecar");
+    wxT("ogre-14.6.3-assimp-sidecar");
 
 const wxString kOgreAssimpPatchFile =
-    wxT("ogre-14.6.2-assimp-sidecar-path.patch");
+    wxT("ogre-14.6.3-assimp-sidecar-path.patch");
 
 const wxString kOgreAssimpTargetFile =
     wxT("PlugIns/Assimp/src/AssimpLoader.cpp");

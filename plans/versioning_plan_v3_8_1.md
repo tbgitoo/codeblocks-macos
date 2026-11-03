@@ -1,31 +1,36 @@
 # Code::Blocks v3.8.1 - correct OGRE asset conversion on macOS
 
-**Status: IN PROGRESS.** v3.8.1 follows the released v3.8 OGRE-wizard baseline and corrects the remaining asset-conversion problem exposed after Assimp was added as a declared Homebrew prerequisite.
+**Status: IN PROGRESS.** v3.8.1 follows the released v3.8 OGRE-wizard baseline and corrects the remaining macOS OGRE installation and Assimp sidecar-resolution problems reproduced from a clean exact OGRE `v14.6.3` checkout.
 
-**Question this version answers:** why can `OgreAssimpConverter` successfully serialise OBJ geometry while failing to preserve referenced materials, what is the smallest safe correction for the pinned OGRE `v14.6.2` workflow, and how should that correction be validated and eventually proposed upstream?
+**Question this version answers:** how can the Code::Blocks OGRE wizard produce a usable installed `OgreAssimpConverter` on macOS, and what are the smallest safe corrections required for Assimp sidecars located either beside the model or in child directories beneath the model directory?
 
-The investigation is now substantially simpler than the original diagnosis. The actual compatibility defect is in `OgreAssimpConverter`: it registers the directory containing the input model as a non-recursive OGRE `FileSystem` resource location. Assimp sidecars are then resolved through OGRE's resource system, but qualified resources beneath that directory are not exposed recursively. Changing that single registration to `recursive=true` makes the converter treat the already-authorised model directory as a recursive resource root and restores material import for the tested boundary-respecting layout.
+The current diagnosis is based only on reproducible clean controls. Ambiguous historical installations are not used as evidence.
 
-The earlier `PlugIns/Assimp/src/AssimpLoader.cpp` absolute-path translation was a plausible and experimentally useful intermediate correction, but it is no longer part of the intended v3.8.1 production patch. It fixed one observed `v14.6.2` flat manifestation while the investigation was still incomplete. The final compatibility patch is now narrowed to `Tools/AssimpConverter/main.cpp`; `AssimpLoader.cpp` stays pristine.
+Three independent problems are established:
 
-The Git-backed `macpatch` mechanism remains fully justified and remains part of v3.8.1. Only the known OGRE patch resource and its explanatory text need to be replaced with the corrected one-file patch.
+1. vanilla OGRE `v14.6.3` installs Release frameworks below `lib/macosx/Release`, but the installed converter receives only `<prefix>/lib` from OGRE's default install RPATH policy;
+2. vanilla installed `plugins.cfg` points to `<prefix>/lib/OGRE`, while the macOS framework plug-ins are installed below `lib/macosx/Release`;
+3. after the runtime layout is corrected, OGRE's custom Assimp `OgreIOSystem` receives absolute sidecar paths from Assimp and passes them directly to `ResourceGroupManager`, although OGRE resource lookup requires names relative to the registered resource location. After this resource-name translation is corrected, nested sidecars additionally require the converter's source `FileSystem` resource location to be recursive.
 
-v3.8 remains the known-good released baseline. The v3.8.1 implementation order is now:
+The proposed v3.8.1 solution has two layers:
 
-1. preserve the retained regression evidence and corrected root-cause record;
-2. keep the completed optional `macpatch` infrastructure unchanged;
-3. replace the provisional `AssimpLoader.cpp` patch with a one-line `OgreAssimpConverter` recursive-resource patch;
-4. regenerate the clean exact-`v14.6.2` Git patch from pristine source;
-5. update the installed Scripted Wizard patch resource and user-facing explanation;
-6. validate patched and declined wizard branches with flat and boundary-respecting child-material fixtures;
-7. create a synthetic public reproducer and test the same correction against current master before upstream submission;
-8. retire the local OGRE compatibility patch when the pinned official OGRE release contains the correction, while retaining `macpatch` as reusable infrastructure.
+```text
+Code::Blocks CMake configuration
+    +-- final macOS framework install RPATH
+    +-- final macOS OGRE plug-in path
+
+exact-version optional OGRE compatibility patch
+    +-- Assimp absolute-sidecar path -> OGRE resource-name translation
+    +-- recursive registration of the existing source resource root
+```
+
+The Git-backed `macpatch` mechanism remains part of v3.8.1. It remains constrained to compiled-in patch identifiers and exact supported source contracts.
 
 ---
 
-## 1. Known-good starting point from v3.8
+## 1. Known-good architectural starting point from v3.8
 
-The released v3.8 workflow establishes:
+The v3.8 wizard architecture remains valid:
 
 ```text
 Homebrew
@@ -36,16 +41,16 @@ Homebrew
     +-- assimp
             |
             v
-official OGRE v14.6.2 source
+exact official OGRE source
             |
             +-- configure
-            +-- build
+            +-- build default/all target
             +-- install
             |
             v
-~/Library/CodeBlocks/ogre-14.6.2/
+~/Library/CodeBlocks/ogre-<version>/
             |
-            +-- working OGRE SDK
+            +-- OGRE SDK
             +-- OgreAssimpConverter
             +-- Codec_Assimp.framework
             |
@@ -53,35 +58,50 @@ official OGRE v14.6.2 source
 ordinary generated Code::Blocks OGRE project
 ```
 
-The general v3.8 architecture remains valid. The wizard owns prerequisite establishment, exact source acquisition, configure/build/install orchestration and project generation.
+The native `MacCMakeConfigure` helper currently invokes the equivalent of:
 
-The remaining issue is narrow: `OgreAssimpConverter` establishes the model directory as an OGRE filesystem resource location, but does so non-recursively. The v3.8.1 compatibility patch changes only that resource-registration policy.
+```bash
+cmake \
+    -S "$SOURCE" \
+    -B "$BUILD" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$SDK"
+```
 
-No diagnostic instrumentation is part of the production patch.
+The native build helper performs the default/all build:
+
+```bash
+cmake --build "$BUILD" --parallel <bounded-job-count>
+```
+
+Installation is equivalent to:
+
+```bash
+cmake --install "$BUILD"
+```
+
+The wizard does **not** set `OGRE_BUILD_DEPENDENCIES=OFF`. The reference build must not introduce that option.
 
 ---
 
-## 2. Regression asset and publication boundary
+## 2. Reference source and publication boundary
 
-The failure was investigated locally with a third-party model bundle containing:
+The controlled baseline is exact OGRE `v14.6.3`:
 
 ```text
-full-resolution .dae input
-full-resolution .obj input
-matching .mtl sidecar
-multiple PNG textures
-additional lower-detail model variants
+commit e3ee8850ecf5e0038b6d850ec4c865c2039342d5
+tag    v14.6.3
 ```
 
-The third-party bundle, its extracted files, textures, converted outputs and screenshots are **not part of the Code::Blocks repository, release artefacts or public regression-data distribution**.
-
-Private regression work is retained under:
+Private regression work remains under:
 
 ```text
 /Users/thomasbraschler/git/ogre-charizard-test/test_matrix/
 ```
 
-Each meaningful test result is stored in a state-specific evidence directory together with:
+The third-party model bundle, extracted geometry, MTL files, textures, converted outputs and screenshots are **not part of the Code::Blocks repository, release artefacts or public regression-data distribution**.
+
+Each meaningful result should retain:
 
 ```text
 OgreAssimp.log
@@ -91,79 +111,161 @@ generated .material
 manifest.txt
 ```
 
-The manifest records the producing OGRE version/revision, patch state, Assimp version, converter path, invocation, fixture layout and result. This replaces ambiguous historical `before` / `after` output naming.
-
-A future public reproducer must be newly authored and legally redistributable. It must contain no geometry, textures, screenshots, filenames or other derivatives from the private third-party bundle.
+A future public reproducer must be newly authored and legally redistributable.
 
 ---
 
-## 3. Confirmed end-to-end behaviour
+## 3. Confirmed clean `v14.6.3` build and runtime behaviour
 
-### 3.1 OGRE converter installation
+### 3.1 Canonical configure/build/install procedure
 
-A fresh `v14.6.2` build performed after Assimp installation produces:
+The clean manual control that mirrors the wizard and adds the two validated macOS runtime-layout corrections is:
 
-```text
-~/Library/CodeBlocks/ogre-14.6.2/bin/macosx/OgreAssimpConverter
-~/Library/CodeBlocks/ogre-14.6.2/lib/macosx/Release/Codec_Assimp.framework
+```bash
+cmake \
+    -S "$SOURCE" \
+    -B "$BUILD" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$SDK" \
+    -DCMAKE_INSTALL_RPATH="$SDK/lib/macosx/Release" \
+    -DOGRE_PLUGINS_PATH="lib/macosx/Release"
+
+cmake --build "$BUILD" --parallel 8
+cmake --install "$BUILD"
 ```
 
-The converter requires its normal macOS runtime configuration and Assimp codec plug-in.
+The complete default build is required. `OgreAssimpConverter` must not be treated as an isolated build target.
 
-### 3.2 COLLADA control
+### 3.2 macOS installed framework RPATH issue
 
-The locally tested COLLADA input was rejected by Assimp because it contained an invalid reference form. This remains a source-asset failure and is not evidence for the OBJ/MTL resource-registration defect.
+Pristine OGRE installs Release frameworks under:
 
-### 3.3 Pristine `v14.6.2` material-loss behaviour
+```text
+<prefix>/lib/macosx/Release
+```
 
-A fresh wizard-created exact `v14.6.2` checkout can successfully import and serialise the OBJ geometry while failing to preserve the MTL-defined materials.
+but vanilla installed tools receive only:
 
-Observed geometry output remains substantial:
+```text
+<prefix>/lib
+```
+
+from OGRE's install RPATH policy.
+
+Adding at configure time:
+
+```text
+CMAKE_INSTALL_RPATH=<prefix>/lib/macosx/Release
+```
+
+makes the installed converter resolve directly linked frameworks without post-install mutation or `DYLD_*` overrides.
+
+### 3.3 Installed `plugins.cfg` issue
+
+OGRE's default non-Windows plug-in path produces:
+
+```text
+PluginFolder=<prefix>/lib/OGRE
+```
+
+while the tested macOS framework plug-ins are installed under:
+
+```text
+<prefix>/lib/macosx/Release
+```
+
+Configuring with:
+
+```text
+OGRE_PLUGINS_PATH=lib/macosx/Release
+```
+
+makes installed `plugins.cfg` match the actual framework plug-in directory.
+
+With both configure-time corrections, the installed converter:
+
+```text
+starts successfully
+resolves directly linked OGRE frameworks
+loads Codec_Assimp.framework
+initialises Assimp 6.0.0
+reports supported formats
+```
+
+### 3.4 Wizard-generated project configuration is separate
+
+The Code::Blocks project template's `plugins.cfg` already substitutes the installed macOS Release framework directory. The failing file was OGRE's own installed `bin/plugins.cfg`, used by `OgreAssimpConverter`.
+
+The generated-project `resources.cfg` is independent of the converter bootstrap issue.
+
+---
+
+## 4. Confirmed Assimp sidecar-resolution defect
+
+### 4.1 Native Assimp control
+
+Homebrew's native Assimp command-line tool successfully imports the same private flat OBJ fixture:
 
 ```text
 6 meshes
 6000 faces
-17763 post-processed vertices
-successful OGRE mesh serialisation
+17763 vertices
+4 materials
+4 diffuse texture references
 ```
 
-The material failure has the private regression fingerprint:
+The material loss is therefore introduced by the OGRE/Assimp integration path, not by the source asset or native Assimp OBJ importer.
+
+### 4.2 Pristine OGRE flat failure
+
+With corrected runtime configuration but pristine OGRE conversion source, the flat fixture fails MTL resolution while geometry serialisation succeeds:
 
 ```text
-.mesh      approximately 819 KB
-.material  116 bytes
-one generated fallback material
-no retained diffuse texture references
+.mesh       818717 bytes
+.material      116 bytes
+1 fallback material
+0 retained diffuse texture references
 ```
 
-Typical log evidence includes failed MTL lookup followed by fallback-material creation.
+`.mesh` existence is not sufficient evidence of successful conversion.
 
-`.mesh` existence is therefore not a sufficient conversion success criterion.
+### 4.3 Instrumented `OgreIOSystem` result
 
-### 3.4 Successful material conversion fingerprint
-
-A successful conversion of the same private model produces:
+Temporary diagnostics established that Assimp requests the sidecar using an absolute path:
 
 ```text
-.mesh      approximately 819 KB
-.material  640 bytes
-four effective materials
-four retained diffuse texture references
+/absolute/model-directory/pm0006_00_00.mtl
 ```
 
-The successful material script contains the expected effective materials and texture references. A completely external OGRE consumer previously rendered a correctly converted model; the initial dark-blue-window episode in that rendering proof was a camera-framing issue, not a resource-loading defect.
+Pristine `OgreIOSystem` passes that spelling to `ResourceGroupManager`, although the registered resource location expects:
 
-### 3.5 Historical `AssimpLoader.cpp` detour
+```text
+pm0006_00_00.mtl
+```
 
-An intermediate patch to `PlugIns/Assimp/src/AssimpLoader.cpp` translated absolute Assimp requests beneath the source directory into resource-relative OGRE names. That patch changed one tested flat `v14.6.2` case from failure to success and was therefore a legitimate diagnostic step.
+The primary OBJ succeeds only because `OgreIOSystem` special-cases an exact match with `source->getName()`.
 
-Subsequent matrix testing showed that the patch was not a general resource-layout solution, did not make child resources visible, and is not required in the final v3.8.1 compatibility patch.
+### 4.4 Resource-name translation correction
 
-The historical `AssimpLoader.cpp` patch is retained only as investigation history. Production `AssimpLoader.cpp` returns to pristine upstream state.
+If an Assimp request is beneath the primary source directory, translating the absolute path into the corresponding resource-relative name changes the flat trace from:
 
-### 3.6 Boundary-respecting child-material fixture
+```text
+normalized=[/absolute/model-directory/pm0006_00_00.mtl]
+opened=[false]
+```
 
-A security-relevant fixture isolates resource recursion without allowing resource-root escape:
+to:
+
+```text
+normalized=[pm0006_00_00.mtl]
+opened=[true]
+```
+
+The flat fixture then succeeds.
+
+The instrumented investigation tree is evidence only. It is **not** the source from which the production patch will be cleaned or derived.
+
+### 4.5 Boundary-respecting child-material fixture
 
 ```text
 child-material/
@@ -179,62 +281,66 @@ The OBJ contains:
 mtllib materials/pm0006_00_00.mtl
 ```
 
-The MTL sits below the exact directory registered by `OgreAssimpConverter`. There is no `..`, no sibling traversal and no model-controlled absolute path outside the registered root.
+With resource-name translation alone:
 
-Pristine current master and current master with the historical `AssimpLoader.cpp` patch both fail this fixture, demonstrating that path translation in `OgreIOSystem` does not address child-resource visibility.
+```text
+normalized=[materials/pm0006_00_00.mtl]
+opened=[false]
+```
 
-### 3.7 Actual production correction
+This isolates nested-resource visibility as a separate issue.
 
-`OgreAssimpConverter` currently registers the source directory as:
+### 4.6 Recursive source resource registration
+
+Pristine converter registration:
 
 ```cpp
 ResourceGroupManager::getSingleton().addResourceLocation(
     path, "FileSystem", RGN_DEFAULT);
 ```
 
-The v3.8.1 correction is:
+Correction:
 
 ```cpp
 ResourceGroupManager::getSingleton().addResourceLocation(
     path, "FileSystem", RGN_DEFAULT, true);
 ```
 
-Only `Tools/AssimpConverter/main.cpp` is changed.
+With both corrections:
 
-Testing exact pristine `v14.6.2` with this converter change and an untouched `AssimpLoader.cpp` makes the boundary-respecting child-material fixture succeed with the full 640-byte / four-material / four-texture fingerprint.
+```text
+normalized=[materials/pm0006_00_00.mtl]
+opened=[true]
+```
 
-The intended final local patch therefore consists solely of recursive registration of the already-authorised source resource directory.
+and the private fingerprint becomes:
+
+```text
+.mesh       818713 bytes
+.material      640 bytes
+4 effective materials
+4 diffuse texture references
+```
+
+Controlled matrix:
+
+```text
+pristine
+    flat            FAIL
+    child-material  FAIL
+
+resource-name translation only
+    flat            PASS
+    child-material  FAIL
+
+resource-name translation + recursive=true
+    flat            PASS
+    child-material  PASS
+```
 
 ---
 
-## 4. Confirmed technical cause
-
-The root cause is the resource-location policy established by `OgreAssimpConverter`.
-
-The converter determines the directory containing the input model and registers it as an OGRE `FileSystem` resource location. In pristine `v14.6.2`, that registration is non-recursive:
-
-```text
-model directory
-        |
-        +-- model.obj
-        +-- model.mtl
-        +-- materials/
-        |       +-- model.mtl
-        +-- textures/
-                +-- diffuse.png
-```
-
-A non-recursive registration does not provide the converter with the resource topology required for qualified child resources such as:
-
-```text
-materials/model.mtl
-```
-
-The production correction makes the same already-authorised source directory recursive. It does not add a new filesystem root and does not implement direct unrestricted filesystem fallback.
-
-### 4.1 Security boundary
-
-The compatibility contract is:
+## 5. Security and resource boundary
 
 ```text
 registered source directory
@@ -245,173 +351,220 @@ registered source directory
         +-- textures/diffuse.png       allowed
 
 ../outside/...                         not a required supported case
-/absolute/unrelated/path               not authorised by this patch
+/absolute/unrelated/path               not authorised by the fix
 ```
 
-The model may identify resources within the filesystem resource root established by the converter. The model does not gain authority to broaden that root.
+Path translation must apply only to requests demonstrably beneath the primary source directory. No unrestricted direct filesystem fallback is introduced.
 
-### 4.2 Why the old `AssimpLoader.cpp` patch is removed
-
-The old patch acted on one path spelling presented to `OgreIOSystem`; it did not address how the converter exposed the underlying resource hierarchy. Once the investigation isolated resource registration directly, the smaller and more architectural correction was to register the intended source resource root recursively.
-
-The final patch therefore leaves `PlugIns/Assimp/src/AssimpLoader.cpp` untouched.
+Recursive registration broadens visibility only within the already-authorised source root.
 
 ---
 
-## 5. M1 - reproduce and instrument the material-loss failure
+## 6. M1 - establish a reproducible clean baseline
 
 **Status: DONE.**
 
-Temporary diagnostics in `Tools/AssimpConverter/main.cpp` and `PlugIns/Assimp/src/AssimpLoader.cpp` established that geometry conversion could succeed while MTL resolution failed.
+Established rules:
 
-Technical lessons:
-
-- successful primary-model opening does not prove sidecar-resource visibility;
-- Assimp can try multiple path forms and fallbacks;
-- an individual failed path probe is not sufficient evidence of the final import result;
-- `.mesh` serialisation can succeed while material import has failed;
-- generated `.material` content, texture references and retained logs are necessary regression evidence;
-- historical outputs require exact provenance before causal conclusions are drawn.
+- preserve exact tag and commit;
+- use clean source and build directories;
+- build the complete default/all target;
+- mirror the wizard's actual CMake options;
+- clear exported `DYLD_*` variables;
+- separate build-tree diagnostics from installed-SDK acceptance testing;
+- do not use ambiguous historical installations as causal evidence.
 
 ---
 
-## 6. M2 - isolate resource-layout behaviour
+## 7. M2 - make the installed macOS converter runnable
 
-**Status: DONE.**
+**Status: DONE, WIZARD INTEGRATION REQUIRED.**
 
-Testing expanded from the original flat bundle into controlled layouts.
-
-The retained four-state matrix established:
-
-| OGRE state | Flat | Deep (`../materials/...`) |
-|---|---|---|
-| exact `v14.6.2`, pristine | FAIL | FAIL |
-| exact `v14.6.2`, historical `AssimpLoader.cpp` patch | PASS | FAIL |
-| current master, pristine | PASS | FAIL |
-| current master, historical `AssimpLoader.cpp` patch | PASS | FAIL |
-
-This proved that the intermediate patch had a real but narrow effect and that the deep sibling case represented a different boundary.
-
-A later boundary-respecting child fixture removed the `../` ambiguity and demonstrated a failure entirely inside the converter's registered source root.
-
----
-
-## 7. M3 - identify the actual root cause and smallest correction
-
-**Status: DONE.**
-
-The decisive experiment changed one converter argument:
-
-```cpp
-addResourceLocation(path, "FileSystem", RGN_DEFAULT)
-```
-
-to:
-
-```cpp
-addResourceLocation(path, "FileSystem", RGN_DEFAULT, true)
-```
-
-using exact pristine `v14.6.2` with `AssimpLoader.cpp` untouched.
-
-The boundary-respecting child-material fixture changed from the fallback-material state to:
+Validated configure additions:
 
 ```text
-818713-byte .mesh
-640-byte .material
-four effective materials
-four diffuse texture references
+CMAKE_INSTALL_RPATH=<prefix>/lib/macosx/Release
+OGRE_PLUGINS_PATH=lib/macosx/Release
 ```
 
-This establishes the intended production fix:
+### M2 production task
 
-```text
-Tools/AssimpConverter/main.cpp
-    make the existing source FileSystem resource location recursive
-```
+Update the constrained macOS CMake path so the wizard supplies these values using the final known SDK prefix.
 
-The historical `AssimpLoader.cpp` patch is superseded and must not be included in the final compatibility artefact.
-
-Technical lessons:
-
-- fix the resource namespace at the point where the converter establishes it;
-- do not broaden model-controlled filesystem access;
-- do not retain an intermediate compatibility workaround once the smaller root-cause correction is known;
-- a one-line architectural correction is preferable to maintaining path-rewriting logic in the Assimp I/O adapter.
+Do not add `OGRE_BUILD_DEPENDENCIES=OFF`, post-install `install_name_tool` surgery, hand-edited `plugins.cfg`, or `DYLD_*` workarounds.
 
 ---
 
-## 8. M4 - regenerate the clean `v14.6.2` compatibility patch
+## 8. M3 - isolate Assimp sidecar namespace behaviour
+
+**Status: DONE.**
+
+Temporary tracing proved:
+
+- Assimp requests absolute sidecar paths;
+- OGRE resource lookup expects names relative to the source resource root;
+- bounded resource-name translation fixes the flat fixture;
+- nested sidecars require recursive registration of the source root.
+
+The instrumented source tree and its binaries are retained only as investigation evidence.
+
+---
+
+## 9. M4 - reconstruct the clean exact-version OGRE compatibility patch
 
 **Status: NEXT.**
 
-The existing patch artefact:
+The production patch must **not** be produced by deleting diagnostics from the instrumented working tree. That subtractive approach risks retaining blank-line churn, whitespace changes, altered comments, experimental branches or other spurious artefacts.
+
+The production delta must instead be reconstructed additively from a fresh exact checkout.
+
+### 9.1 Create a fresh exact source checkout
+
+Use a new source directory distinct from the investigation tree, for example:
 
 ```text
-ogre-14.6.2-assimp-sidecar-path.patch
+~/git/ogre-v14.6.3-patch-source
 ```
 
-contains obsolete investigation-era `AssimpLoader.cpp` changes and must be replaced.
-
-The new compatibility patch must be generated from pristine exact OGRE `v14.6.2` and modify only:
+Clone or check out exact:
 
 ```text
-Tools/AssimpConverter/main.cpp
+commit e3ee8850ecf5e0038b6d850ec4c865c2039342d5
+tag    v14.6.3
 ```
 
-with the behavioural change:
+Before editing, require:
+
+```bash
+git status --short
+git diff --check
+git rev-parse HEAD
+git describe --tags --exact-match HEAD
+```
+
+Expected:
+
+```text
+empty status
+empty diff check
+e3ee8850ecf5e0038b6d850ec4c865c2039342d5
+v14.6.3
+```
+
+Do not copy either modified source file from the investigation tree.
+
+### 9.2 Reintroduce only the minimal `AssimpLoader.cpp` behaviour
+
+Manually implement only the bounded resource-name translation established by the experiment.
+
+Requirements:
+
+- map an Assimp request below the primary source directory to its resource-relative name;
+- preserve the primary source-stream special case;
+- leave unrelated or out-of-root paths unchanged;
+- continue using `ResourceGroupManager` for sidecar lookup;
+- introduce no direct arbitrary filesystem opening;
+- include no tracing, private paths, fixture names or diagnostic comments;
+- avoid unrelated reformatting and blank-line changes.
+
+### 9.3 Reintroduce only the minimal `main.cpp` behaviour
+
+Apply only:
 
 ```diff
 -ResourceGroupManager::getSingleton().addResourceLocation(path, "FileSystem", RGN_DEFAULT);
 +ResourceGroupManager::getSingleton().addResourceLocation(path, "FileSystem", RGN_DEFAULT, true);
 ```
 
-### 8.1 Recreate pristine source and final delta
+No other converter source change belongs in the production patch.
 
-**Status: NEXT.**
+### 9.4 Review the fresh-tree delta before building
 
-Use the normal exact shallow `v14.6.2` wizard checkout or an equivalent pristine exact-tag checkout.
+The first production review is the complete Git diff itself:
 
-Apply only the recursive-registration change. `PlugIns/Assimp/src/AssimpLoader.cpp` must remain byte-for-byte upstream.
+```bash
+git status --short
 
-### 8.2 Clean patch requirements
+git diff --check
 
-The regenerated patch must:
+git diff --stat
 
-- target exact OGRE `v14.6.2`;
-- modify only `Tools/AssimpConverter/main.cpp`;
-- contain no diagnostic logging;
-- contain no private asset references;
-- contain no `AssimpLoader.cpp` changes;
-- contain no arbitrary filesystem opening logic;
-- leave the registered root unchanged and only make it recursive;
-- pass `git diff --check`;
-- pass `git apply --check` against pristine exact `v14.6.2`;
-- pass `git apply --reverse --check` after application.
-
-### 8.3 Patch identity and storage
-
-The existing known patch ID and resource mapping may remain stable if convenient, but the installed patch contents must be replaced.
-
-The development patch artefact remains outside:
-
-```text
-~/Library/CodeBlocks/ogre-source-14.6.2
-~/Library/CodeBlocks/ogre-source-14.6.2/build-codeblocks
-~/Library/CodeBlocks/ogre-14.6.2
+git diff -- \
+    PlugIns/Assimp/src/AssimpLoader.cpp \
+    Tools/AssimpConverter/main.cpp
 ```
 
-so disposable wizard-owned trees can be recreated without losing the patch source.
+`git status --short` must name only:
+
+```text
+PlugIns/Assimp/src/AssimpLoader.cpp
+Tools/AssimpConverter/main.cpp
+```
+
+The diff must contain only the two intentionally reintroduced behaviours.
+
+### 9.5 Build and test from the fresh production tree
+
+Configure a new build and SDK from the fresh source using the two macOS runtime-layout options:
+
+```bash
+cmake \
+    -S "$PATCH_SOURCE" \
+    -B "$PATCH_BUILD" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$PATCH_SDK" \
+    -DCMAKE_INSTALL_RPATH="$PATCH_SDK/lib/macosx/Release" \
+    -DOGRE_PLUGINS_PATH="lib/macosx/Release"
+
+cmake --build "$PATCH_BUILD" --parallel 8
+cmake --install "$PATCH_BUILD"
+```
+
+Re-run flat and child-material against this newly reconstructed build. The investigation-tree binary is not an acceptance artefact.
+
+### 9.6 Generate and validate the patch
+
+Only after the fresh production tree passes both fixtures:
+
+```bash
+git diff --check
+
+git diff --binary -- \
+    PlugIns/Assimp/src/AssimpLoader.cpp \
+    Tools/AssimpConverter/main.cpp \
+    > "$PATCH_FILE"
+```
+
+Validate against another pristine exact checkout:
+
+```bash
+git apply --check "$PATCH_FILE"
+git apply "$PATCH_FILE"
+git apply --reverse --check "$PATCH_FILE"
+```
+
+Patch requirements:
+
+- exact supported OGRE version;
+- exactly two target files;
+- no trace logging;
+- no private references;
+- no unrestricted filesystem fallback;
+- no unrelated whitespace or blank-line churn;
+- authorised root unchanged;
+- forward and reverse checks succeed.
+
+### 9.7 Version contract
+
+Controlled evidence currently targets exact `v14.6.3`. Do not label the final artefact as a `v14.6.2` patch unless the final reconstructed two-change delta is separately reproduced and validated against exact `v14.6.2`.
 
 ---
 
-## 9. M5 - Git-backed optional patch handler
+## 10. M5 - Git-backed optional patch handler
 
-**Status: DONE.**
+**Status: DONE; PATCH CONTENT/VERSION UPDATE REQUIRED.**
 
-M5 remains in place unchanged architecturally. The final OGRE patch contents change; the native patch-delivery mechanism does not.
-
-Git remains the patch engine. Code::Blocks does not implement a bespoke source rewriter.
+The `macpatch` architecture remains unchanged.
 
 Implemented API:
 
@@ -424,19 +577,7 @@ Wizard.MacPatchApply(
     confirmLabel)
 ```
 
-The native helper:
-
-1. recognises only compiled-in patch identifiers;
-2. resolves the patch internally as an installed Scripted Wizard resource;
-3. validates the wizard-owned source root and exact supported OGRE contract;
-4. reuses validated Git discovery;
-5. executes Git through argument vectors without a shell;
-6. uses `git apply --check` for applicability;
-7. uses `git apply --reverse --check` for already-applied detection;
-8. verifies post-apply state;
-9. reports structured states;
-10. leaves accepted changes visible as uncommitted working-tree modifications;
-11. never runs destructive recovery commands or creates commits.
+The helper recognises only known patch identifiers, validates exact source contracts, invokes Git without a shell, checks forward and reverse applicability, verifies post-apply state, leaves accepted changes visible, and performs no destructive recovery or commits.
 
 Supported states remain:
 
@@ -450,96 +591,23 @@ apply_failed
 applied
 ```
 
-### 9.1 Native implementation
-
-**Status: DONE.**
+### 10.1 Wizard explanation update
 
 ```text
-src/plugins/scriptedwizard/macpatch.h
-src/plugins/scriptedwizard/macpatch.cpp
+The OGRE Assimp bridge translates sidecar requests under the selected model
+resource root into OGRE resource names, and OgreAssimpConverter registers
+that existing source resource root recursively so child sidecars are visible.
 ```
 
-remain the constrained native implementation.
-
-### 9.2 Squirrel binding
-
-**Status: DONE.**
-
-The binding exposes only known-patch operations. Squirrel cannot provide arbitrary patch contents, paths or commands.
-
-### 9.3 OGRE wizard integration
-
-**Status: DONE, CONTENT UPDATE REQUIRED.**
-
-The optional patch stage remains after exact source acquisition and before CMake configuration.
-
-The page must be updated to describe the actual correction:
-
-```text
-OgreAssimpConverter registers the source resource location recursively
-so sidecars in child directories beneath the model directory are visible.
-```
-
-It must no longer describe an `AssimpLoader.cpp` absolute-path correction.
-
-### 9.4 Lifecycle validation
-
-**Status: PATCH MECHANISM DONE; FINAL PATCH REVALIDATION REQUIRED.**
-
-Already proven for `macpatch`:
-
-```text
-applicable
-user declines
-already applied
-apply succeeds
-post-apply reverse check succeeds
-normal configure/build/install proceeds
-```
-
-After replacing the known patch resource, repeat these state checks against the new one-line patch.
-
-### 9.5 Fixed design decisions
-
-- Retain `macpatch` as reusable infrastructure.
-- Use `git apply`, not custom textual rewriting.
-- Keep the known patch exact-version and human-readable.
-- Keep source modification visible and optional.
-- Keep patch consent separate from clone/configure/build consent.
-- Do not permit arbitrary patches from Squirrel.
-- Treat the wizard-owned source checkout as disposable.
+The page must not describe the defect as recursion alone.
 
 ---
 
-## 10. M6 - retained evidence, final local regression and upstream disposition
+## 11. M6 - final local regression
 
-**Status: IN PROGRESS.**
+**Status: PLANNED AFTER M4/M5 CONTENT UPDATE.**
 
-M6 now has two distinct purposes: preserve the investigation evidence and validate the corrected one-file local compatibility patch before deciding separately what to submit upstream.
-
-### 10.1 Original matrix retained as investigation evidence
-
-**Status: DONE.**
-
-The flat/deep four-state matrix is retained exactly because it documents why the intermediate `AssimpLoader.cpp` theory was insufficient.
-
-The deep `../materials/...` fixture is exploratory only. Its failure is not an acceptance failure because the reference leaves the converter's registered source root.
-
-### 10.2 Boundary-respecting child-material evidence
-
-**Status: DONE.**
-
-Current master pristine and current master with the historical `AssimpLoader.cpp` patch both fail the child-material fixture.
-
-Exact pristine `v14.6.2` with only recursive converter registration succeeds.
-
-This is the decisive evidence for replacing the old patch with the converter-only patch.
-
-### 10.3 Final `v14.6.2` patch regression
-
-**Status: PLANNED AFTER M4.**
-
-Using a fresh exact `v14.6.2` wizard lifecycle, validate at minimum:
+Validate:
 
 ```text
 patch declined / flat
@@ -549,9 +617,17 @@ patch accepted / child-material
 already-applied state
 ```
 
-Acceptance requires the converter-only patch to produce the successful material/texture outcome for the legitimate supported layouts while the declined path remains pristine upstream.
+Also validate:
 
-The private expected fingerprints remain:
+```text
+installed converter LC_RPATH includes <prefix>/lib/macosx/Release
+installed plugins.cfg points to <prefix>/lib/macosx/Release
+Codec_Assimp.framework exists there
+converter starts without DYLD_* overrides
+Codec_Assimp loads
+```
+
+Private fingerprints:
 
 ```text
 FAIL:
@@ -567,21 +643,13 @@ PASS:
     four retained diffuse texture references
 ```
 
-These byte sizes remain private-fixture fingerprints, not generic OGRE thresholds.
+---
 
-### 10.4 Current master
-
-**Status: CURRENT BUG REPRODUCED; FIX VALIDATION PLANNED.**
-
-Current pristine master fails the boundary-respecting child-material fixture. Because the local correction is now understood as converter resource registration rather than an `AssimpLoader.cpp` workaround, the same one-line `recursive=true` change is the natural current-master candidate to validate separately.
-
-Do not infer upstream suitability solely from the `v14.6.2` result. Current master must receive its own pristine-versus-corrected evidence.
-
-### 10.5 Public synthetic fixture
+## 12. M7 - current upstream and public synthetic reproducer
 
 **Status: PLANNED.**
 
-Create a minimal newly authored fixture for upstream work using only original test data. A likely structure is:
+Create newly authored redistributable data:
 
 ```text
 fixture/
@@ -591,215 +659,243 @@ fixture/
         model.mtl
 ```
 
-The OBJ must reference only a child resource beneath the registered fixture directory. No `..` traversal is required for the public bug demonstration.
-
-The fixture must:
-
-- fail on pristine current master;
-- pass with the proposed current-master correction;
-- contain no private third-party derivatives;
-- be small enough to inspect manually;
-- be legally redistributable.
-
-### 10.6 Upstream submission
-
-**Status: BLOCKED ON CURRENT-MASTER CORRECTED CONTROL.**
-
-If the one-line recursive registration change also changes the synthetic/current-master reproducer from failure to success, prepare a focused upstream commit against the correct current branch.
-
-Expected upstream change:
+Current upstream requires its own pristine-versus-corrected proof. Potential upstream concerns may be separated into:
 
 ```text
-Tools/AssimpConverter/main.cpp
-    add recursive=true to the source FileSystem resource location
+macOS install-layout configuration
+Assimp resource-name mapping
+recursive converter resource registration
 ```
-
-Expected evidence:
-
-- current master pristine failure;
-- identical current master plus one-line change success;
-- synthetic boundary-respecting fixture;
-- explanation that the authorised resource root is unchanged;
-- no Code::Blocks-specific paths or private regression data.
 
 ---
 
-## 11. M7 - final regression and retirement
+## 13. M8 - final regression and retirement
 
 **Status: PLANNED.**
 
-The final v3.8.1 regression must prove:
+Prove:
 
 ```text
-patch declined -> source and normal Ogre-head workflow remain pristine
-patch accepted -> converter-only change is applied
+patch declined -> source remains pristine
+patch accepted -> only known compatibility delta is applied
 patch accepted -> flat regression passes
 patch accepted -> child-material regression passes
 already patched -> no duplicate mutation
 normal configure/build/install -> succeeds
+installed converter -> launches without environment workaround
+installed Codec_Assimp -> loads
 beginner Ogre-head starter -> unchanged
 ```
 
-Retirement condition:
-
-```text
-when the pinned official OGRE version contains the recursive converter correction:
-    remove this OGRE patch offer
-    remove its patch mapping/resource
-    update the supported version contract
-    retain macpatch infrastructure
-    retain historical regression documentation
-```
+When the pinned official OGRE version contains the required corrections, retire the corresponding local patch/configuration workaround as applicable while retaining `macpatch` infrastructure and regression documentation.
 
 ---
 
-## 12. Expected files / areas
+## 14. Expected files / areas
 
 | File / area | v3.8.1 role |
 |---|---|
-| OGRE `Tools/AssimpConverter/main.cpp` | Sole final OGRE compatibility patch target. |
-| OGRE `PlugIns/Assimp/src/AssimpLoader.cpp` | Remains pristine; historical diagnostic patch is retired. |
-| `ogre-14.6.2-assimp-sidecar-path.patch` | Replace contents with clean converter-only patch, or rename if clearer. |
-| Scripted Wizard patch resource directory | Install the revised known patch. |
-| `src/plugins/scriptedwizard/macpatch.cpp` / `.h` | Completed reusable constrained patch mechanism. |
-| `wiz.cpp`, `Makefile.am`, maintained project files | Completed patch API binding/build integration. |
-| OGRE wizard script/page resources | Keep optional patch workflow; revise purpose text. |
-| `test_matrix` private fixtures/results | Retained investigation/regression evidence only. |
-| Future synthetic fixture | Public current-master reproducer. |
-| External OGRE probe | Historical installed-SDK rendering proof. |
-| Public releases | Exclude private regression files and derivatives. |
+| Fresh exact OGRE source checkout | Sole source for reconstructing the production delta. |
+| Instrumented OGRE investigation tree | Evidence only; never cleaned into the production patch. |
+| OGRE `PlugIns/Assimp/src/AssimpLoader.cpp` | Minimal bounded resource-name translation. |
+| OGRE `Tools/AssimpConverter/main.cpp` | Recursive existing source resource root. |
+| OGRE compatibility `.patch` resource | Clean two-file exact-version patch generated from the fresh tree. |
+| `src/plugins/scriptedwizard/maccmake.cpp` / `.h` | Add two macOS configure-time runtime-layout values. |
+| `src/plugins/scriptedwizard/macpatch.cpp` / `.h` | Existing constrained patch mechanism. |
+| OGRE wizard script/page resources | Revise patch purpose, version and explanation. |
+| Wizard-generated `plugins.cfg` | Separate project config; no change required for converter bootstrap defect. |
+| Wizard-generated `resources.cfg` | No change required for converter sidecar defect. |
+| `test_matrix` private fixtures/results | Private evidence only. |
+| Future synthetic fixture | Public upstream reproducer. |
 
 ---
 
-## 13. Milestones
+## 15. Milestones
 
-| | Objective | Check | Status |
+| Milestone | Objective | Check | Status |
 |---|---|---|---|
-| M1 | Reproduce and instrument material loss. | Geometry success versus material failure established. | **DONE** |
-| M2 | Map version/patch/layout behaviour. | Flat/deep matrix retained. | **DONE** |
-| M3 | Identify actual root cause. | Pristine `v14.6.2` + `recursive=true` succeeds with `AssimpLoader.cpp` untouched. | **DONE** |
-| M4.1 | Remove historical `AssimpLoader.cpp` delta. | Final source state leaves Assimp loader pristine. | **NEXT** |
-| M4.2 | Generate converter-only patch. | One-line `main.cpp` diff from pristine exact `v14.6.2`. | **PLANNED** |
-| M4.3 | Validate patch mechanics. | `diff --check`, forward check and reverse check succeed. | **PLANNED** |
-| M5.1 | Implement `macpatch.h/.cpp`. | Known-patch Git mechanism works. | **DONE** |
-| M5.2 | Bind native operations. | Installed plug-in exposes only known-patch methods. | **DONE** |
-| M5.3 | Integrate optional patch page. | Patch is visible, optional and before configuration. | **DONE** |
-| M5.4 | Replace patch resource/explanation. | Wizard offers converter-only recursive-registration patch. | **PLANNED** |
-| M6.1 | Preserve investigation matrix. | Historical outputs/logs/manifests retained. | **DONE** |
-| M6.2 | Validate final local patch lifecycle. | Flat and child-material accepted path passes; declined/already-applied states behave correctly. | **PLANNED** |
-| M6.3 | Build public synthetic fixture. | Original boundary-respecting reproducer created. | **PLANNED** |
-| M6.4 | Validate current-master correction. | Pristine FAIL versus recursive-registration PASS. | **PLANNED** |
-| M6.5 | Submit upstream if confirmed. | Focused converter-only PR with synthetic evidence. | **BLOCKED** |
-| M7 | Final regression and release. | Patched/pristine branches and starter contracts pass. | **PLANNED** |
+| M1 | Establish clean exact-version baseline. | Exact `v14.6.3`, complete build, controlled environment. | **DONE** |
+| M2.1 | Diagnose installed framework lookup. | Vanilla RPATH mismatch proven. | **DONE** |
+| M2.2 | Validate install RPATH correction. | Installed converter resolves direct frameworks. | **DONE** |
+| M2.3 | Diagnose installed plugin lookup. | `lib/OGRE` vs `lib/macosx/Release` mismatch proven. | **DONE** |
+| M2.4 | Validate plugin-path correction. | `Codec_Assimp` loads from installed SDK. | **DONE** |
+| M2.5 | Integrate runtime-layout configure corrections. | Wizard install launches without hand edits or `DYLD_*`. | **NEXT** |
+| M3.1 | Establish native Assimp control. | Native Assimp reads flat MTL and four textures. | **DONE** |
+| M3.2 | Trace OGRE Assimp IO bridge. | Absolute sidecar/resource-name mismatch proven. | **DONE** |
+| M3.3 | Validate resource-name translation. | Flat changes from FAIL to PASS. | **DONE** |
+| M3.4 | Isolate nested resource visibility. | Child MTL remains FAIL without recursion. | **DONE** |
+| M3.5 | Validate recursive source root. | Child MTL opens and 640-byte material is produced. | **DONE** |
+| M4.1 | Create fresh exact production source tree. | Pristine status, exact commit and tag verified. | **NEXT** |
+| M4.2 | Reintroduce minimal two-file behaviour. | No copied instrumented files or unrelated edits. | **PLANNED** |
+| M4.3 | Review fresh-tree delta. | Only two target files; no whitespace/blank-line churn or tracing. | **PLANNED** |
+| M4.4 | Build and regress fresh production tree. | Flat and child-material both pass. | **PLANNED** |
+| M4.5 | Generate and validate patch. | `diff --check`, forward check and reverse check succeed. | **PLANNED** |
+| M5.1 | Keep `macpatch` implementation. | Known-patch Git mechanism works. | **DONE** |
+| M5.2 | Update patch mapping/version/explanation. | Wizard offers correct two-part patch. | **PLANNED** |
+| M6 | Validate final wizard lifecycle. | Declined, accepted and already-applied branches behave correctly. | **PLANNED** |
+| M7.1 | Build public synthetic fixture. | Original redistributable reproducer exists. | **PLANNED** |
+| M7.2 | Validate current upstream. | Pristine versus corrected evidence exists. | **PLANNED** |
+| M7.3 | Submit upstream if confirmed. | Focused upstream evidence prepared. | **BLOCKED** |
+| M8 | Final regression and release. | Runtime, conversion and starter contracts pass. | **PLANNED** |
 
 ---
 
-## 14. Acceptance criteria
+## 16. Acceptance criteria
 
 v3.8.1 is accepted only if:
 
-1. v3.8 remains the known-good baseline.
-2. `macpatch` remains implemented, constrained and reusable.
-3. The final OGRE patch starts from pristine exact `v14.6.2`.
-4. The final OGRE patch modifies only `Tools/AssimpConverter/main.cpp`.
-5. `PlugIns/Assimp/src/AssimpLoader.cpp` remains pristine upstream.
-6. The production behaviour change is limited to recursive registration of the existing source `FileSystem` resource location.
-7. The helper continues to use Git argument vectors without a shell.
-8. Applicability and already-applied detection work with the revised patch.
-9. The patch remains visible and optional.
-10. Declining preserves pristine OGRE and the Ogre-head workflow.
-11. Accepting produces correct material conversion for the supported flat regression fixture.
-12. Accepting produces correct material conversion for a child MTL beneath the registered source root.
-13. The compatibility patch does not intentionally authorise parent/sibling traversal outside the registered root.
-14. No direct unrestricted filesystem fallback is introduced.
-15. Repeated wizard runs remain idempotent.
-16. User assets are not rewritten or renamed by the wizard.
-17. Third-party fixtures and derivatives remain outside public artefacts.
-18. Squirrel cannot provide arbitrary patch contents or commands.
-19. Any upstream fixture is newly authored and legally redistributable.
-20. Upstream submission requires separate current-master pristine-versus-corrected proof and an explicit local-patch retirement condition.
+1. v3.8 remains the known-good architectural baseline.
+2. `macpatch` remains constrained and reusable.
+3. The final supported OGRE version is explicit and exact.
+4. The installed converter RPATH contains `<prefix>/lib/macosx/Release`.
+5. Installed `plugins.cfg` points to the actual macOS Release plug-in directory.
+6. No `DYLD_*` workaround is required.
+7. `Codec_Assimp.framework` loads from the installed SDK.
+8. The production patch is reconstructed from a new pristine exact checkout.
+9. Instrumented source files are not copied into the production tree.
+10. Only the two intended OGRE source files are modified.
+11. The patch contains no tracing, private references or unrelated formatting churn.
+12. Resource-name translation applies only beneath the primary source root.
+13. No unrestricted filesystem fallback is introduced.
+14. The existing source resource root is registered recursively.
+15. The authorised root is not broadened.
+16. Flat conversion passes after patch acceptance.
+17. Child-material conversion passes after patch acceptance.
+18. Declining preserves pristine OGRE source.
+19. Forward and already-applied detection work.
+20. Repeated runs remain idempotent.
+21. User assets are not rewritten or renamed.
+22. Private fixtures remain outside public artefacts.
+23. Squirrel cannot provide arbitrary patch contents, paths or commands.
+24. Upstream fixtures are newly authored and redistributable.
+25. Current-upstream submission has separate pristine-versus-corrected proof.
+26. Local compatibility corrections have explicit retirement conditions.
 
 ---
 
-## 15. What stays rejected
+## 17. What stays rejected
 
+- Cleaning the instrumented investigation tree into the production patch.
+- Copying modified investigation files into the fresh production checkout.
 - Silent OGRE source modification.
 - Claiming patched OGRE is pristine.
 - A Code::Blocks-owned OGRE fork.
 - A bespoke source rewriter.
 - Arbitrary patch paths, contents, Git commands or shell commands from Squirrel.
-- Destructive Git recovery or wizard-created local commits.
-- Retaining the historical `AssimpLoader.cpp` workaround in the final patch.
-- Direct unrestricted filesystem fallback from model-controlled paths.
-- Treating `../` escape outside the registered resource root as a required feature.
+- Destructive Git recovery or wizard-created commits.
+- Direct unrestricted filesystem fallback.
+- Treating parent escape as a required feature.
 - Treating `.mesh` existence as full conversion success.
-- Publishing proprietary regression assets, screenshots or derivatives.
-- Ambiguous regression provenance such as unqualified `before` / `after` files.
-- Assuming a historical `v14.6.2` observation is sufficient evidence for an upstream PR.
-- Keeping the local converter patch after the pinned official version includes the correction.
+- Publishing private regression assets or derivatives.
+- Ambiguous regression provenance.
+- Adding `OGRE_BUILD_DEPENDENCIES=OFF` contrary to the actual wizard workflow.
+- Hand-editing installed `plugins.cfg` as the product solution.
+- Relying on `DYLD_*` as the product solution.
+- Building only `OgreAssimpConverter` instead of the complete tree.
+- Reducing the asset defect to recursion alone.
+- Removing resource-name translation despite the clean flat evidence.
+- Keeping local compatibility changes after the pinned official version includes them.
 
 ---
 
-## 16. Stop conditions
+## 18. Stop conditions
 
-Stop if local delivery requires a permanent fork, accumulating patchset, destructive source recovery, arbitrary patch execution, source-asset rewriting, unrestricted model-controlled filesystem access, publication of private assets or destabilisation of the v3.8 starter.
+Stop if delivery requires a permanent fork, uncontrolled accumulating patchset, destructive recovery, arbitrary patch execution, asset rewriting, unrestricted model-controlled filesystem access, publication of private assets or destabilisation of the v3.8 starter.
 
-A one-line, optional, exact-version patch that makes the converter's already-registered source directory recursive does not trigger these conditions. `macpatch` remains useful infrastructure for future constrained compatibility corrections.
-
----
-
-## 17. Done when
-
-**IN PROGRESS.** v3.8.1 is complete when the obsolete `AssimpLoader.cpp` compatibility patch is replaced by a clean converter-only exact-`v14.6.2` patch; the existing optional `macpatch` workflow delivers that patch safely; flat and boundary-respecting child-material regressions pass after acceptance; decline and already-applied states remain correct; private regression evidence stays outside released artefacts; the v3.8 Ogre-head starter remains unchanged; and current-upstream submission is either supported by a separate synthetic pristine-versus-corrected proof or explicitly deferred without blocking the local release.
+The proposed solution remains:
 
 ```text
-v3.8 known-good wizard                         DONE
+configure-time macOS runtime-layout corrections
++ fresh-tree exact-version two-file OGRE compatibility patch
++ existing constrained macpatch delivery
+```
+
+---
+
+## 19. Done when
+
+**IN PROGRESS.** v3.8.1 is complete when:
+
+- the two macOS runtime-layout configure corrections are integrated;
+- a fresh exact OGRE checkout is created for production reconstruction;
+- only the minimal resource-name translation and recursive registration are reintroduced;
+- the fresh-tree diff contains no instrumentation or spurious artefacts;
+- the fresh-tree build passes flat and child-material regressions;
+- the generated patch passes forward and reverse validation;
+- `macpatch` delivers the revised patch safely;
+- declined, accepted and already-applied branches are validated;
+- the installed converter runs without environment or config hand edits;
+- private evidence stays outside released artefacts;
+- the v3.8 starter remains unchanged;
+- upstream work is separately proven or explicitly deferred.
+
+```text
+v3.8 known-good architecture                      DONE
         |
         v
-material-loss investigation                    DONE
+clean exact v14.6.3 reference build               DONE
+        |
+        +-- installed RPATH defect                 DONE
+        +-- installed plugin-path defect           DONE
         |
         v
-flat/deep evidence matrix                      DONE
+native Assimp flat control                         PASS
         |
         v
-historical AssimpLoader patch evaluated        DONE
+OGRE pristine flat                                 FAIL
         |
         v
-boundary-respecting child fixture              DONE
+instrumented diagnosis                             DONE
+        |
+        +-- resource-name translation              flat PASS
+        +-- recursive source root                  child PASS
         |
         v
-recursive registration root cause              DONE
+freeze investigation tree as evidence              DONE
         |
         v
-retire AssimpLoader patch                      NEXT
+create fresh exact production checkout             NEXT
         |
         v
-clean one-line main.cpp patch
+reintroduce only two proven behaviours
         |
         v
-replace known patch resource/text
+review minimal fresh-tree diff
+        |
+        v
+build and test fresh production tree
+        |
+        v
+generate clean exact-version patch
+        |
+        v
+integrate CMake runtime-layout corrections
+        |
+        v
+update patch resource/version/text
         |
         v
 revalidate macpatch lifecycle
         |
         v
-final v14.6.2 flat + child regression
+final flat + child regression
         |
         v
 v3.8.1 release
         |
-        +-- synthetic current-master fixture
+        +-- synthetic current-upstream fixture
         |       |
         |       v
-        |   pristine vs recursive=true proof
+        |   pristine vs corrected proof
         |       |
         |       v
-        |   upstream PR if confirmed
+        |   upstream PR(s) if confirmed
         |
         v
-future pinned OGRE includes correction
+future official OGRE contains corrections
         |
         v
-retire OGRE patch, retain macpatch
+retire local compatibility pieces as applicable
+retain macpatch infrastructure
 ```
 
