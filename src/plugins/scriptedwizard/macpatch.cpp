@@ -45,7 +45,7 @@ const wxString kOgreAssimpTargetFile =
     wxT("PlugIns/Assimp/src/AssimpLoader.cpp");
 
 const wxString kOgreTag =
-    wxT("v14.6.2");
+    wxT("v14.6.3");
 
 wxString ReadAll(wxInputStream* in)
 {
@@ -491,7 +491,7 @@ MacPatchProbe ProbeMacPatch(
         result.state = MacPatchUnsupportedVersion;
         result.errorOutput =
             versionError.empty()
-                ? wxT("source checkout is not exact tag v14.6.2")
+                ? wxT("source checkout is not exact tag v14.6.3")
                 : versionError;
 
         return result;
