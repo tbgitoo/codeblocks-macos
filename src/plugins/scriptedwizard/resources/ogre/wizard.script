@@ -23,7 +23,7 @@ OgreMacGitAccess <- _T("");
 OgreMacGitExecutable <- _T("");
 OgreMacGitVersion <- _T("");
 
-OgreMacPatchId <- _T("ogre-14.6.2-assimp-sidecar");
+OgreMacPatchId <- _T("ogre-14.6.3-assimp-sidecar");
 OgreMacPatchState <- _T("");
 OgreMacPatchError <- _T("");
 OgreMacRebuildRequired <- false;
@@ -43,9 +43,9 @@ OgreMacBuildSucceeded <- false;
 OgreMacInstallSucceeded <- false;
 
 OgreMacRepository <- _T("https://github.com/OGRECave/ogre.git");
-OgreMacTag <- _T("v14.6.2");
-OgreMacSourceLeaf <- _T("ogre-source-14.6.2");
-OgreMacInstallLeaf <- _T("ogre-14.6.2");
+OgreMacTag <- _T("v14.6.3");
+OgreMacSourceLeaf <- _T("ogre-source-14.6.3");
+OgreMacInstallLeaf <- _T("ogre-14.6.3");
 
 function OgreReportField(report, key)
 {
@@ -322,17 +322,17 @@ function OgreMacInstalled()
 
 function OgreMacConfigurePageText()
 {
-    return _("OGRE 14.6.2 is ready to be configured with CMake.\n\nSource:\n    ") + OgreMacSource + _("\n\nBuild:\n    ") + OgreMacBuild + _("\n\nInstall:\n    ") + OgreMacInstall + _("\n\nBuild type:\n    Release\n\nPress Next to configure OGRE.\nThis step does not build or install OGRE.\n");
+    return _("OGRE 14.6.3 is ready to be configured with CMake.\n\nSource:\n    ") + OgreMacSource + _("\n\nBuild:\n    ") + OgreMacBuild + _("\n\nInstall:\n    ") + OgreMacInstall + _("\n\nBuild type:\n    Release\n\nPress Next to configure OGRE.\nThis step does not build or install OGRE.\n");
 }
 
 function OgreMacConfigureOgre()
 {
     local reason = OgreMacResolvePaths(); if (!reason.IsEmpty()) { ShowError(reason); return false; }
-    local explanation = _("Code::Blocks will configure OGRE 14.6.2 with CMake.\n\nSource:\n") + OgreMacSource + _("\n\nBuild:\n") + OgreMacBuild + _("\n\nInstall:\n") + OgreMacInstall + _("\n\nBuild type:\nRelease\n\nThe install prefix is fixed during this configuration step.\nOGRE is not built or installed by this operation.");
-    local report = Wizard.MacCMakeConfigure(OgreMacSource, OgreMacBuild, OgreMacInstall, _T("Release"), explanation, _("Configure OGRE 14.6.2"));
+    local explanation = _("Code::Blocks will configure OGRE 14.6.3 with CMake.\n\nSource:\n") + OgreMacSource + _("\n\nBuild:\n") + OgreMacBuild + _("\n\nInstall:\n") + OgreMacInstall + _("\n\nBuild type:\nRelease\n\nThe install prefix is fixed during this configuration step.\nOGRE is not built or installed by this operation.");
+    local report = Wizard.MacCMakeConfigure(OgreMacSource, OgreMacBuild, OgreMacInstall, _T("Release"), explanation, _("Configure OGRE 14.6.3"));
     if (OgreReportField(report, _T("success")).Matches(_T("1"))) return OgreMacConfigured();
     if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("CMake configuration was stopped. Files already written by CMake are left in place."));
-    else ShowError(_("OGRE 14.6.2 was not configured successfully.\n\n") + OgreReportField(report, _T("output")));
+    else ShowError(_("OGRE 14.6.3 was not configured successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
@@ -345,14 +345,14 @@ function OnLeave_OgreMacConfigure(fwd)
 
 function OgreMacBuildPageText()
 {
-    return _("OGRE 14.6.2 is configured and ready to build.\n\nBuild directory:\n    ") + OgreMacBuild + _("\n\nCode::Blocks will use bounded native parallelism.\n\nPress Next to build OGRE.\nThis step does not install OGRE.\n");
+    return _("OGRE 14.6.3 is configured and ready to build.\n\nBuild directory:\n    ") + OgreMacBuild + _("\n\nCode::Blocks will use bounded native parallelism.\n\nPress Next to build OGRE.\nThis step does not install OGRE.\n");
 }
 
 function OgreMacBuildOgre()
 {
-    if (!OgreMacConfigured()) { ShowError(_("OGRE 14.6.2 has not been configured with CMake.")); return false; }
-    local explanation = _("Code::Blocks will build OGRE 14.6.2 with CMake.\n\nBuild directory:\n") + OgreMacBuild + _("\n\nThe native helper selects a bounded parallel job count.\nThis operation does not install OGRE.");
-    local report = Wizard.MacCMakeBuild(OgreMacBuild, explanation, _("Build OGRE 14.6.2"));
+    if (!OgreMacConfigured()) { ShowError(_("OGRE 14.6.3 has not been configured with CMake.")); return false; }
+    local explanation = _("Code::Blocks will build OGRE 14.6.3 with CMake.\n\nBuild directory:\n") + OgreMacBuild + _("\n\nThe native helper selects a bounded parallel job count.\nThis operation does not install OGRE.");
+    local report = Wizard.MacCMakeBuild(OgreMacBuild, explanation, _("Build OGRE 14.6.3"));
     if (OgreReportField(report, _T("success")).Matches(_T("1")))
     {
         OgreMacBuildSucceeded = OgreMacBuilt();
@@ -361,7 +361,7 @@ function OgreMacBuildOgre()
         return false;
     }
     if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("The OGRE build was stopped. Files already produced by the build are left in place."));
-    else ShowError(_("OGRE 14.6.2 was not built successfully.\n\n") + OgreReportField(report, _T("output")));
+    else ShowError(_("OGRE 14.6.3 was not built successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
@@ -386,14 +386,14 @@ function OnLeave_OgreMacBuild(fwd)
 
 function OgreMacInstallPageText()
 {
-    return _("OGRE 14.6.2 is built and ready to install.\n\nBuild directory:\n    ") + OgreMacBuild + _("\n\nInstall prefix fixed during configuration:\n    ") + OgreMacInstall + _("\n\nPress Next to install and validate the OGRE SDK.\nNo replacement --prefix is supplied during installation.\n");
+    return _("OGRE 14.6.3 is built and ready to install.\n\nBuild directory:\n    ") + OgreMacBuild + _("\n\nInstall prefix fixed during configuration:\n    ") + OgreMacInstall + _("\n\nPress Next to install and validate the OGRE SDK.\nNo replacement --prefix is supplied during installation.\n");
 }
 
 function OgreMacInstallOgre()
 {
-    if (!OgreMacBuilt()) { ShowError(_("OGRE 14.6.2 has not been built successfully.")); return false; }
-    local explanation = _("Code::Blocks will install OGRE 14.6.2 with CMake.\n\nBuild directory:\n") + OgreMacBuild + _("\n\nInstall prefix:\n") + OgreMacInstall + _("\n\nThe install prefix was fixed during configuration.\nCode::Blocks will not pass a replacement --prefix.\nAfter installation, the native helper validates the installed SDK contract.");
-    local report = Wizard.MacCMakeInstall(OgreMacBuild, OgreMacInstall, explanation, _("Install OGRE 14.6.2"));
+    if (!OgreMacBuilt()) { ShowError(_("OGRE 14.6.3 has not been built successfully.")); return false; }
+    local explanation = _("Code::Blocks will install OGRE 14.6.3 with CMake.\n\nBuild directory:\n") + OgreMacBuild + _("\n\nInstall prefix:\n") + OgreMacInstall + _("\n\nThe install prefix was fixed during configuration.\nCode::Blocks will not pass a replacement --prefix.\nAfter installation, the native helper validates the installed SDK contract.");
+    local report = Wizard.MacCMakeInstall(OgreMacBuild, OgreMacInstall, explanation, _("Install OGRE 14.6.3"));
     if (OgreReportField(report, _T("success")).Matches(_T("1")))
     {
         OgreMacInstallSucceeded = OgreMacInstalled();
@@ -402,7 +402,7 @@ function OgreMacInstallOgre()
         return false;
     }
     if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("The OGRE install was stopped. Files already installed are left in place."));
-    else ShowError(_("OGRE 14.6.2 was not installed successfully.\n\n") + OgreReportField(report, _T("output")));
+    else ShowError(_("OGRE 14.6.3 was not installed successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
@@ -454,7 +454,7 @@ function OgreMacConsiderGit(path)
 
 function OgreMacGitPageText(reason)
 {
-    local text = _("OGRE 14.6.2 is obtained from the official upstream Git repository.\n\n");
+    local text = _("OGRE 14.6.3 is obtained from the official upstream Git repository.\n\n");
     text += OgreMacGitAccess.Matches(_T("works")) ? _("Git\n    Found: ") + OgreMacGitExecutable + _("\n    Version: ") + OgreMacGitVersion + _("\n    Access from Code::Blocks: OK\n\n") : _("Git\n    Not usable\n\n");
     if (!reason.IsEmpty()) text += reason + _("\n\n");
     return text + _("Code::Blocks does not install Git.\nPress Next to choose an existing Git executable.\n");
@@ -469,17 +469,17 @@ function OgreMacSourceReady()
 function OgreMacAcquirePageText()
 {
     local reason = OgreMacResolvePaths(); if (!reason.IsEmpty()) return reason;
-    return _("The official OGRE 14.6.2 source is not present yet.\n\nRepository:\n    ") + OgreMacRepository + _("\n\nRelease tag:\n    ") + OgreMacTag + _("\n\nDestination:\n    ") + OgreMacSource + _("\n\nPress Next to approve a shallow tagged clone.\nThis step downloads source only.\n");
+    return _("The official OGRE 14.6.3 source is not present yet.\n\nRepository:\n    ") + OgreMacRepository + _("\n\nRelease tag:\n    ") + OgreMacTag + _("\n\nDestination:\n    ") + OgreMacSource + _("\n\nPress Next to approve a shallow tagged clone.\nThis step downloads source only.\n");
 }
 
 function OgreMacCloneOgre()
 {
     local reason = OgreMacResolvePaths(); if (!reason.IsEmpty()) { ShowError(reason); return false; }
-    local explanation = _("Code::Blocks will download the official OGRE 14.6.2 source release.\n\nRepository:\n") + OgreMacRepository + _("\n\nRelease tag:\n") + OgreMacTag + _("\n\nDestination:\n") + OgreMacSource + _("\n\nThis step downloads the source only.");
-    local report = Wizard.MacGitClone(OgreMacRepository, OgreMacTag, OgreMacSource, explanation, _("Download OGRE 14.6.2"));
+    local explanation = _("Code::Blocks will download the official OGRE 14.6.3 source release.\n\nRepository:\n") + OgreMacRepository + _("\n\nRelease tag:\n") + OgreMacTag + _("\n\nDestination:\n") + OgreMacSource + _("\n\nThis step downloads the source only.");
+    local report = Wizard.MacGitClone(OgreMacRepository, OgreMacTag, OgreMacSource, explanation, _("Download OGRE 14.6.3"));
     if (OgreReportField(report, _T("success")).Matches(_T("1"))) return OgreMacSourceReady();
     if (OgreReportField(report, _T("cancelled")).Matches(_T("1"))) ShowMessage(_("The OGRE download was stopped. Partial files are left in place."));
-    else ShowError(_("OGRE 14.6.2 was not downloaded successfully.\n\n") + OgreReportField(report, _T("output")));
+    else ShowError(_("OGRE 14.6.3 was not downloaded successfully.\n\n") + OgreReportField(report, _T("output")));
     return false;
 }
 
@@ -540,12 +540,12 @@ function OgreMacPatchPageText()
     OgreMacPatchProbe();
 
     local text =
-        _("Optional OGRE 14.6.2 compatibility patch\n\nThe official OGRE 14.6.2 OgreAssimpConverter registers the model directory as a non-recursive resource location. As a result, OBJ geometry may be converted successfully while referenced material files in child directories are not found.\n\nThe compatibility patch makes the existing model resource location recursive. This allows Assimp sidecars beneath the model directory to be resolved through OGRE's resource system without expanding the registered filesystem root.\n\nThe patch modifies only:\n    Tools/AssimpConverter/main.cpp\n\n");
+        _("Optional OGRE 14.6.3 compatibility patch\n\nThe official OGRE 14.6.3 OgreAssimpConverter registers the model directory as a non-recursive resource location. As a result, OBJ geometry may be converted successfully while referenced material files in child directories are not found.\n\nThe compatibility patch makes the existing model resource location recursive. This allows Assimp sidecars beneath the model directory to be resolved through OGRE's resource system without expanding the registered filesystem root.\n\nThe patch modifies only:\n    Tools/AssimpConverter/main.cpp\n\n");
 
     if (OgreMacPatchState.Matches(_T("applicable")))
     {
         text +=
-            _("Patch state:\n    Available for this exact OGRE 14.6.2 checkout\n\nPress Next to choose whether to apply the patch.\nDeclining leaves the official upstream source unchanged.\n");
+            _("Patch state:\n    Available for this exact OGRE 14.6.3 checkout\n\nPress Next to choose whether to apply the patch.\nDeclining leaves the official upstream source unchanged.\n");
     }
     else if (OgreMacPatchState.Matches(_T("already_applied")))
     {
@@ -610,7 +610,7 @@ function OgreMacSetRebuildRequired(required)
 function OgreMacApplyPatch()
 {
     local explanation =
-        _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.2 source checkout.\n\nOgreAssimpConverter currently registers the model directory as a non-recursive resource location. The patch makes that existing resource location recursive so material and texture sidecars in child directories can be resolved through OGRE's resource system.\n\nSource:\n") +
+        _("Code::Blocks can apply a compatibility patch to the official OGRE 14.6.3 source checkout.\n\nOgreAssimpConverter currently registers the model directory as a non-recursive resource location. The patch makes that existing resource location recursive so material and texture sidecars in child directories can be resolved through OGRE's resource system.\n\nSource:\n") +
         OgreMacSource +
         _("\n\nModified file:\nTools/AssimpConverter/main.cpp\n\nThe patch does not add another filesystem root or provide unrestricted filesystem access.\n\nThe source modification remains visible in Git as an uncommitted working-tree change.\n\nAfter applying the patch, Code::Blocks will rebuild and reinstall OGRE. CMake configuration does not need to be repeated.\n\nChoose Cancel to continue without applying the patch.");
 
@@ -722,10 +722,10 @@ function OgreMacAllReady()
     local reason = OgreMacBlockReason(); if (!reason.IsEmpty()) { ShowError(reason); return false; }
     reason = OgreMacNativeCMakeBlockReason(); if (!reason.IsEmpty()) { ShowError(reason); return false; }
     reason = OgreMacGitBlockReason(); if (!reason.IsEmpty()) { ShowError(reason); return false; }
-    if (!OgreMacSourceReady()) { ShowError(_("The official OGRE 14.6.2 source has not been acquired.")); return false; }
-    if (!OgreMacConfigured()) { ShowError(_("OGRE 14.6.2 has not been configured with CMake.")); return false; }
-    if (!OgreMacBuilt()) { ShowError(_("OGRE 14.6.2 has not been built successfully.")); return false; }
-    if (!OgreMacInstalled()) { ShowError(_("The OGRE 14.6.2 SDK has not been installed and validated.")); return false; }
+    if (!OgreMacSourceReady()) { ShowError(_("The official OGRE 14.6.3 source has not been acquired.")); return false; }
+    if (!OgreMacConfigured()) { ShowError(_("OGRE 14.6.3 has not been configured with CMake.")); return false; }
+    if (!OgreMacBuilt()) { ShowError(_("OGRE 14.6.3 has not been built successfully.")); return false; }
+    if (!OgreMacInstalled()) { ShowError(_("The OGRE 14.6.3 SDK has not been installed and validated.")); return false; }
     return true;
 }
 
@@ -737,7 +737,7 @@ function BeginWizard()
 {
 Wizard.AddInfoPage(
     _T("OgreIntro"),
-    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.2 source release.\n\nv3.8.1 validates prerequisites, optionally enables recursive asset-sidecar resources in OgreAssimpConverter, configures, builds, installs and validates the OGRE SDK.\n"));
+    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.1 validates prerequisites, optionally enables recursive asset-sidecar resources in OgreAssimpConverter, configures, builds, installs and validates the OGRE SDK.\n"));
 
     if (PLATFORM == PLATFORM_MAC)
     {
