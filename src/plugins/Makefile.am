@@ -50,6 +50,10 @@ if BUILD_PROJECTSIMPORTER
 MAYBE_PROJECTSIMPORTER=projectsimporter
 endif
 
+if BUILD_PROJECTTOOLS
+MAYBE_PROJECTTOOLS=projecttools
+endif
+
 if BUILD_SCRIPTEDWIZARD
 MAYBE_SCRIPTEDWIZARD=scriptedwizard
 endif
@@ -69,6 +73,7 @@ SUBDIRS=$(MAYBE_ABBREVIATIONS) \
 		$(MAYBE_MANIFEST) \
 		$(MAYBE_MIMEHANDLER) \
 		$(MAYBE_PROJECTSIMPORTER) \
+		$(MAYBE_PROJECTTOOLS) \
 		$(MAYBE_OCCURRENCESHIGHLIGHTING) \
 		$(MAYBE_OPENFILESLIST) \
 		$(MAYBE_SCRIPTEDWIZARD) \
@@ -88,6 +93,7 @@ DIST_SUBDIRS = abbreviations \
 		occurrenceshighlighting \
 		openfileslist \
 		projectsimporter \
+		projecttools \
 		scriptedwizard \
 		todo \
 		xpmanifest \
