@@ -20,3 +20,13 @@ noinst_HEADERS = \
 	projecttoolcontext.h \
 	toolkitprovider.h \
 	toolkitdetection.h
+	
+	
+EXTRA_DIST = manifest.xml
+
+pkgdata_DATA = projecttools.zip
+
+CLEANFILES = $(pkgdata_DATA)
+
+projecttools.zip: $(EXTRA_DIST)
+	PWD=`pwd` cd $(srcdir) && zip $(PWD)/projecttools.zip manifest.xml > /dev/null
