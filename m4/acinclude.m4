@@ -256,6 +256,17 @@ else
 	AC_MSG_RESULT(no)
 fi
 
+AC_MSG_CHECKING(whether to build the project tools plugin)
+projecttools_default="yes"
+AC_ARG_ENABLE(projecttools, [AC_HELP_STRING([--enable-projecttools], [build the project tools plugin (default YES)])],,
+                       enable_projecttools=$projecttools_default)
+AM_CONDITIONAL([BUILD_PROJECTTOOLS], [test "x$enable_projecttools" = "xyes"])
+if test "x$enable_projecttools" = "xyes"; then
+	AC_MSG_RESULT(yes)
+else
+	AC_MSG_RESULT(no)
+fi
+
 AC_MSG_CHECKING(whether to build the scripted wizard plugin)
 prw_default="yes"
 AC_ARG_ENABLE(scripted-wizard, [AC_HELP_STRING([--enable-scripted-wizard], [build the scripted wizard plugin (default YES)])],,

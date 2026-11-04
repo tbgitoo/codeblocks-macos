@@ -494,6 +494,7 @@ AC_CONFIG_FILES([Makefile
 	src/plugins/occurrenceshighlighting/resources/Makefile
 	src/plugins/projectsimporter/Makefile
 	src/plugins/projectsimporter/resources/Makefile
+	src/plugins/projecttools/Makefile
 	src/plugins/scriptedwizard/Makefile
 	src/plugins/scriptedwizard/resources/Makefile
 	src/plugins/scriptedwizard/resources/avr/Makefile
