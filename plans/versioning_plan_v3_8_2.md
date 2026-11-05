@@ -1,33 +1,39 @@
-# Code::Blocks v3.8.2 - project-context tool providers
+# Code::Blocks v3.8.2 - OGRE tool integration
 
-**Status: IN PROGRESS - Project-menu, lifecycle, passive configuration, safe process/logging, and toolkit-detection seams located.** v3.8.2 follows the released v3.8.1 OGRE conversion baseline and makes installed ecosystem tools discoverable and usable from the active Code::Blocks project without tying the feature to a particular wizard, project template, or single-library project.
+**Status: IN PROGRESS - native OgreTools plugin builds, packages, installs and loads successfully; installed-tool discovery and Tools-menu integration are next.**
 
-**Question this version answers:** how can Code::Blocks detect that an active project or target uses a toolkit such as OGRE, locate the matching toolkit executables from the project's effective configuration, and expose safe project-context actions while remaining valid for manually configured and multi-toolkit projects such as SDL3 + OGRE?
+v3.8.2 follows the released v3.8.1 OGRE baseline and makes the OGRE tools installed by the Code::Blocks OGRE workflow discoverable and usable directly from the IDE.
 
-The first provider and proving use case is OGRE. The architecture must nevertheless be generic enough that a project may acquire more than one independent provider from its effective build configuration.
+**Question this version answers:** how can Code::Blocks expose installed OGRE utilities such as `OgreAssimpConverter` without requiring users to know their filesystem locations or modify their shell `PATH`?
+
+The feature does **not** need to determine whether the active project is an OGRE project. OGRE utilities are IDE-level tools. `OgreTools` exposes them under the global `Tools` menu, while individual actions are enabled only when their required executable or application is currently available.
 
 ```text
-active Code::Blocks project / target
-        |
-        +-- compiler search directories
-        +-- linker search directories
-        +-- linked libraries / frameworks
-        +-- project and target variables
-        +-- configured executable search paths
-        +-- process PATH as a final fallback
+OgreTools plugin
         |
         v
-project-context provider discovery
+fresh capability discovery
         |
-        +-- OGRE provider
-        +-- future SDL provider
-        +-- future toolkit providers
+        +-- Code::Blocks-managed OGRE installation
+        +-- finite additional supported locations
+        +-- PATH fallback
         |
         v
-verified, version-compatible project actions
+verify each capability independently
+        |
+        +-- OgreAssimpConverter
+        +-- OgreMeshUpgrader
+        +-- OgreXMLConverter
+        +-- VRMLConverter
+        +-- SampleBrowser
+        |
+        v
+Tools -> OGRE
+        |
+        +-- available actions enabled
+        +-- unavailable actions disabled
+        +-- install / repair available when needed
 ```
-
-The v3.8.2 feature is not an OGRE-project flag and does not depend on project ancestry. A hand-authored project qualifies when its current effective configuration supplies sufficient verifiable evidence of a usable toolkit.
 
 ---
 
@@ -55,569 +61,640 @@ Code::Blocks OGRE wizard
         +-- bin/macosx/SampleBrowser.app
 ```
 
-The generated project already records OGRE through ordinary Code::Blocks configuration, including compiler and linker search directories. The installed tools work, but their location below `~/Library/CodeBlocks/...` is not naturally discoverable by the user.
+The tools work, but their location below `~/Library/CodeBlocks/...` is not naturally discoverable by the user.
 
-v3.8.2 must expose the capability without modifying the v3.8.1 installation contract and without inserting the SDK tool directory into the user's global shell `PATH`.
+v3.8.2 exposes those capabilities from Code::Blocks without changing the v3.8.1 installation contract and without inserting the SDK tool directory into the user's global shell `PATH`.
 
 ---
 
 ## 2. Core architectural decision
 
-The feature is a **project-context tool provider**, not an OGRE-wizard add-on.
+The feature is an ordinary native Code::Blocks plugin named `OgreTools`.
 
-A provider:
+It does **not** classify projects.
 
-1. inspects the active project's effective configuration;
-2. identifies evidence that a toolkit is in use;
-3. derives one or more candidate toolkit roots;
-4. verifies the candidates against provider-specific files and executables;
-5. resolves ambiguity explicitly;
-6. contributes context-sensitive project actions only when a usable result exists;
-7. re-evaluates when the active project, target or relevant configuration changes.
+It does **not** infer OGRE use from compiler or linker settings.
 
-The generic provider boundary is:
+It does **not** depend on creation by the OGRE wizard.
 
-```text
-project configuration
-        |
-        v
-toolkit discovery
-        |
-        +-- no toolkit detected
-        +-- one coherent installation
-        +-- installation with some tools unavailable
-        +-- multiple plausible installations
-        +-- conflicting / incomplete evidence
-        |
-        v
-context actions or actionable diagnostic
-```
+Its immediate responsibilities are:
 
-The provider must not infer toolkit identity merely from the project title, wizard identifier, folder name, source text, or existence of a single vaguely named directory.
+1. expose `Tools -> OGRE`;
+2. locate supported installed OGRE utilities;
+3. verify each utility independently;
+4. enable actions whose requirements are satisfied;
+5. disable actions whose requirements are missing;
+6. offer installation or repair when the expected Code::Blocks-managed tools are unavailable;
+7. refresh capability state on demand so an OGRE installation performed during the current Code::Blocks session becomes visible;
+8. invoke tools safely and present their output in Code::Blocks.
+
+Project context is consulted only by an individual operation when that operation genuinely benefits from it, for example to choose a convenient project-local output directory. Project context is not part of OGRE tool discovery or menu visibility.
+
+The project-context APIs investigated during early v3.8.2 work are preserved separately in `project_context_seam.md`.
 
 ---
 
-## 3. Required project behavior
+## 3. Plugin baseline
 
-### 3.1 Wizard-generated OGRE project
+A minimal native `OgreTools` plugin has already been implemented and proven on macOS.
 
-A v3.8.1-generated project contains search paths such as:
-
-```text
-<OGRE_PREFIX>/include/OGRE
-<OGRE_PREFIX>/include/OGRE/Bites
-<OGRE_PREFIX>/include/OGRE/Overlay
-<OGRE_PREFIX>/include/OGRE/RTShaderSystem
-```
-
-The OGRE provider may derive:
+Current source area:
 
 ```text
-OGRE_PREFIX=<OGRE_PREFIX>
+src/plugins/ogretools/
+        ogretools.h
+        ogretools.cpp
+        manifest.xml
+        Makefile.am
 ```
 
-but must verify the derived root before offering actions.
+Build-system integration has been established through:
 
-### 3.2 Manually configured OGRE project
+```text
+configure.ac
+m4/acinclude.m4
+src/plugins/Makefile.am
+src/plugins/ogretools/Makefile.am
+```
 
-A project created without the OGRE wizard must qualify when the active project or target configuration supplies a verifiable OGRE installation. No wizard marker is required.
+The build option and Automake identities are:
 
-### 3.3 Multi-toolkit project
+```text
+--enable-ogretools
+BUILD_OGRETOOLS
+MAYBE_OGRETOOLS
+libogretools.la
+```
 
-Provider discovery is additive. Detecting OGRE must not require OGRE to be the project's exclusive or primary framework. Future SDL or other providers must coexist rather than compete for a single project type.
+The macOS plugin package installs as:
 
-### 3.4 Per-target variation
+```text
+share/codeblocks/plugins/libogretools.dylib
+share/codeblocks/ogretools.zip
+```
 
-Debug and Release targets may inherit different paths or even refer to different toolkit installations. Discovery must operate on the current effective project/target configuration rather than on project-level settings alone. If target configurations resolve to incompatible installations, the ambiguity must be reported rather than silently hidden.
+The established macOS bundle workflow additionally places the required dynamic library in the application Frameworks area and performs the normal code-signing step.
+
+Runtime loading has been proven:
+
+```text
+Loaded 15 plugins
+Loading:
+OgreTools
+...
+```
+
+The former `ProjectTools` name and its stale installed artifacts have been removed. Basic plugin build, packaging, discovery and registration are therefore complete.
 
 ---
 
-## 4. Discovery inputs
+## 4. Tool discovery
 
-Candidate inputs are:
+### 4.1 Discovery is capability-based
 
-1. compiler include search directories;
-2. linker search directories;
-3. compiler/linker options containing framework or library paths;
-4. linked libraries and macOS frameworks;
-5. project and target custom variables;
-6. Code::Blocks global variables used by project settings;
-7. compiler/toolchain executable search directories, where applicable;
-8. environment variables available to the active target;
-9. process `PATH`, used only as a final fallback;
-10. provider-specific explicit override, if later justified.
+Each supported tool is discovered independently.
 
-The provider must distinguish raw project-file entries from their expanded effective values. Paths containing Code::Blocks macros, environment variables, relative segments or target inheritance must be resolved using existing Code::Blocks expansion behavior rather than by a separate ad hoc parser.
+For the verified macOS v3.8.1 installation:
+
+```text
+~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreAssimpConverter
+~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreMeshUpgrader
+~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreXMLConverter
+~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/VRMLConverter
+~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/SampleBrowser.app
+```
+
+A missing tool affects only its own capability.
+
+For example:
+
+```text
+OgreAssimpConverter    present
+OgreMeshUpgrader       present
+OgreXMLConverter       present
+VRMLConverter          absent
+SampleBrowser          present
+```
+
+produces four available capabilities and one unavailable capability. It does not invalidate the other tools.
+
+### 4.2 Search precedence
+
+Initial macOS precedence:
+
+```text
+1. known Code::Blocks-managed OGRE installation
+2. finite explicit set of additional supported locations, if justified
+3. PATH fallback
+```
+
+The v3.8.1-managed installation is preferred because it is the installation controlled and tested by the Code::Blocks OGRE workflow.
+
+`PATH` is a fallback, not a reason to alter the user's shell configuration.
+
+The locator must not perform an unbounded filesystem search.
+
+### 4.3 Verification
+
+Executable actions are enabled only when the resolved executable exists and is executable.
+
+Applications such as:
+
+```text
+SampleBrowser.app
+```
+
+are verified according to their platform-specific representation.
+
+Do not infer capability availability merely because an enclosing OGRE directory exists.
+
+### 4.4 On-demand refresh
+
+Capability discovery must be cheap and repeatable. Do not retain installation state as a permanent cache.
+
+At minimum, refresh when:
+
+```text
+Tools -> OGRE is opened
+```
+
+and revalidate the specific capability immediately before an action is invoked.
+
+This supports the important runtime transition:
+
+```text
+OGRE absent
+    -> tool actions disabled
+    -> Install / Repair enabled
+
+OGRE wizard installs or repairs OGRE
+    -> next capability refresh
+    -> newly installed tools enabled
+```
+
+A Code::Blocks restart must not be required merely to observe tools installed by the OGRE wizard during the current session.
+
+### 4.5 No global environment modification
+
+Discovery must not:
+
+- modify `.zshrc`, `.bashrc`, shell profiles or equivalent;
+- permanently alter `PATH`;
+- require users to manually expose the Code::Blocks-managed OGRE directory globally.
 
 ---
 
-## 5. OGRE provider discovery contract
-
-### 5.1 Strong evidence
-
-The primary structural OGRE signal is an effective include path of the form:
-
-```text
-<PREFIX>/include/OGRE
-```
-
-This deterministically yields candidate `<PREFIX>`. Sibling paths such as:
-
-```text
-<PREFIX>/include/OGRE/Bites
-<PREFIX>/include/OGRE/Overlay
-<PREFIX>/include/OGRE/RTShaderSystem
-```
-
-and linker/framework evidence below `<PREFIX>/lib/...` corroborate the candidate and can expose conflicting roots. Optional OGRE components are not required merely to identify an OGRE project.
-
-### 5.2 Candidate-root derivation
-
-```text
-<PREFIX>/include/OGRE
-        -> candidate <PREFIX>
-
-<PREFIX>/include/OGRE/Bites
-        -> candidate <PREFIX>
-
-<PREFIX>/lib/macosx/Release
-        -> corroborating candidate <PREFIX>
-```
-
-Path normalization must account for relative project paths, Code::Blocks macros, user-home expansion, symbolic links, redundant separators, `.` / `..` components and macOS path layout. Canonicalization must not rewrite user configuration merely to perform discovery.
-
-### 5.3 Candidate verification and capabilities
-
-Toolkit identity and installed tool capability are separate concerns.
-
-A candidate derived from project configuration must first be verified as a coherent OGRE installation, with `<PREFIX>/include/OGRE` as the primary verified structural path. Installed capabilities are then checked individually, including:
-
-```text
-<PREFIX>/bin/macosx/OgreAssimpConverter
-<PREFIX>/bin/macosx/OgreMeshUpgrader
-<PREFIX>/bin/macosx/OgreXMLConverter
-<PREFIX>/bin/macosx/VRMLConverter
-<PREFIX>/bin/macosx/SampleBrowser.app
-```
-
-An OGRE installation that lacks `OgreAssimpConverter` remains an OGRE installation; only the asset-conversion capability is unavailable. The absence of `VRMLConverter` likewise must not suppress other valid capabilities.
-
-### 5.4 Search precedence
-
-```text
-1. installation derived from the active target's effective configuration
-2. installation derived from effective project-wide configuration
-3. explicit project/provider override, if implemented
-4. configured Code::Blocks toolkit search directories, if implemented
-5. executable found through PATH
-```
-
-`PATH` is deliberately last. A globally available converter may belong to a different OGRE version from the SDK used to compile the active project.
-
-### 5.5 Ambiguity and conflict
-
-If several verified installations remain plausible, the provider must not silently select one merely because it appears first. Include evidence resolving to prefix A while OGRE framework evidence resolves to prefix B is an inconsistent or ambiguous configuration and must remain visible.
-
----
-
-## 6. Configuration changes and invalidation
-
-Discovery must not be treated as a permanent project label.
-
-Relevant changes include active project, active target, build options, search directories, linked libraries/frameworks, custom/global variables, environment or `PATH`, project reload and workspace reopen.
-
-The safest initial implementation is on-demand resolution when the Project menu opens or when a provider action is invoked. Caching may be added only after invalidation rules are established and tested. A stale cached OGRE prefix is unacceptable.
-
----
-
-## 7. Project-menu integration
+## 5. Tools-menu integration
 
 Target UX:
 
 ```text
-Project
-    Add files...
-    Add files recursively...
+Tools
     ...
-    ------------------------------
     OGRE
         Import 3D asset...
-        Tools
-            OgreAssimpConverter...
-            OgreMeshUpgrader...
-            OgreXMLConverter...
-            VRMLConverter...
+        --------------------------
+        OgreAssimpConverter...
+        OgreMeshUpgrader...
+        OgreXMLConverter...
+        VRMLConverter...
+        --------------------------
         Open SDK tools folder
         Open SampleBrowser
-        Show detected OGRE installation...
-    ------------------------------
-    Build options...
-    Properties...
+        --------------------------
+        Install / Repair OGRE tools...
 ```
 
-### 7.1 Visibility policy
+Exact wording and grouping may change as the implementation settles.
 
-- no active project: no provider submenu;
-- no credible OGRE evidence: no OGRE submenu;
-- OGRE detected but installation incomplete: diagnostic entry or disabled submenu with explanation;
-- one verified installation: OGRE submenu enabled;
-- multiple plausible installations: selection or ambiguity must be exposed;
-- OGRE + SDL3: both providers may contribute independently.
+### 5.1 Why Tools?
 
-### 7.2 Why Project rather than global Tools
+OGRE utility availability is an IDE-level capability, not a property of the active project.
 
-The intent is not merely to run an executable. It is to use the toolkit associated with the current project on an asset belonging to that project, with project-appropriate output.
+`Tools -> OGRE` therefore remains meaningful when:
 
----
+- no project is open;
+- the active project does not use OGRE;
+- OGRE is not yet installed;
+- the OGRE wizard installs the toolkit during the current session.
 
-## 8. First OGRE action - Import 3D asset
+Individual operations may still use the active project when useful. For example, `Import 3D asset...` may offer a project-local destination when a project is open. That does not make the plugin or its discovery mechanism project-context dependent.
 
-`Project -> OGRE -> Import 3D asset...`
+### 5.2 Visibility and enabled state
 
-The first implementation should resolve and display the OGRE installation, verify `OgreAssimpConverter`, allow input selection and project-local destination choice, invoke the converter without shell interpolation, capture stdout/stderr/exit status, display results in a dedicated Code::Blocks log tab, validate output beyond `.mesh` existence, avoid modifying source assets, and provide a clear path to generated files.
+The `OGRE` submenu remains visible while the `OgreTools` plugin is active.
 
-Conversion success must distinguish process launch failure, non-zero exit, missing mesh, missing material output where expected, fallback/default material symptoms, referenced-resource warnings, and successful mesh/material conversion.
+Opening the submenu triggers fresh capability discovery.
 
----
-
-## 9. Safe execution boundary
-
-Provider actions must use a native process-launch API with:
+Individual actions follow current capability availability:
 
 ```text
-verified executable path
+tool found       -> corresponding action enabled
+tool unavailable -> corresponding action disabled
+```
+
+`Install / Repair OGRE tools...` remains available when the expected Code::Blocks-managed installation is missing or incomplete.
+
+Unavailable tools should remain visible rather than disappearing, so the user can see which capabilities exist conceptually and why an installation action is relevant.
+
+---
+
+## 6. Installation boundary
+
+The existing OGRE wizard owns the tested v3.8.1 OGRE installation procedure unless implementation work identifies a cleaner reusable installation component.
+
+v3.8.2 should not substantially duplicate that installation logic inside `OgreTools`.
+
+The installation action therefore needs a deliberately defined bridge to the existing installer or a shared installation component factored from it.
+
+Required outcome:
+
+```text
+Tools -> OGRE -> Install / Repair OGRE tools...
+        |
+        v
+existing or shared OGRE installation mechanism
+        |
+        v
+~/Library/CodeBlocks/ogre-14.6.3/
+        |
+        v
+fresh OgreTools capability discovery
+```
+
+After successful installation or repair, the next refresh enables tools that now verify successfully without restarting Code::Blocks.
+
+---
+
+## 7. First workflow: Import 3D asset
+
+`Tools -> OGRE -> Import 3D asset...`
+
+The first high-level action uses `OgreAssimpConverter`.
+
+It should:
+
+1. freshly verify the converter;
+2. allow selection of an input asset;
+3. select or confirm a destination;
+4. show the converter being used;
+5. invoke it without shell interpolation;
+6. capture stdout and stderr;
+7. capture the actual exit status;
+8. show results in a dedicated Code::Blocks log;
+9. inspect the expected outputs;
+10. distinguish partial conversion from genuine success;
+11. avoid modifying the user's original source asset.
+
+When an active project exists, the dialog may offer a convenient project-local destination. Converter availability itself does not depend on the project.
+
+When no project is active, the importer may request an explicit destination rather than disabling the complete OGRE tools menu.
+
+---
+
+## 8. Safe execution boundary
+
+Tool execution uses:
+
+```text
+verified executable
 explicit argument vector
-no arbitrary shell command field
-no concatenated shell script
-working directory chosen deliberately
-captured stdout and stderr
+no shell interpolation
+deliberately selected working directory
+captured stdout
+captured stderr
 captured exit status
-cancellation support where permitted
-clear user-visible command summary
+cancellation where appropriate
+visible command summary
 ```
 
-The existing macOS `macgit.cpp` implementation already proves structured `wxExecute(argv, ...)` with `wxProcess`, `wxExecuteEnv`, redirected streams, actual exit code and cancellation.
-
----
-
-## 10. Generic provider interface investigation
-
-### 10.1 Project-menu extension seam - LOCATED
-
-Ordinary Code::Blocks plugins contribute to the existing Project menu through `cbPlugin::BuildMenu(wxMenuBar*)`. In-tree precedents establish:
+Existing `macgit.cpp` code proves the required wxWidgets mechanism:
 
 ```cpp
-int pos = menuBar->FindMenu(_("&Project"));
-if (pos != wxNOT_FOUND)
-{
-    wxMenu* menu = menuBar->GetMenu(pos);
-    // Insert(), Append(), InsertSeparator(), AppendSeparator()
-}
-```
+const wxChar* argv[] = {
+    executable.wx_str(),
+    /* arguments */
+    nullptr
+};
 
-CodeCompletion retains `m_ProjectMenu` and later enables/disables an item. CompilerGCC locates `Properties...` and inserts `Build options...` immediately before it. The future `Project -> OGRE` UI therefore needs no Code::Blocks core-menu modification.
-
-### 10.2 Project/target lifecycle seam - LOCATED
-
-`ProjectManager::SetProject()` updates `m_pActiveProject` and then emits `cbEVT_PROJECT_ACTIVATE`. Plugins subscribe with `Manager::Get()->RegisterEventSink(...)`; the event exposes the active `cbProject*` through `event.GetProject()`.
-
-`cbEVT_PROJECT_OPEN` is distinct: it indicates project load completion and is deferred during workspace loading. It is not synonymous with active-project change.
-
-`cbProject::SetActiveBuildTarget()` updates `m_ActiveTarget` and emits `cbEVT_BUILDTARGET_SELECTED`. Existing DebuggerManager code treats this as an invalidation notification without consuming event payload.
-
-Initial lifecycle contract:
-
-```text
-cbEVT_PROJECT_ACTIVATE
-        -> re-read current context
-
-cbEVT_BUILDTARGET_SELECTED
-        -> re-read current context
-
-cbEVT_PROJECT_CLOSE
-        -> re-read / clear current context
-```
-
-### 10.3 Effective active-target build configuration - LOCATED
-
-Active objects:
-
-```cpp
-cbProject* project =
-    Manager::Get()->GetProjectManager()->GetActiveProject();
-
-ProjectBuildTarget* target = project
-    ? project->GetBuildTarget(project->GetActiveBuildTarget())
-    : nullptr;
-```
-
-Project/target settings use `GetIncludeDirs()`, `GetLibDirs()` and `GetLinkLibs()`. Target-parent ordering must honor `GetOptionRelation(ortIncludeDirs)` and `GetOptionRelation(ortLibDirs)`:
-
-```text
-orUseParentOptionsOnly   -> project
-orUseTargetOptionsOnly   -> target
-orPrependToParentOptions -> target + project
-orAppendToParentOptions  -> project + target
-```
-
-No side-effect-free public ordering helper was found outside protected `CompilerCommandGenerator::GetOrderedOptions()`. v3.8.2 therefore selects a small provider-local helper mirroring these four public semantics.
-
-Selected paths then undergo target-aware `MacrosManager::ReplaceMacros(path, target)` and project-base relative-path resolution.
-
-`Compiler::GetCommandGenerator(project)` / `CompilerCommandGenerator::Init(project)` is explicitly rejected for passive detection because initialization changes the working directory, emits `cbEVT_COMPILER_SET_BUILD_OPTIONS`, executes `SetBuildOptions` build scripts, and prepares broader command-generation state.
-
-### 10.4 Safe process execution and log integration - LOCATED
-
-The existing `macgit.cpp` code already performs:
-
-```cpp
-const wxChar* argv[] = { executable.wx_str(), /* args */, nullptr };
 m_pid = wxExecute(argv, wxEXEC_ASYNC, m_process, &env);
 ```
 
-The macOS build uses wxWidgets 3.2.10, whose `wxExecute` supports structured `char**` / `wchar_t**` argv overloads. `wxExecuteEnv` provides explicit working directory and environment.
+`wxExecuteEnv` supplies explicit environment and working-directory handling.
 
-`wxProcess::Redirect()` plus stdout/stderr streams, `wxEVT_END_PROCESS`, `event.GetExitCode()` and retained PID cancellation provide the required execution lifecycle. SDK `PipedProcess` is useful precedent for stream/event behavior but its current `Launch(const wxString&)` flattens the command and is not the selected launch boundary.
+`wxProcess::Redirect()`, redirected streams, `wxEVT_END_PROCESS` and `event.GetExitCode()` provide the process lifecycle.
 
-Cccc and CppCheck establish the plugin log-page lifecycle using `TextCtrlLogger`, `LogManager::SetLog()`, `cbEVT_ADD_LOG_WINDOW`, `LogManager::Log()`, `cbEVT_SWITCH_TO_LOG_WINDOW` and `cbEVT_REMOVE_LOG_WINDOW`.
-
-### 10.5 Remaining M1 implementation/lifecycle work
-
-```text
-configuration-change notifications beyond project/target selection
-plugin lifetime and unload behavior for provider-owned menu/process/log state
-minimal runtime proof of the located M1.1-M1.4 seams
-```
-
-### 10.6 Toolkit detection from project configuration - LOCATED
-
-M2.1 is concrete: given the effective active-project configuration, determine whether the project uses a toolkit, derive its installation root, verify that installation independently, and report installed-tool capabilities separately from toolkit identity.
-
-The known-good v3.8.1-generated OGRE project is the baseline. Its OGRE configuration is project-level and inherited by both Debug and Release targets. Independent signals converge on:
-
-```text
-PREFIX=/Users/thomasbraschler/Library/CodeBlocks/ogre-14.6.3
-```
-
-The project contains the four OGRE include paths under that prefix, framework search/RPATH settings under `PREFIX/lib/macosx/Release`, and linked `Ogre.framework`, `OgreBites.framework`, `OgreOverlay.framework` and `OgreRTShaderSystem.framework` binaries under the same prefix.
-
-The installed prefix independently verifies:
-
-```text
-PREFIX/include/OGRE
-PREFIX/bin/macosx/OgreAssimpConverter
-PREFIX/bin/macosx/OgreMeshUpgrader
-PREFIX/bin/macosx/OgreXMLConverter
-PREFIX/bin/macosx/VRMLConverter
-PREFIX/bin/macosx/SampleBrowser.app
-```
-
-The detection sequence is therefore:
-
-```text
-project configuration says toolkit is in use
-        |
-        v
-derive candidate installation root
-        |
-        v
-verify installation independently
-        |
-        v
-inspect individual installed capabilities
-```
-
-Plain outcomes:
-
-```text
-no toolkit detected
-one coherent toolkit installation detected
-one installation detected with some tools unavailable
-multiple plausible toolkit installations
-conflicting / incomplete toolkit evidence
-```
-
-The exact C++ type carrying this information remains an implementation detail. v3.8.2 does not require an abstraction named `ProbeResult`.
+SDK `PipedProcess::Launch(const wxString&)` remains rejected for this boundary because it flattens the invocation into a command string.
 
 ---
 
-## 11. Diagnostics and transparency
+## 9. Logging
 
-`Show detected OGRE installation...` should report active project, active target, selected prefix, selection reason, converter path/status and rejected/fallback candidates.
+Cccc and CppCheck establish the native Code::Blocks log-window lifecycle using:
 
-Diagnostics should distinguish no OGRE evidence, derived root with missing headers, OGRE detected but converter absent, converter found only through `PATH`, multiple coherent installations, unresolved macros, target-vs-project differences, and conflicting roots.
+```text
+TextCtrlLogger
+LogManager::SetLog()
+cbEVT_ADD_LOG_WINDOW
+LogManager::Log()
+cbEVT_SWITCH_TO_LOG_WINDOW
+cbEVT_REMOVE_LOG_WINDOW
+```
+
+`OgreTools` should own a dedicated log such as:
+
+```text
+OGRE Tools
+```
+
+Converter output, warnings, exit state and validation results should be reported there.
 
 ---
 
-## 12. Portability and platform boundary
+## 10. Conversion validation
 
-The architecture separates generic current-project configuration collection, candidate ranking, ambiguity handling, menu/action lifecycle and diagnostics from OGRE-specific evidence, root derivation, capability verification, platform-specific executable layouts and actions.
+Conversion success is **not** defined as:
 
-The first release may support only the verified macOS OGRE layout for execution. Unsupported platforms must fail explicitly rather than pretending that a guessed layout is valid.
+```text
+a .mesh file exists
+```
+
+The importer should distinguish at least:
+
+```text
+process could not be launched
+process returned non-zero
+expected mesh absent
+mesh generated
+expected material output absent
+fallback/default material symptoms
+referenced-resource warnings
+successful mesh/material conversion
+```
+
+The exact validation logic should be based on observed `OgreAssimpConverter` behavior and regression fixtures rather than assumptions about every source format.
 
 ---
 
-## 13. Expected files / areas
+## 11. Project-local resource workflow
+
+The importer may use project context for destination convenience without making tool discovery project dependent.
+
+The default workflow should:
+
+- leave source assets unchanged;
+- generate output outside the installed OGRE SDK tree;
+- prefer a project-local destination when a suitable active project exists;
+- allow an explicit destination when no project is active;
+- clearly show the resulting files;
+- avoid silently modifying `resources.cfg`;
+- avoid silently modifying `.cbp` files.
+
+The installed OGRE SDK remains software infrastructure, not a destination for user assets.
+
+---
+
+## 12. Portability boundary
+
+The first implementation may support only the verified macOS layout.
+
+Platform-specific discovery belongs behind a small explicit boundary:
+
+```text
+generic capability
+        |
+        +-- OgreAssimpConverter
+        +-- OgreMeshUpgrader
+        +-- OgreXMLConverter
+        +-- VRMLConverter
+        +-- SampleBrowser
+        |
+        v
+platform-specific locator
+```
+
+Unsupported platforms must not receive guessed filesystem paths presented as verified installations.
+
+Windows and Linux discovery can be added when their actual installed layouts and packaging behavior are established.
+
+---
+
+## 13. Preserved project-context seam
+
+The earlier investigation established useful Code::Blocks APIs for a future feature that genuinely depends on the active project:
+
+```text
+cbEVT_PROJECT_ACTIVATE
+cbEVT_BUILDTARGET_SELECTED
+cbEVT_PROJECT_CLOSE
+
+cbProject
+ProjectBuildTarget
+
+GetIncludeDirs()
+GetLibDirs()
+GetLinkLibs()
+
+OptionsRelation
+
+MacrosManager::ReplaceMacros(value, target)
+```
+
+It also established why:
+
+```cpp
+CompilerCommandGenerator::Init(project)
+```
+
+must not be used merely for passive configuration inspection.
+
+These results are preserved in:
+
+```text
+project_context_seam.md
+```
+
+They are **not part of the v3.8.2 tool-discovery path**. Individual operations may use narrowly scoped project context when useful, such as determining a suggested output directory.
+
+---
+
+## 14. Expected files / areas
 
 | Area | v3.8.2 role |
 |---|---|
-| `cbPlugin::BuildMenu(wxMenuBar*)` + Project `wxMenu` | **Located.** `FindMenu(_("&Project"))` + `GetMenu()` expose the existing Project menu. |
-| `cbEVT_PROJECT_ACTIVATE`, `cbEVT_BUILDTARGET_SELECTED`, `cbEVT_PROJECT_CLOSE` | **Located.** Explicit context invalidation events. |
-| `cbProject`, `ProjectBuildTarget`, `CompileOptionsBase`, `CompileTargetBase` | **Located.** Active target and ordered project/target build configuration. |
-| `MacrosManager::ReplaceMacros(path, target)` + project-base normalization | **Located.** Target-aware expansion and relative-path handling. |
-| `wxExecute(argv, ...)`, `wxProcess`, `wxExecuteEnv`, `macgit.cpp` | **Located.** Structured launch, explicit env/CWD, capture, exit status, cancellation. |
-| `LogManager`, `TextCtrlLogger`, `CodeBlocksLogEvent` | **Located.** Plugin-owned log page lifecycle. |
-| OGRE toolkit detection | **Located conceptually.** Structural project evidence -> verified prefix -> independent capabilities. |
-| Configuration persistence | Optional override or remembered ambiguity choice, only if justified. |
-| Regression fixtures | Synthetic project configurations and legally distributable minimal model fixtures. |
-
-The OGRE scripted wizard remains responsible for installing and configuring OGRE. The provider consumes ordinary project configuration and must not depend on wizard internals.
+| `src/plugins/ogretools/` | Native plugin implementation. |
+| `ogretools.cpp/.h` | Plugin lifecycle, `Tools -> OGRE`, commands and refresh trigger. |
+| OGRE tool locator | Finds and independently verifies supported OGRE capabilities. |
+| `cbPlugin::BuildMenu(wxMenuBar*)` | Adds the `Tools -> OGRE` submenu. |
+| Menu-open/update handling | Refreshes capability state on demand. |
+| `wxExecute(argv, ...)`, `wxProcess`, `wxExecuteEnv` | Safe tool execution. |
+| `LogManager`, `TextCtrlLogger`, `CodeBlocksLogEvent` | Dedicated OGRE tool output. |
+| Existing OGRE wizard/install logic | Installation or repair mechanism to reuse or cleanly factor rather than duplicate. |
+| `project_context_seam.md` | Preserved deferred investigation. |
+| Regression fixtures | Minimal legally distributable conversion inputs and expected outputs. |
 
 ---
 
-## 14. Milestones
+## 15. Milestones
 
 | Milestone | Objective | Check | Status |
 |---|---|---|---|
-| M1.1 | Locate and prove the Project-menu extension seam. | `BuildMenu()` -> `FindMenu(_("&Project"))` -> `GetMenu()` -> `Insert()` / `Append()` established; minimal runtime submenu test remains. | **IN PROGRESS - SEAM LOCATED** |
-| M1.2 | Locate active project/target lifecycle events. | Activation, target selection and project-open distinction established. | **LOCATED** |
-| M1.3 | Read effective build configuration without build-time side effects. | Active target lookup, option arrays, `OptionsRelation`, macro expansion and path normalization established; command-generator shortcut rejected. | **LOCATED** |
-| M1.4 | Locate safe process/log infrastructure. | `macgit.cpp` proves structured argv execution and Cccc/CppCheck prove log-window lifecycle. | **LOCATED** |
-| M2.1 | Define toolkit detection from project configuration. | Structural project evidence derives roots; installations are verified separately; installed tools are independent capabilities; conflicting roots remain visible. | **LOCATED** |
-| M2.2 | Implement current-project toolkit detection. | Active project/target produces a fresh detection result from current effective configuration without stale identity. | **NEXT** |
-| M2.3 | Implement provider diagnostics. | Selected candidate and evidence are visible. | **PLANNED** |
-| M2.4 | Prove multi-provider coexistence. | Synthetic mixed project exposes two independent providers. | **PLANNED** |
-| M3.1 | Derive OGRE candidates from include paths. | Wizard-generated and manually configured projects resolve intended prefix. | **PLANNED** |
-| M3.2 | Add linker/framework and variable evidence. | Nonstandard coherent configurations can be corroborated and conflicting roots detected. | **PLANNED** |
-| M3.3 | Verify macOS OGRE capabilities individually. | Converter, upgrader, XML converter, VRML converter and SampleBrowser reported independently. | **PLANNED** |
-| M3.4 | Implement deterministic precedence and ambiguity UI. | Project-derived OGRE wins over unrelated `PATH`; multiple credible roots remain visible. | **PLANNED** |
-| M3.5 | Validate configuration-change behavior. | Changing search directories or target changes next detection result. | **PLANNED** |
-| M4.1 | Add `Project -> OGRE` submenu. | Visibility/enabled state follows verified context. | **PLANNED** |
-| M4.2 | Add installation diagnostic action. | Prefix, evidence, tools and rejected fallbacks visible. | **PLANNED** |
-| M4.3 | Add tools-folder and SampleBrowser actions. | Verified local targets open without guessing or global `PATH` changes. | **PLANNED** |
-| M5.1 | Implement `Import 3D asset...` dialog. | Input, destination and resolved converter explicit. | **PLANNED** |
-| M5.2 | Execute converter safely with logged output. | Paths with spaces work and no shell command is constructed. | **PLANNED** |
-| M5.3 | Validate conversion outcome. | Geometry-only false positives and material-reference failures surfaced. | **PLANNED** |
-| M5.4 | Validate project-local resource workflow. | Converted output loads without SDK-tree modification. | **PLANNED** |
-| M6.1 | Regression-test wizard-generated OGRE project. | v3.8.1 project detected; build/run unchanged. | **PLANNED** |
-| M6.2 | Regression-test manual OGRE project. | Detection works without wizard metadata. | **PLANNED** |
-| M6.3 | Regression-test SDL3 + OGRE project. | Providers coexist without exclusive project classification. | **PLANNED** |
-| M6.4 | Regression-test unrelated projects. | No misleading OGRE menu. | **PLANNED** |
-| M6.5 | Review documentation and release boundary. | Rules, precedence and limitations documented. | **PLANNED** |
-| M6.6 | Release v3.8.2. | macOS package/source contain validated provider implementation. | **PLANNED** |
+| M1.1 | Create native OgreTools plugin. | Plugin builds and packages through the macOS build. | **DONE** |
+| M1.2 | Prove and cleanly rename plugin loading. | `OgreTools` appears among 15 loaded plugins; obsolete `ProjectTools` artifacts are removed. | **DONE** |
+| M1.3 | Preserve abandoned project-context investigation. | Useful seams extracted to `project_context_seam.md`. | **DONE** |
+| M2.1 | Define OGRE capability locator. | Tool identities, finite candidate locations, verification rules and precedence are defined. | **NEXT** |
+| M2.2 | Discover verified macOS OGRE tools. | v3.8.1 installation reports each tool independently. | **PLANNED** |
+| M2.3 | Add PATH fallback. | PATH-only executable can be detected without modifying the user environment. | **PLANNED** |
+| M2.4 | Implement on-demand capability refresh. | Opening `Tools -> OGRE` and invoking an action recheck availability; wizard-installed tools become available without restart. | **PLANNED** |
+| M3.1 | Add `Tools -> OGRE` submenu. | Submenu is available independently of project state and refreshes capabilities when opened. | **PLANNED** |
+| M3.2 | Enable/disable individual actions. | Missing tool disables only its corresponding action. | **PLANNED** |
+| M3.3 | Add install/repair action. | Missing or incomplete managed installation remains recoverable from `Tools -> OGRE`. | **PLANNED** |
+| M3.4 | Add tools-folder and SampleBrowser actions. | Verified local targets open without global PATH changes. | **PLANNED** |
+| M4.1 | Implement `Import 3D asset...` dialog. | Input, destination and freshly resolved converter are explicit. | **PLANNED** |
+| M4.2 | Execute converter safely. | Explicit argv works with paths containing spaces. | **PLANNED** |
+| M4.3 | Add dedicated OGRE log. | stdout, stderr and actual exit status are visible. | **PLANNED** |
+| M4.4 | Validate converter outcome. | Geometry-only and material/resource failures are surfaced. | **PLANNED** |
+| M4.5 | Validate output workflow. | Project-local output is offered when appropriate; user assets remain outside SDK media and source files remain untouched. | **PLANNED** |
+| M5.1 | Regression-test complete v3.8.1 OGRE installation. | All expected actions become available. | **PLANNED** |
+| M5.2 | Regression-test partial installation. | Individual missing tools produce individual disabled actions. | **PLANNED** |
+| M5.3 | Regression-test no OGRE installation. | Tool actions are disabled and install/repair remains available. | **PLANNED** |
+| M5.4 | Regression-test install-during-session refresh. | OGRE wizard installation becomes visible on the next refresh without restarting Code::Blocks. | **PLANNED** |
+| M5.5 | Regression-test PATH fallback. | Supported PATH discovery works without environment modification. | **PLANNED** |
+| M5.6 | Regression-test no-project and ordinary-project states. | `Tools -> OGRE` remains usable without classifying or mutating projects. | **PLANNED** |
+| M5.7 | Review documentation and release boundary. | Discovery, refresh, execution and macOS limitations are documented. | **PLANNED** |
+| M5.8 | Release v3.8.2. | Signed macOS package contains the validated OgreTools implementation. | **PLANNED** |
 
 ---
 
-## 15. Acceptance criteria
+## 16. Acceptance criteria
 
 v3.8.2 is accepted only if:
 
-1. v3.8.1 OGRE installation/conversion remains the known-good baseline.
-2. Toolkit identity derives from current effective project/target configuration, not wizard ancestry.
-3. Manual OGRE projects can activate OGRE detection.
-4. SDL3 + OGRE projects can activate OGRE without exclusive classification.
-5. Multiple providers can coexist.
-6. Compiler/linker evidence honors `OptionsRelation`, target-aware macro expansion and project-relative paths without invoking build scripts.
-7. Candidate roots are verified before actions are enabled.
-8. Project-derived toolkits outrank unrelated `PATH` executables.
-9. `PATH` remains a lower-confidence fallback.
-10. Multiple credible roots are reported, not silently collapsed.
-11. Active-project/target/configuration changes affect the next result.
-12. Stale cached toolkit paths cannot survive unnoticed.
-13. Individual OGRE tools are exposed only when independently verified.
-14. Missing optional tools do not erase otherwise valid OGRE identity.
-15. No global shell profile or user `PATH` is modified.
-16. No arbitrary shell-command execution is introduced.
-17. Tool execution uses an explicit executable and separated arguments.
-18. Tool output and exit status are visible in Code::Blocks.
-19. Asset import uses the OGRE installation associated with the active project/target.
-20. Conversion success is not inferred solely from `.mesh` existence.
-21. Material and referenced-resource failures are surfaced.
-22. User source assets are not silently modified.
-23. Generated output defaults to project-local workflow, not SDK media.
-24. `resources.cfg` and project files are not silently rewritten.
-25. Ordinary non-OGRE projects receive no misleading OGRE actions.
-26. Beginner-facing `main.cpp` remains free of converter machinery.
-27. The OGRE wizard does not acquire a private duplicated discovery implementation.
-28. Diagnostic information explains selected root and rejected alternatives.
-29. macOS v3.8.2 is tested with the v3.8.1 OGRE v14.6.3 baseline.
+1. The v3.8.1 OGRE v14.6.3 installation remains the known-good baseline.
+2. `OgreTools` builds, packages, installs and loads as a native Code::Blocks plugin.
+3. The plugin appears as `OgreTools`; obsolete `ProjectTools` build, staging and installed artifacts are absent.
+4. `Tools -> OGRE` is available independently of whether a project is open or uses OGRE.
+5. The known Code::Blocks-managed OGRE tool directory is discovered.
+6. Any additional candidate locations are explicit and finite.
+7. `PATH` may be used as a fallback.
+8. No shell profile or global `PATH` is modified.
+9. Each OGRE capability is verified independently.
+10. One missing optional tool does not disable unrelated tools.
+11. Missing tools remain visible but disabled rather than silently disappearing.
+12. An install/repair action remains available when the expected managed installation is absent or incomplete.
+13. Opening `Tools -> OGRE` performs a fresh capability check.
+14. Invoking an action revalidates its required capability before execution.
+15. After the OGRE wizard installs or repairs OGRE, the next capability refresh reflects the newly installed tools without restarting Code::Blocks.
+16. The existing OGRE installation implementation is reused or cleanly factored rather than substantially duplicated.
+17. No arbitrary shell-command execution is introduced.
+18. Executable paths and arguments remain separate.
+19. Paths containing spaces work.
+20. stdout and stderr are captured.
+21. Actual process exit status is captured.
+22. Conversion results are visible in Code::Blocks.
+23. Conversion success is not inferred solely from `.mesh` existence.
+24. Material and referenced-resource failures are surfaced where detectable.
+25. User source assets are not silently modified.
+26. Generated output does not default into the installed OGRE SDK media tree.
+27. When an active project is suitable, a project-local output destination may be offered without affecting tool discovery.
+28. When no project is active, OGRE tools that do not require project context remain usable.
+29. `resources.cfg` is not silently rewritten.
+30. Project files are not silently rewritten.
+31. Beginner-facing generated `main.cpp` remains free of converter machinery.
+32. Ordinary projects are not assigned an OGRE identity merely because OGRE tools are installed.
+33. The deferred project-context mechanism is not reintroduced into tool discovery without a specific requirement.
+34. macOS v3.8.2 is regression-tested against the v3.8.1 OGRE v14.6.3 baseline.
+35. The final application bundle passes the established macOS packaging and code-signing workflow.
 
 ---
 
-## 16. What stays rejected
+## 17. What stays rejected
 
-- Permanent `isOgreProject` as primary detection.
-- Requiring creation by the OGRE wizard.
-- Project name, folder name or source scanning as authoritative evidence.
-- Exclusive single-toolkit project classification.
-- First-path-wins without verification/precedence.
-- Global `PATH` converter preferred over active-project SDK.
-- Permanent toolkit-root caching without complete invalidation.
-- `CompilerCommandGenerator::Init(project)` merely for passive discovery.
-- Blind project+target path concatenation ignoring `OptionsRelation`.
-- Shell startup-file modification or global SDK-tool `PATH` insertion.
-- Hard-coding `~/Library/CodeBlocks/ogre-14.6.3`.
+- Permanent `isOgreProject`.
+- Requiring creation by the OGRE wizard merely to expose tools.
+- Parsing active build configuration merely to decide whether the OGRE menu exists.
+- Project-name, directory-name or source scanning for menu visibility.
+- Putting globally available OGRE utilities behind project classification.
+- Global shell-startup modification.
+- Permanent insertion of the OGRE tool directory into user `PATH`.
+- Unbounded filesystem searches for OGRE installations.
+- Selecting an executable without verifying it exists.
+- Caching tool availability indefinitely.
+- Requiring a Code::Blocks restart after the wizard installs OGRE merely to refresh tool availability.
+- One missing tool disabling the complete OGRE feature.
+- Duplicating the entire OGRE installation implementation in `OgreTools`.
 - Shell-string converter execution.
-- `.mesh` existence as the definition of conversion success.
-- Copying generated assets into installed SDK media.
-- Hidden `resources.cfg` / project-settings rewrites.
+- Arbitrary user-entered command execution.
+- `.mesh` existence as the sole definition of conversion success.
+- Copying generated user assets into installed SDK media.
+- Hidden `resources.cfg` or project-setting rewrites.
 - Converter machinery in generated `main.cpp`.
-- Coupling generic provider core to macOS-specific OGRE paths.
-- Expanding v3.8.2 into an asset database, scene editor or package manager.
+- Reintroducing project-context complexity merely because the seam is available.
+- Expanding v3.8.2 into an asset database, package manager or scene editor.
 
 ---
 
-## 17. Stop conditions
+## 18. Stop conditions
 
-Stop and preserve the investigation if the feature would require invasive OGRE hard-wiring into unrelated Code::Blocks core logic; inability to distinguish active-target configuration; unreliable path reconstruction outside Code::Blocks macro facilities; silent toolkit-version mismatch; arbitrary shell execution as the only launch mechanism; project mutation merely to detect a toolkit; exclusive classification that breaks mixed projects; or an opaque cache whose invalidation cannot be made reliable.
+Stop and preserve the implementation if:
 
-If the existing plugin architecture cannot support the complete generic provider in one release, v3.8.2 may narrow execution to a verified OGRE plugin implementation only if the provider boundary remains explicit and no wizard-specific project identity is introduced.
+- OGRE tools cannot be located without an unbounded filesystem search;
+- tool execution requires arbitrary shell interpolation;
+- installation requires uncontrolled modification of the user's shell environment;
+- the only way to reuse the existing OGRE installer is to duplicate significant wizard implementation;
+- converter execution cannot reliably expose exit status and output;
+- the importer must modify source assets or SDK media to function;
+- platform-specific assumptions cannot be isolated explicitly.
+
+Project-context detection is **not** a stop condition. It is simply outside tool discovery. A narrowly scoped operation may still consult the active project when that operation genuinely benefits from it.
 
 ---
 
-## 18. Done when
+## 19. Done when
 
-**Status: IN PROGRESS.** v3.8.2 is complete when Code::Blocks can derive toolkit context from the active project's effective configuration, verify the matching OGRE installation, expose project-specific OGRE actions without requiring wizard ancestry, respond correctly to search-directory and target changes, coexist with other toolkit providers, and safely run the matching `OgreAssimpConverter` through a logged project-local asset-import workflow.
+**Status: IN PROGRESS.**
+
+v3.8.2 is complete when Code::Blocks exposes the OGRE utilities installed by its OGRE ecosystem through the native `OgreTools` plugin under `Tools -> OGRE`, verifies and refreshes individual capabilities independently, provides recovery when tools are unavailable, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification.
 
 ```text
-v3.8.1 correct installed OGRE toolchain              DONE
+v3.8.1 correct installed OGRE toolchain          DONE
         |
         v
-Project-menu/plugin seam                             LOCATED
+native OgreTools plugin                          DONE
         |
         v
-project/target lifecycle events                      LOCATED
+plugin rename / packaging / loading              DONE
         |
         v
-effective active-target configuration                LOCATED
+project-context investigation                    PRESERVED + DEFERRED
         |
         v
-safe process/log infrastructure                      LOCATED
+OGRE capability locator                          NEXT
+        |
+        +-- Code::Blocks-managed installation
+        +-- finite candidate locations
+        +-- PATH fallback
+        +-- independent capability checks
+        +-- on-demand refresh
         |
         v
-toolkit detection from project configuration         LOCATED
+Tools -> OGRE submenu
         |
-        +-- structural root derivation               CONFIRMED
-        +-- independent installation verification    CONFIRMED
-        +-- independent tool capabilities            CONFIRMED
-        +-- conflicting roots remain visible         SELECTED
-        |
-        v
-implement current-project toolkit detection          NEXT
+        +-- refresh on menu open
+        +-- available tools enabled
+        +-- missing tools disabled
+        +-- install / repair available
         |
         v
-OGRE candidate derivation + corroboration
+safe converter execution + OGRE log
         |
         v
-Project -> OGRE context submenu
+conversion validation
         |
         v
-safe converter launch + logged result
+project-local output when useful
         |
         v
-project-local resource workflow
-        |
-        v
-regression, documentation and v3.8.2 release
+regression + signed v3.8.2 release
 ```
 

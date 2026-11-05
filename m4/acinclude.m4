@@ -256,12 +256,12 @@ else
 	AC_MSG_RESULT(no)
 fi
 
-AC_MSG_CHECKING(whether to build the project tools plugin)
-projecttools_default="yes"
-AC_ARG_ENABLE(projecttools, [AC_HELP_STRING([--enable-projecttools], [build the project tools plugin (default YES)])],,
-                       enable_projecttools=$projecttools_default)
-AM_CONDITIONAL([BUILD_PROJECTTOOLS], [test "x$enable_projecttools" = "xyes"])
-if test "x$enable_projecttools" = "xyes"; then
+AC_MSG_CHECKING(whether to build the OGRE tools plugin)
+ogretools_default="yes"
+AC_ARG_ENABLE(ogretools, [AC_HELP_STRING([--enable-ogretools], [build the OGRE tools plugin (default YES)])],,
+                       enable_ogretools=$ogretools_default)
+AM_CONDITIONAL([BUILD_OGRETOOLS], [test "x$enable_ogretools" = "xyes"])
+if test "x$enable_ogretools" = "xyes"; then
 	AC_MSG_RESULT(yes)
 else
 	AC_MSG_RESULT(no)
