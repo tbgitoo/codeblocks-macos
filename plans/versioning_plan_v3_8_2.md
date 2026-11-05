@@ -1,6 +1,6 @@
 # Code::Blocks v3.8.2 - OGRE tool integration
 
-**Status: IN PROGRESS - native OgreTools plugin, managed macOS capability discovery, Tools -> OGRE menu, independent initial enablement, SDK-folder action, and SampleBrowser action are proven. On-demand capability refresh is next.**
+**Status: IN PROGRESS - native OgreTools plugin, managed macOS capability discovery, PATH fallback, live `Tools -> OGRE` refresh, SDK-folder action, and SampleBrowser action are proven. The install/repair architecture is now resolved in technical detail: the existing `ogre/wizard.script` will serve both the existing project wizard and a new setup-only custom wizard registration; implementing that bridge is next.**
 
 v3.8.2 follows the released v3.8.1 OGRE baseline and makes the OGRE tools installed by the Code::Blocks OGRE workflow discoverable and usable directly from the IDE.
 
@@ -15,8 +15,7 @@ OgreTools plugin
 fresh capability discovery
         |
         +-- Code::Blocks-managed OGRE installation
-        +-- finite additional supported locations if justified
-        +-- PATH fallback
+        +-- PATH fallback for command-line tools
         |
         v
 verify each capability independently
@@ -30,9 +29,11 @@ verify each capability independently
         v
 Tools -> OGRE
         |
+        +-- refresh whenever submenu opens
         +-- available actions enabled
         +-- unavailable actions disabled
-        +-- install / repair available when needed
+        +-- action-time revalidation
+        +-- install / repair launches setup-only OGRE custom wizard
 ```
 
 ---
@@ -77,19 +78,21 @@ It does **not** classify projects.
 
 It does **not** infer OGRE use from compiler or linker settings.
 
-It does **not** depend on creation by the OGRE wizard.
+It does **not** depend on creation by the OGRE project wizard for discovery.
 
-Its immediate responsibilities are:
+Its responsibilities are:
 
 1. expose `Tools -> OGRE`;
 2. locate supported installed OGRE utilities;
-3. verify each utility independently;
-4. enable actions whose requirements are satisfied;
-5. disable actions whose requirements are missing;
-6. offer installation or repair when the expected Code::Blocks-managed tools are unavailable;
-7. refresh capability state on demand so an OGRE installation performed during the current Code::Blocks session becomes visible;
-8. revalidate a capability immediately before invoking it;
-9. invoke command-line tools safely and present their output in Code::Blocks.
+3. prefer the Code::Blocks-managed installation;
+4. fall back to `PATH` for missing command-line tools;
+5. verify each utility independently;
+6. enable actions whose requirements are satisfied;
+7. disable actions whose requirements are missing;
+8. refresh capability state whenever the OGRE submenu opens;
+9. revalidate a capability immediately before invoking it;
+10. delegate installation/repair to the existing scripted-wizard installation machinery through a setup-only custom wizard registration;
+11. invoke command-line tools safely and present their output in Code::Blocks.
 
 Project context is consulted only by an individual operation when that operation genuinely benefits from it, for example to choose a convenient project-local output directory. Project context is not part of OGRE tool discovery or menu visibility.
 
@@ -138,8 +141,6 @@ share/codeblocks/plugins/libogretools.dylib
 share/codeblocks/ogretools.zip
 ```
 
-The established macOS bundle workflow additionally places the required dynamic library in the application Frameworks area and performs the normal code-signing step.
-
 Runtime loading is proven:
 
 ```text
@@ -172,7 +173,7 @@ The primary macOS tools directory is therefore:
 
 `LocateOgreTools()` reconstructs this location directly and verifies capabilities independently.
 
-Runtime discovery has been proven for all five expected v3.8.1 capabilities:
+Runtime discovery is proven for all five expected capabilities:
 
 ```text
 OgreAssimpConverter
@@ -182,51 +183,50 @@ VRMLConverter
 SampleBrowser.app
 ```
 
-Observed runtime paths were:
+### 4.2 PATH fallback - PROVEN
+
+`ogretoolslocator.cpp` uses `wxGetEnv("PATH", ...)` plus `wxFindFileInPath()` for command-line tools absent from the managed installation.
+
+PATH fallback applies only to:
 
 ```text
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreAssimpConverter
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreMeshUpgrader
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/OgreXMLConverter
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/VRMLConverter
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx/SampleBrowser.app
+OgreAssimpConverter
+OgreMeshUpgrader
+OgreXMLConverter
+VRMLConverter
 ```
 
-### 4.2 Discovery is capability-based
+It does not synthesize a managed tools directory and does not attempt to find `SampleBrowser.app` through `PATH`.
 
-A missing tool affects only its own capability.
-
-For example:
+The verified precedence matrix is:
 
 ```text
-OgreAssimpConverter    present
-OgreMeshUpgrader       present
-OgreXMLConverter       present
-VRMLConverter          absent
-SampleBrowser          present
+managed    PATH    selected
+-------    ----    -----------------
+yes        yes     managed
+yes        no      managed
+no         yes     PATH
+no         no      unavailable
 ```
 
-produces four available capabilities and one unavailable capability. It does not invalidate the other tools.
+A controlled runtime test with a fake `/tmp/ogre-path-test/VRMLConverter` proved that the managed executable wins when present, the PATH executable is selected when the managed executable is hidden, and the capability becomes unavailable when neither exists.
 
-### 4.3 Search precedence
+### 4.3 Discovery is capability-based
 
-Initial precedence:
+A missing tool affects only its own capability. One missing optional executable does not invalidate the other tools.
+
+### 4.4 Search precedence - SELECTED AND PROVEN
 
 ```text
 1. known Code::Blocks-managed OGRE installation
-2. finite explicit set of additional supported locations, only if justified
-3. PATH fallback for command-line tools
+2. PATH fallback for command-line tools
 ```
 
-No speculative additional filesystem locations are currently required.
-
-The v3.8.1-managed installation is preferred because it is the installation controlled and tested by the Code::Blocks OGRE workflow.
-
-`PATH` remains planned as a fallback for independently installed command-line tools. It is not a reason to alter the user's shell configuration.
+No speculative additional filesystem locations are currently required. Any future fixed candidate location must be explicitly justified and remain finite.
 
 The locator must not perform an unbounded filesystem search.
 
-### 4.4 Verification
+### 4.5 Verification
 
 Executable actions are enabled only when the resolved executable exists and is executable.
 
@@ -234,37 +234,34 @@ Executable actions are enabled only when the resolved executable exists and is e
 
 Do not infer capability availability merely because an enclosing OGRE directory exists.
 
-### 4.5 On-demand refresh - NEXT
+### 4.6 On-demand refresh - PROVEN
 
-Capability discovery is cheap and repeatable. Installation state must not be retained as a permanent cache.
+`OgreTools` retains the submenu and menu-item pointers and centralizes current state in `RefreshCapabilities()`.
 
-At minimum, refresh when:
+The event table includes:
 
-```text
-Tools -> OGRE is opened
+```cpp
+EVT_MENU_OPEN(OgreTools::OnOgreMenuOpen)
 ```
 
-and revalidate the specific capability immediately before an action is invoked.
+The handler refreshes only when the opened menu is the OGRE submenu:
 
-This supports the runtime transition:
-
-```text
-OGRE absent
-    -> tool actions disabled
-    -> Install / Repair enabled
-
-OGRE wizard installs or repairs OGRE
-    -> next Tools -> OGRE refresh
-    -> newly installed tools enabled
+```cpp
+if (event.GetMenu() == m_OgreMenu)
+    RefreshCapabilities();
 ```
 
-A Code::Blocks restart must not be required merely to observe tools installed by the OGRE wizard during the current session.
+A live A/B test proved that hiding `VRMLConverter` while Code::Blocks remained running disabled only the VRML action on the next submenu open, and restoring the executable re-enabled it without restarting Code::Blocks.
 
-### 4.6 No global environment modification
+Action handlers independently call `LocateOgreTools()` again before use, providing action-time revalidation in addition to menu-time refresh.
+
+No wizard notification, timer, filesystem watcher, or persistent capability cache is required.
+
+### 4.7 No global environment modification
 
 Discovery must not:
 
-- modify `.zshrc`, `.bashrc`, shell profiles or equivalent;
+- modify `.zshrc`, `.bashrc`, shell profiles, or equivalent;
 - permanently alter `PATH`;
 - require users to manually expose the Code::Blocks-managed OGRE directory globally.
 
@@ -275,8 +272,6 @@ Discovery must not:
 ### 5.1 Menu seam - PROVEN
 
 `OgreTools::BuildMenu(wxMenuBar*)` locates the existing top-level Tools menu and appends an OGRE submenu.
-
-The current menu is:
 
 ```text
 Tools
@@ -295,49 +290,32 @@ Tools
         Install / Repair OGRE tools...
 ```
 
-The submenu has been proven visually in the running macOS application.
-
 ### 5.2 Why Tools?
 
 OGRE utility availability is an IDE-level capability, not a property of the active project.
 
-`Tools -> OGRE` remains meaningful when:
+`Tools -> OGRE` remains meaningful when no project is open, the active project does not use OGRE, OGRE is not yet installed, or the wizard installs OGRE during the current session.
 
-- no project is open;
-- the active project does not use OGRE;
-- OGRE is not yet installed;
-- the OGRE wizard installs the toolkit during the current session.
+### 5.3 Independent enabled state - PROVEN
 
-Individual operations may still use the active project when useful. For example, `Import 3D asset...` may offer a project-local destination when a project is open. That does not make the plugin or its discovery mechanism project-context dependent.
+Initial state is derived from `LocateOgreTools()` during menu construction. Every subsequent submenu open runs `RefreshCapabilities()` and reflects the current filesystem/PATH state.
 
-### 5.3 Initial enabled state - PROVEN
-
-The menu currently derives its initial enabled/disabled state from a fresh `LocateOgreTools()` result during menu construction.
-
-The complete managed v3.8.1 installation enables all verified tool entries.
-
-The remaining requirement is live refresh when the user subsequently opens `Tools -> OGRE`.
-
-Unavailable tools should remain visible but disabled rather than disappearing.
+Unavailable tools remain visible but disabled.
 
 ### 5.4 Menu event plumbing - PROVEN
 
-`OgreTools` uses the existing wxWidgets static event-table pattern already used by in-tree Code::Blocks plugins:
+`OgreTools` uses the existing wxWidgets static event-table mechanism:
 
 ```cpp
 DECLARE_EVENT_TABLE();
 
 BEGIN_EVENT_TABLE(OgreTools, cbPlugin)
+    EVT_MENU_OPEN(OgreTools::OnOgreMenuOpen)
     EVT_MENU(...)
 END_EVENT_TABLE()
 ```
 
-Known-working handlers exist for:
-
-```text
-Open SDK tools folder
-Open SampleBrowser
-```
+Known-working handlers exist for `Open SDK tools folder` and `Open SampleBrowser`.
 
 ---
 
@@ -345,87 +323,365 @@ Open SampleBrowser
 
 ### 6.1 Open SDK tools folder - DONE
 
-The handler freshly calls `LocateOgreTools()` and opens the verified tools directory with `wxLaunchDefaultApplication()`.
-
-On the current macOS baseline this opens:
-
-```text
-~/Library/CodeBlocks/ogre-14.6.3/bin/macosx
-```
-
-The behavior has been tested successfully in the running application.
+The handler freshly calls `LocateOgreTools()` and opens the verified managed tools directory with `wxLaunchDefaultApplication()`.
 
 ### 6.2 Open SampleBrowser - DONE, with bundle correction
 
 The handler freshly calls `LocateOgreTools()` and launches the verified `SampleBrowser.app` with `wxLaunchDefaultApplication()`.
 
-Initial testing exposed an OGRE-side packaging defect rather than an OgreTools launch defect.
-
-Direct terminal launch showed:
-
-```text
-SampleBrowser.app/Contents/Frameworks/Codec_Assimp.framework/Codec_Assimp
-```
-
-was required but missing from the application bundle.
-
-The installed framework itself existed at:
-
-```text
-~/Library/CodeBlocks/ogre-14.6.3/lib/macosx/Release/Codec_Assimp.framework
-```
+Testing exposed an OGRE-side packaging defect rather than an OgreTools launch defect. `Codec_Assimp.framework` was installed under `lib/macosx/Release` but missing from `SampleBrowser.app/Contents/Frameworks`.
 
 Controlled A/B testing established:
 
 ```text
-installed SampleBrowser without bundled Codec_Assimp.framework   FAIL
-manually add the installed framework to Contents/Frameworks      PASS
+installed SampleBrowser without Codec_Assimp.framework in bundle   FAIL
+same application with framework added to Contents/Frameworks       PASS
 ```
 
-The upstream OGRE source cause was then located in:
+The upstream cause was a missing `Codec_Assimp` entry in the existing macOS `FRAMEWORKS` list in `Samples/Browser/CMakeLists.txt`. The enclosing `if(TARGET ${FWK})` guard already preserves builds without the Assimp codec target.
 
-```text
-Samples/Browser/CMakeLists.txt
-```
-
-where `Codec_Assimp` was omitted from the existing macOS `FRAMEWORKS` list. The loop already contains:
-
-```cmake
-if(TARGET ${FWK})
-```
-
-so adding `Codec_Assimp` preserves builds in which the Assimp codec target does not exist.
-
-The one-line correction is now included in the pinned local OGRE compatibility patch. It has also been submitted upstream as a separate focused pull request. Upstream disposition is external and does not block v3.8.2.
-
-The OgreTools SampleBrowser launch code itself remains simple and unchanged.
+The one-line correction is included in the pinned local compatibility patch and has also been submitted upstream. Upstream disposition remains external to v3.8.2.
 
 ---
 
-## 7. Installation boundary
+## 7. Install / repair bridge - DESIGN RESOLVED, IMPLEMENTATION NEXT
 
-The existing OGRE wizard owns the tested OGRE installation procedure unless implementation work identifies a cleaner reusable installation component.
-
-v3.8.2 should not substantially duplicate that installation logic inside `OgreTools`.
-
-The installation action therefore needs a deliberately defined bridge to the existing installer or a shared installation component factored from it.
-
-Required outcome:
+The existing OGRE wizard owns the tested installation lifecycle:
 
 ```text
-Tools -> OGRE -> Install / Repair OGRE tools...
-        |
-        v
-existing or shared OGRE installation mechanism
-        |
-        v
-~/Library/CodeBlocks/ogre-14.6.3/
-        |
-        v
-fresh OgreTools capability discovery
+Homebrew prerequisite checks
+        -> native CMake validation + managed paths
+        -> Git validation
+        -> exact OGRE v14.6.3 source acquisition
+        -> exact-version compatibility patch
+        -> CMake configure
+        -> build / rebuild
+        -> install
+        -> installed-SDK validation
 ```
 
-After successful installation or repair, the next menu refresh enables tools that now verify successfully without restarting Code::Blocks.
+`OgreTools` must not duplicate this lifecycle.
+
+### 7.1 Why launching the existing OGRE project wizard directly is rejected
+
+The existing OGRE registration is:
+
+```text
+wizProject + folder "ogre"
+    -> ogre/wizard.script
+```
+
+`cbWizardPlugin::Launch(index)` correctly launches this wizard, but successful completion of a `wizProject` entry ultimately dispatches to `RunProjectWizard()` and creates a project.
+
+The desired Tools action is different:
+
+```text
+Tools -> OGRE -> Install / Repair OGRE...
+        |
+        v
+install / repair / validate SDK
+        |
+        v
+STOP
+```
+
+Therefore the existing `wizProject` entry is **not** the correct callable unit for M3.3.
+
+### 7.2 The OGRE installation machinery is already independent of project creation
+
+The macOS installer functions in `ogre/wizard.script` operate on OGRE setup state and native helpers, not on a `cbProject`.
+
+Established setup functions include:
+
+```text
+OgreMacOfferNextMissingInstall()
+OgreMacResolvePaths()
+OgreMacNativeCMakeBlockReason()
+OgreMacSourceReady()
+OgreMacCloneOgre()
+OgreMacPatchProbe()
+OgreMacApplyPatch()
+OgreMacConfigureOgre()
+OgreMacBuildOgre()
+OgreMacInstallOgre()
+OgreMacAllReady()
+```
+
+Their page-leave handlers perform the existing idempotent setup lifecycle:
+
+```text
+OnLeave_OgreMacPrerequisites
+OnLeave_OgreMacCMake
+OnLeave_OgreMacGit
+OnLeave_OgreMacAcquire
+OnLeave_OgreMacPatch
+OnLeave_OgreMacConfigure
+OnLeave_OgreMacBuild
+OnLeave_OgreMacInstall
+```
+
+The project-specific boundary in `BeginWizard()` begins only after these setup pages, at:
+
+```cpp
+Wizard.AddProjectPathPage();
+```
+
+This establishes a clean conceptual split:
+
+```text
+shared OGRE setup pages
+        |
+        +-- prerequisites
+        +-- CMake + managed paths
+        +-- Git
+        +-- source acquisition
+        +-- compatibility patch
+        +-- configure
+        +-- build
+        +-- install / validate
+        |
+        +--------------------------- project-specific pages begin here
+```
+
+### 7.3 Existing `wizCustom` behavior is exactly suitable for setup-only execution
+
+`Wiz::RunCustomWizard()` calls:
+
+```cpp
+SetupCustom()
+```
+
+and then clears the wizard state and returns `nullptr`. It does not create a project.
+
+Therefore a setup-only OGRE registration should use `wizCustom`.
+
+Successful completion can validate the setup through:
+
+```cpp
+function SetupCustom()
+{
+    return OgreMacAllReady();
+}
+```
+
+### 7.4 One script can support both registrations
+
+No ordinary script-level include mechanism was found in the shipped scripted-wizard resources, so duplicating the large OGRE installation script into a second setup script is rejected.
+
+Fortunately `Wizard.GetWizardType()` is already available to Squirrel and is already used by multiple existing wizards. `Wiz::GetWizardType()` resolves the current registration through `m_LaunchIndex`.
+
+Therefore the same:
+
+```text
+ogre/wizard.script
+```
+
+can be registered twice and branch on:
+
+```cpp
+local wiz_type = Wizard.GetWizardType();
+```
+
+Selected structure:
+
+```text
+                    ogre/wizard.script
+                           |
+                  Wizard.GetWizardType()
+                      /          \
+                     /            \
+           wizProject              wizCustom
+               |                       |
+       OGRE setup pages          OGRE setup pages
+               |                       |
+       project-specific pages          |
+               |                       |
+         SetupProject()           SetupCustom()
+                                       |
+                                OgreMacAllReady()
+                                       |
+                                      DONE
+```
+
+A helper such as:
+
+```cpp
+function AddOgreMacSetupPages()
+```
+
+should contain the existing macOS setup-page construction so both modes execute exactly the same pages and handlers.
+
+Conceptually:
+
+```cpp
+function BeginWizard()
+{
+    local wiz_type = Wizard.GetWizardType();
+
+    if (wiz_type == wizCustom)
+    {
+        Wizard.AddInfoPage(
+            _T("OgreSetupIntro"),
+            _("Install or repair the Code::Blocks-managed OGRE SDK."));
+
+        AddOgreMacSetupPages();
+        return;
+    }
+
+    Wizard.AddInfoPage(
+        _T("OgreIntro"),
+        _("Welcome to the OGRE project wizard!..."));
+
+    AddOgreMacSetupPages();
+
+    Wizard.AddProjectPathPage();
+    // existing project-specific pages unchanged
+}
+```
+
+### 7.5 Second registration does not pollute the Project template list
+
+`NewFromTemplateDlg` explicitly separates template registrations by `TemplateOutputType`:
+
+```cpp
+BuildListFor(totProject, ...);
+BuildListFor(totTarget, ...);
+BuildListFor(totFiles, ...);
+BuildListFor(totCustom, ...);
+```
+
+and each list filters entries using:
+
+```cpp
+if (plugin->GetOutputType(w) != otype)
+    continue;
+```
+
+Therefore the two registrations appear in separate template groups:
+
+```text
+Project templates
+    Ogre project          <- wizProject / totProject
+
+Custom templates
+    OGRE SDK setup        <- wizCustom / totCustom
+```
+
+The setup entry does **not** become an OGRE project template.
+
+### 7.6 Selected registration strategy
+
+The existing registration remains:
+
+```cpp
+RegisterWizard(
+    wizProject,
+    _T("ogre"),
+    _("Ogre project"),
+    _("2D/3D Graphics"));
+```
+
+A second registration will point at the same folder and therefore the same `ogre/wizard.script`:
+
+```cpp
+RegisterWizard(
+    wizCustom,
+    _T("ogre"),
+    _("OGRE SDK setup"),
+    _("2D/3D Graphics"));
+```
+
+`RegisterWizard()` already derives the shared script path as:
+
+```text
+folder + "/wizard.script"
+```
+
+No duplicated installer script is required.
+
+### 7.7 OgreTools uses only the public wizard interface
+
+`Wiz` implements:
+
+```cpp
+class Wiz : public cbWizardPlugin
+```
+
+Code::Blocks enumerates wizard plugins through:
+
+```cpp
+Manager::Get()
+    ->GetPluginManager()
+    ->GetOffersFor(ptWizard);
+```
+
+The public interface provides:
+
+```cpp
+GetCount()
+GetOutputType(index)
+GetTitle(index)
+GetScriptFilename(index)
+Launch(index)
+```
+
+`OgreTools` should not include or depend on `wiz.h`.
+
+The setup registration is selected by the stable pair:
+
+```text
+GetScriptFilename(index) == "ogre/wizard.script"
+GetOutputType(index)     == totCustom
+```
+
+The project registration has the same script filename but `totProject`, so the output type disambiguates the two entries without relying on translated title text.
+
+### 7.8 Final M3.3 invocation path
+
+```text
+Tools -> OGRE -> Install / Repair OGRE...
+        |
+        v
+PluginManager::GetOffersFor(ptWizard)
+        |
+        v
+for each cbWizardPlugin
+        |
+        v
+for each index
+        |
+        +-- GetScriptFilename(index) == "ogre/wizard.script"
+        +-- GetOutputType(index)     == totCustom
+                |
+                v
+            Launch(index)
+                |
+                v
+same ogre/wizard.script
+                |
+                v
+Wizard.GetWizardType() == wizCustom
+                |
+                v
+shared OGRE setup pages only
+                |
+                v
+SetupCustom()
+                |
+                v
+OgreMacAllReady()
+                |
+                v
+no project created
+                |
+                v
+next Tools -> OGRE open
+                |
+                v
+fresh capability discovery
+```
+
+This is the selected M3.3 architecture.
 
 ---
 
@@ -433,25 +689,9 @@ After successful installation or repair, the next menu refresh enables tools tha
 
 `Tools -> OGRE -> Import 3D asset...`
 
-The first high-level action uses `OgreAssimpConverter`.
-
-It should:
-
-1. freshly verify the converter;
-2. allow selection of an input asset;
-3. select or confirm a destination;
-4. show the converter being used;
-5. invoke it without shell interpolation;
-6. capture stdout and stderr;
-7. capture the actual exit status;
-8. show results in a dedicated Code::Blocks log;
-9. inspect the expected outputs;
-10. distinguish partial conversion from genuine success;
-11. avoid modifying the user's original source asset.
+The first high-level action uses `OgreAssimpConverter` and should freshly verify the converter, select input and destination, execute through a structured argv boundary, capture output and exit status, validate expected results, and avoid modifying the source asset.
 
 When an active project exists, the dialog may offer a convenient project-local destination. Converter availability itself does not depend on the project.
-
-When no project is active, the importer may request an explicit destination rather than disabling the complete OGRE tools menu.
 
 ---
 
@@ -471,71 +711,25 @@ cancellation where appropriate
 visible command summary
 ```
 
-Existing `macgit.cpp` code proves the required wxWidgets mechanism:
+Existing `macgit.cpp` code proves the required wxWidgets mechanism through structured `wxExecute(argv, ...)`, `wxExecuteEnv`, `wxProcess::Redirect()`, stream capture, `wxEVT_END_PROCESS`, and `event.GetExitCode()`.
 
-```cpp
-const wxChar* argv[] = {
-    executable.wx_str(),
-    /* arguments */
-    nullptr
-};
-
-m_pid = wxExecute(argv, wxEXEC_ASYNC, m_process, &env);
-```
-
-`wxExecuteEnv` supplies explicit environment and working-directory handling.
-
-`wxProcess::Redirect()`, redirected streams, `wxEVT_END_PROCESS`, and `event.GetExitCode()` provide the process lifecycle.
-
-SDK `PipedProcess::Launch(const wxString&)` remains rejected for this boundary because it flattens the invocation into a command string.
+SDK `PipedProcess::Launch(const wxString&)` remains rejected for this boundary because it flattens invocation into a command string.
 
 ---
 
 ## 10. Logging
 
-Cccc and CppCheck establish the native Code::Blocks log-window lifecycle using:
+Cccc and CppCheck establish the native Code::Blocks log-window lifecycle through `TextCtrlLogger`, `LogManager`, and the add/switch/remove log-window events.
 
-```text
-TextCtrlLogger
-LogManager::SetLog()
-cbEVT_ADD_LOG_WINDOW
-LogManager::Log()
-cbEVT_SWITCH_TO_LOG_WINDOW
-cbEVT_REMOVE_LOG_WINDOW
-```
-
-`OgreTools` should own a dedicated log such as:
-
-```text
-OGRE Tools
-```
-
-Converter output, warnings, exit state, and validation results should be reported there.
+`OgreTools` should own a dedicated `OGRE Tools` log for command output, warnings, exit state, and validation results.
 
 ---
 
 ## 11. Conversion validation
 
-Conversion success is **not** defined as:
+Conversion success is **not** defined solely by `.mesh` existence.
 
-```text
-a .mesh file exists
-```
-
-The importer should distinguish at least:
-
-```text
-process could not be launched
-process returned non-zero
-expected mesh absent
-mesh generated
-expected material output absent
-fallback/default material symptoms
-referenced-resource warnings
-successful mesh/material conversion
-```
-
-The exact validation logic should be based on observed `OgreAssimpConverter` behavior and regression fixtures rather than assumptions about every source format.
+The importer should distinguish process launch failure, non-zero exit, missing mesh, mesh generation, missing expected material output, fallback/default material symptoms, referenced-resource warnings, and successful mesh/material conversion.
 
 ---
 
@@ -543,81 +737,21 @@ The exact validation logic should be based on observed `OgreAssimpConverter` beh
 
 The importer may use project context for destination convenience without making tool discovery project dependent.
 
-The default workflow should:
-
-- leave source assets unchanged;
-- generate output outside the installed OGRE SDK tree;
-- prefer a project-local destination when a suitable active project exists;
-- allow an explicit destination when no project is active;
-- clearly show the resulting files;
-- avoid silently modifying `resources.cfg`;
-- avoid silently modifying `.cbp` files.
-
-The installed OGRE SDK remains software infrastructure, not a destination for user assets.
+The workflow should leave source assets unchanged, keep generated output outside the installed OGRE SDK tree, prefer a project-local destination when appropriate, allow an explicit destination with no active project, and avoid silently modifying `resources.cfg` or `.cbp` files.
 
 ---
 
 ## 13. Portability boundary
 
-The first implementation may support only the verified macOS layout.
-
-Platform-specific discovery belongs behind a small explicit boundary:
-
-```text
-generic capability
-        |
-        +-- OgreAssimpConverter
-        +-- OgreMeshUpgrader
-        +-- OgreXMLConverter
-        +-- VRMLConverter
-        +-- SampleBrowser
-        |
-        v
-platform-specific locator
-```
+The first implementation may support only the verified macOS managed layout. PATH fallback for command-line capabilities is already structurally cross-platform.
 
 Unsupported platforms must not receive guessed filesystem paths presented as verified installations.
-
-Windows and Linux discovery can be added when their actual installed layouts and packaging behavior are established.
 
 ---
 
 ## 14. Preserved project-context seam
 
-The earlier investigation established useful Code::Blocks APIs for a future feature that genuinely depends on the active project:
-
-```text
-cbEVT_PROJECT_ACTIVATE
-cbEVT_BUILDTARGET_SELECTED
-cbEVT_PROJECT_CLOSE
-
-cbProject
-ProjectBuildTarget
-
-GetIncludeDirs()
-GetLibDirs()
-GetLinkLibs()
-
-OptionsRelation
-
-MacrosManager::ReplaceMacros(value, target)
-```
-
-It also established why:
-
-```cpp
-CompilerCommandGenerator::Init(project)
-```
-
-must not be used merely for passive configuration inspection.
-
-These results are preserved in:
-
-```text
-project_context_seam.md
-```
-
-They are **not part of the v3.8.2 tool-discovery path**. Individual operations may use narrowly scoped project context when useful, such as determining a suggested output directory.
+The earlier project-context investigation remains preserved in `project_context_seam.md`. It is not part of v3.8.2 tool discovery.
 
 ---
 
@@ -626,17 +760,20 @@ They are **not part of the v3.8.2 tool-discovery path**. Individual operations m
 | Area | v3.8.2 role |
 |---|---|
 | `src/plugins/ogretools/` | Native plugin implementation. |
-| `ogretools.cpp/.h` | Plugin lifecycle, `Tools -> OGRE`, command handlers, and refresh trigger. |
-| `ogretoolslocator.cpp/.h` | Current capability discovery and verification. |
-| `cbPlugin::BuildMenu(wxMenuBar*)` | Adds the `Tools -> OGRE` submenu. |
-| wx menu-open/update handling | Refreshes capability state on demand. |
-| `wxLaunchDefaultApplication()` | Opens the verified SDK tools directory and SampleBrowser application. |
-| `wxExecute(argv, ...)`, `wxProcess`, `wxExecuteEnv` | Safe command-line tool execution. |
+| `ogretools.cpp/.h` | Plugin lifecycle, menu, refresh, simple actions, install/repair launcher. |
+| `ogretoolslocator.cpp/.h` | Managed discovery, PATH fallback, verification. |
+| `src/plugins/scriptedwizard/resources/config.script` | Adds setup-only `wizCustom` registration pointing at the existing OGRE script. |
+| `src/plugins/scriptedwizard/resources/ogre/wizard.script` | Shared OGRE setup pages; branches between project and setup-only modes with `Wizard.GetWizardType()`. |
+| `cbPlugin::BuildMenu(wxMenuBar*)` | Adds `Tools -> OGRE`. |
+| `EVT_MENU_OPEN` / `wxMenuEvent` | Fresh capability refresh on submenu open. |
+| `cbWizardPlugin` + `PluginManager::GetOffersFor(ptWizard)` | Public bridge from OgreTools to setup-only OGRE wizard registration. |
+| `NewFromTemplateDlg::BuildListFor()` | Proven output-type filtering keeps `wizCustom` out of Project templates. |
+| `Wiz::RunCustomWizard()` / `SetupCustom()` | Completes setup-only wizard without creating a project. |
+| `wxLaunchDefaultApplication()` | Opens managed tools directory and SampleBrowser. |
+| `wxExecute(argv, ...)`, `wxProcess`, `wxExecuteEnv` | Safe command-line execution. |
 | `LogManager`, `TextCtrlLogger`, `CodeBlocksLogEvent` | Dedicated OGRE tool output. |
-| Existing OGRE wizard/install logic | Installation or repair mechanism to reuse or cleanly factor rather than duplicate. |
-| Exact-version OGRE compatibility patch | Referenced-resource correction plus macOS SampleBrowser Assimp bundle correction. |
+| Exact-version OGRE compatibility patch | Referenced-resource correction plus SampleBrowser Assimp bundle correction. |
 | `project_context_seam.md` | Preserved deferred investigation. |
-| Regression fixtures | Minimal legally distributable conversion inputs and expected outputs. |
 
 ---
 
@@ -647,28 +784,32 @@ They are **not part of the v3.8.2 tool-discovery path**. Individual operations m
 | M1.1 | Create native OgreTools plugin. | Plugin builds and packages through the macOS build. | **DONE** |
 | M1.2 | Prove and cleanly rename plugin loading. | `OgreTools` appears among 15 loaded plugins; obsolete `ProjectTools` artifacts are absent. | **DONE** |
 | M1.3 | Preserve abandoned project-context investigation. | Useful seams extracted to `project_context_seam.md`. | **DONE** |
-| M2.1 | Define OGRE capability locator. | Managed installation contract, capability identities, verification rules, and precedence are defined. | **DONE** |
-| M2.2 | Discover verified macOS OGRE tools. | Managed v3.8.1 installation reports all five expected capabilities independently at runtime. | **DONE** |
-| M2.3 | Add PATH fallback. | PATH-only command-line tool can be detected without modifying the user environment. | **PLANNED** |
-| M2.4 | Implement on-demand capability refresh. | Opening `Tools -> OGRE` rechecks availability; individual actions revalidate before execution; wizard-installed tools become available without restart. | **DONE** |
-| M3.1 | Add `Tools -> OGRE` submenu. | Submenu is visible independently of project state. | **DONE** |
-| M3.2 | Enable/disable individual actions. | Initial state follows independent capability discovery; live refresh remains covered by M2.4. | **DONE - INITIAL STATE** |
-| M3.3 | Add install/repair action. | Missing or incomplete managed installation remains recoverable from `Tools -> OGRE`. | **PLANNED** |
-| M3.4 | Add tools-folder and SampleBrowser actions. | Verified local targets open without global PATH changes; SampleBrowser runs with corrected installed bundle. | **DONE** |
-| M3.5 | Correct SampleBrowser Assimp bundle. | `Codec_Assimp.framework` is bundled when the `Codec_Assimp` CMake target exists; installed SampleBrowser runs. | **DONE LOCALLY / UPSTREAM PR OPEN** |
-| M4.1 | Implement `Import 3D asset...` dialog. | Input, destination, and freshly resolved converter are explicit. | **PLANNED** |
+| M2.1 | Define OGRE capability locator. | Managed installation contract, capability identities, verification, precedence defined. | **DONE** |
+| M2.2 | Discover verified macOS OGRE tools. | Managed installation reports all five expected capabilities independently at runtime. | **DONE** |
+| M2.3 | Add PATH fallback. | Managed tool wins over PATH; PATH is used only when managed command-line tool is absent; neither means unavailable. | **DONE** |
+| M2.4 | Implement on-demand capability refresh. | Opening `Tools -> OGRE` rechecks availability; live filesystem changes are reflected without restart. | **DONE** |
+| M3.1 | Add `Tools -> OGRE` submenu. | Submenu visible independently of project state. | **DONE** |
+| M3.2 | Enable/disable individual actions. | Menu state follows current independent capability discovery on every open. | **DONE** |
+| M3.3a | Establish install/repair reuse boundary. | Full project-wizard launch rejected; setup functions proven independent; `wizCustom`, `SetupCustom()`, `Wizard.GetWizardType()`, output-type filtering, and public `cbWizardPlugin` invocation path validated from source. | **DONE** |
+| M3.3b | Add setup-only OGRE registration. | Same `ogre/wizard.script` registered as `wizCustom` without duplicating installer code; Custom template entry does not appear in Project templates. | **NEXT** |
+| M3.3c | Split shared setup pages from project pages. | `BeginWizard()` branches on `Wizard.GetWizardType()`; both modes use identical OGRE setup pages; only `wizProject` adds project-specific pages. | **PLANNED** |
+| M3.3d | Complete setup-only wizard. | `SetupCustom()` returns `OgreMacAllReady()`; successful completion creates no project. | **PLANNED** |
+| M3.3e | Wire OgreTools install/repair action. | OgreTools finds `ogre/wizard.script` + `totCustom` through `cbWizardPlugin` and calls `Launch(index)`. | **PLANNED** |
+| M3.3f | Validate install-during-session behavior. | Setup-only wizard installs/repairs OGRE; next submenu open reflects the result without restarting Code::Blocks. | **PLANNED** |
+| M3.4 | Add tools-folder and SampleBrowser actions. | Verified local targets open without global PATH changes. | **DONE** |
+| M3.5 | Correct SampleBrowser Assimp bundle. | `Codec_Assimp.framework` bundled when target exists; installed SampleBrowser runs. | **DONE LOCALLY / UPSTREAM PR OPEN** |
+| M4.1 | Implement `Import 3D asset...` dialog. | Input, destination, and freshly resolved converter explicit. | **PLANNED** |
 | M4.2 | Execute converter safely. | Explicit argv works with paths containing spaces. | **PLANNED** |
-| M4.3 | Add dedicated OGRE log. | stdout, stderr, and actual exit status are visible. | **PLANNED** |
-| M4.4 | Validate converter outcome. | Geometry-only and material/resource failures are surfaced. | **PLANNED** |
-| M4.5 | Validate output workflow. | Project-local output is offered when appropriate; user assets remain outside SDK media and source files remain untouched. | **PLANNED** |
-| M5.1 | Regression-test complete managed OGRE installation. | All expected actions become available. | **PLANNED** |
-| M5.2 | Regression-test partial installation. | Individual missing tools produce individual disabled actions. | **PLANNED** |
-| M5.3 | Regression-test no OGRE installation. | Tool actions are disabled and install/repair remains available. | **PLANNED** |
-| M5.4 | Regression-test install-during-session refresh. | OGRE wizard installation becomes visible on the next refresh without restarting Code::Blocks. | **PLANNED** |
-| M5.5 | Regression-test PATH fallback. | Supported PATH discovery works without environment modification. | **PLANNED** |
-| M5.6 | Regression-test no-project and ordinary-project states. | `Tools -> OGRE` remains usable without classifying or mutating projects. | **PLANNED** |
-| M5.7 | Review documentation and release boundary. | Discovery, refresh, execution, local OGRE compatibility corrections, and macOS limitations are documented. | **PLANNED** |
-| M5.8 | Release v3.8.2. | Signed macOS package contains the validated OgreTools implementation. | **PLANNED** |
+| M4.3 | Add dedicated OGRE log. | stdout, stderr, and actual exit status visible. | **PLANNED** |
+| M4.4 | Validate converter outcome. | Geometry-only and material/resource failures surfaced. | **PLANNED** |
+| M4.5 | Validate output workflow. | Project-local output offered when appropriate; source files and SDK media remain untouched. | **PLANNED** |
+| M5.1 | Regression-test complete managed installation. | All expected actions become available. | **PLANNED** |
+| M5.2 | Regression-test partial installation. | Missing tools independently disable only corresponding actions. | **PLANNED** |
+| M5.3 | Regression-test no managed installation. | Managed-only actions unavailable; PATH fallbacks remain usable; install/repair remains available. | **PLANNED** |
+| M5.4 | Regression-test PATH fallback. | Four-state managed/PATH precedence matrix remains correct across supported command-line tools. | **DONE FOR VRML PROOF / BROADER REGRESSION PLANNED** |
+| M5.5 | Regression-test no-project and ordinary-project states. | `Tools -> OGRE` remains usable without classifying or mutating projects. | **PLANNED** |
+| M5.6 | Review documentation and release boundary. | Discovery, setup-only wizard bridge, execution, compatibility corrections, and limitations documented. | **PLANNED** |
+| M5.7 | Release v3.8.2. | Signed macOS package contains validated OgreTools implementation. | **PLANNED** |
 
 ---
 
@@ -678,109 +819,107 @@ v3.8.2 is accepted only if:
 
 1. The pinned OGRE v14.6.3 installation remains the known-good managed baseline.
 2. `OgreTools` builds, packages, installs, and loads as a native Code::Blocks plugin.
-3. The plugin appears as `OgreTools`; obsolete `ProjectTools` build, staging, and installed artifacts are absent.
-4. `Tools -> OGRE` is available independently of whether a project is open or uses OGRE.
-5. The known Code::Blocks-managed OGRE tools directory is discovered.
-6. The managed prefix is reconstructed consistently with the wizard's `~/Library/CodeBlocks/ogre-14.6.3` contract.
-7. Any additional fixed candidate locations are explicit and finite.
-8. `PATH` may be used only as a fallback for suitable command-line tools.
-9. No shell profile or global `PATH` is modified.
-10. Each OGRE capability is verified independently.
-11. One missing optional tool does not disable unrelated tools.
-12. Missing tools remain visible but disabled rather than silently disappearing.
-13. An install/repair action remains available when the expected managed installation is absent or incomplete.
-14. Opening `Tools -> OGRE` performs a fresh capability check.
-15. Invoking an action revalidates its required capability before execution.
-16. After the OGRE wizard installs or repairs OGRE, the next capability refresh reflects newly installed tools without restarting Code::Blocks.
-17. `Open SDK tools folder` opens the freshly verified managed tools directory.
-18. `Open SampleBrowser` launches the freshly verified application bundle.
-19. The managed macOS SampleBrowser bundle contains `Codec_Assimp.framework` when the codec target is built.
-20. The SampleBrowser bundle correction remains exact-version/local until an adopted upstream OGRE release makes it unnecessary.
-21. The existing OGRE installation implementation is reused or cleanly factored rather than substantially duplicated.
-22. No arbitrary shell-command execution is introduced.
-23. Command-line executable paths and arguments remain separate.
-24. Paths containing spaces work.
-25. stdout and stderr are captured for command-line tools.
-26. Actual process exit status is captured.
-27. Conversion results are visible in Code::Blocks.
-28. Conversion success is not inferred solely from `.mesh` existence.
-29. Material and referenced-resource failures are surfaced where detectable.
-30. User source assets are not silently modified.
-31. Generated output does not default into the installed OGRE SDK media tree.
-32. When an active project is suitable, a project-local output destination may be offered without affecting tool discovery.
-33. When no project is active, OGRE tools that do not require project context remain usable.
-34. `resources.cfg` is not silently rewritten.
-35. Project files are not silently rewritten.
-36. Beginner-facing generated `main.cpp` remains free of converter machinery.
-37. Ordinary projects are not assigned an OGRE identity merely because OGRE tools are installed.
-38. The deferred project-context mechanism is not reintroduced into tool discovery without a specific requirement.
-39. macOS v3.8.2 is regression-tested against the pinned OGRE v14.6.3 baseline.
-40. The final application bundle passes the established macOS packaging and code-signing workflow.
+3. `Tools -> OGRE` is available independently of project state.
+4. The managed tools directory is discovered consistently with the wizard's install contract.
+5. Managed command-line tools outrank same-named PATH tools.
+6. PATH provides a fallback only for missing command-line capabilities.
+7. No shell profile or global `PATH` is modified.
+8. Each capability is verified independently.
+9. Missing tools remain visible but disabled.
+10. Every submenu open performs fresh capability discovery.
+11. Action handlers revalidate required capabilities immediately before use.
+12. The existing OGRE `wizProject` registration continues to create ordinary OGRE projects through the existing project path.
+13. A setup-only `wizCustom` registration reuses the same `ogre/wizard.script` rather than duplicating installer code.
+14. `Wizard.GetWizardType()` cleanly selects project versus setup-only behavior.
+15. Shared OGRE setup pages and handlers are identical between the project and setup-only modes.
+16. The setup-only wizard creates no project and completes through `SetupCustom()` plus `OgreMacAllReady()`.
+17. The `wizCustom` setup entry is separated from Project templates by existing `TemplateOutputType` filtering.
+18. OgreTools locates the setup entry through the public `cbWizardPlugin` interface using `ogre/wizard.script` + `totCustom`, without depending on `Wiz` internals.
+19. Setup completion becomes visible on the next `Tools -> OGRE` open without restarting Code::Blocks.
+20. `Open SDK tools folder` opens the freshly verified managed directory.
+21. `Open SampleBrowser` launches the freshly verified managed application.
+22. The managed macOS SampleBrowser includes `Codec_Assimp.framework` when the codec target exists.
+23. No arbitrary shell-command execution is introduced.
+24. Command-line executable paths and arguments remain separate.
+25. stdout, stderr, and actual exit status are captured for converter execution.
+26. Conversion success is not inferred solely from `.mesh` existence.
+27. User source assets are not silently modified.
+28. Generated output does not default into installed SDK media.
+29. `resources.cfg` and project files are not silently rewritten.
+30. Ordinary projects are not classified as OGRE projects merely because tools are installed.
+31. Deferred project-context machinery is not reintroduced into discovery without a specific need.
+32. The final macOS bundle passes the established packaging and code-signing workflow.
 
 ---
 
 ## 18. What stays rejected
 
-- Permanent `isOgreProject`.
-- Requiring creation by the OGRE wizard merely to expose tools.
+- Permanent `isOgreProject` classification.
+- Requiring wizard ancestry merely to expose tools.
 - Parsing active build configuration merely to decide whether the OGRE menu exists.
-- Project-name, directory-name, or source scanning for menu visibility.
-- Putting globally available OGRE utilities behind project classification.
-- Global shell-startup modification.
-- Permanent insertion of the OGRE tools directory into user `PATH`.
-- Unbounded filesystem searches for OGRE installations.
-- Selecting an executable without verifying it exists.
-- Caching tool availability indefinitely.
-- Requiring a Code::Blocks restart after the wizard installs OGRE merely to refresh tool availability.
-- One missing tool disabling the complete OGRE feature.
-- Patching SampleBrowser opportunistically at launch time inside OgreTools.
-- Duplicating the entire OGRE installation implementation in `OgreTools`.
+- Global shell-startup modification or permanent PATH insertion.
+- Unbounded filesystem searches.
+- PATH overriding a valid managed tool.
+- Persistent capability caching.
+- Wizard-specific refresh notifications, timers, or filesystem watchers when menu-open refresh suffices.
+- Launching the existing `wizProject` OGRE entry from Install / Repair, because successful completion also creates a project.
+- Duplicating the OGRE installer inside OgreTools.
+- Duplicating `ogre/wizard.script` solely to create a setup-only workflow.
+- Creating new ScriptedWizard include machinery when `Wizard.GetWizardType()` plus dual registration already provides a one-script solution.
+- Depending on concrete `Wiz` internals when `cbWizardPlugin` provides the required interface.
+- Selecting the setup wizard by translated title when script filename + output type provides a stable identity.
+- Patching SampleBrowser opportunistically at launch time.
 - Shell-string converter execution.
-- Arbitrary user-entered command execution.
 - `.mesh` existence as the sole definition of conversion success.
-- Copying generated user assets into installed SDK media.
+- Copying user assets into installed SDK media.
 - Hidden `resources.cfg` or project-setting rewrites.
 - Converter machinery in generated `main.cpp`.
-- Reintroducing project-context complexity merely because the seam is available.
+- Reintroducing project-context complexity merely because the seam exists.
 - Expanding v3.8.2 into an asset database, package manager, or scene editor.
 
 ---
 
-## 19. Stop conditions
-
-Stop and preserve the implementation if:
-
-- OGRE tools cannot be located without an unbounded filesystem search;
-- tool execution requires arbitrary shell interpolation;
-- installation requires uncontrolled modification of the user's shell environment;
-- the only way to reuse the existing OGRE installer is to duplicate significant wizard implementation;
-- converter execution cannot reliably expose exit status and output;
-- the importer must modify source assets or SDK media to function;
-- platform-specific assumptions cannot be isolated explicitly.
-
-Project-context detection is **not** a stop condition. It is simply outside tool discovery. A narrowly scoped operation may still consult the active project when that operation genuinely benefits from it.
-
----
-
-## 20. Current critical path
+## 19. Current critical path
 
 ```text
-managed macOS locator                            DONE
+managed capability locator                       DONE
         |
-        +-- all five expected capabilities       DONE
-        +-- initial menu enablement               DONE
-        +-- SDK tools folder action               DONE
-        +-- SampleBrowser action                  DONE
-        +-- SampleBrowser bundle correction       DONE LOCALLY
-        |
-        v
-on-demand menu refresh                           NEXT
+        +-- all five managed capabilities        DONE
+        +-- PATH fallback + precedence            DONE
+        +-- live submenu refresh                  DONE
+        +-- action-time revalidation              ESTABLISHED PATTERN
         |
         v
-PATH fallback
+Tools -> OGRE submenu                            DONE
+        |
+        +-- independent enablement                DONE
+        +-- tools folder                          DONE
+        +-- SampleBrowser                         DONE
+        +-- SampleBrowser Assimp bundle fix       DONE LOCALLY
         |
         v
-install / repair bridge
+install / repair architecture                    RESOLVED
+        |
+        +-- full wizProject launch                REJECTED FOR SETUP
+        +-- OGRE setup functions independent      PROVEN
+        +-- wizCustom semantics                   PROVEN
+        +-- SetupCustom() path                    PROVEN
+        +-- Wizard.GetWizardType()                PROVEN
+        +-- same script dual registration         SELECTED
+        +-- Project/Custom template filtering     PROVEN
+        +-- public cbWizardPlugin lookup          PROVEN
+        |
+        v
+add setup-only OGRE registration                  NEXT
+        |
+        v
+branch BeginWizard() + SetupCustom()
+        |
+        v
+wire OgreTools Install / Repair action
+        |
+        v
+validate install -> live refresh
         |
         v
 command-line tool handlers
@@ -803,51 +942,9 @@ regression + signed v3.8.2 release
 
 ---
 
-## 21. Done when
+## 20. Done when
 
 **Status: IN PROGRESS.**
 
-v3.8.2 is complete when Code::Blocks exposes the OGRE utilities installed by its OGRE ecosystem through the native `OgreTools` plugin under `Tools -> OGRE`, verifies and refreshes individual capabilities independently, provides recovery when tools are unavailable, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification.
-
-```text
-v3.8.1 correct installed OGRE toolchain          DONE
-        |
-        v
-native OgreTools plugin                          DONE
-        |
-        v
-plugin rename / packaging / loading              DONE
-        |
-        v
-project-context investigation                    PRESERVED + DEFERRED
-        |
-        v
-managed capability locator                       DONE
-        |
-        v
-Tools -> OGRE submenu                            DONE
-        |
-        +-- initial capability enablement         DONE
-        +-- tools folder                          DONE
-        +-- SampleBrowser                         DONE
-        +-- SampleBrowser Assimp bundle fix       DONE LOCALLY / UPSTREAM PR OPEN
-        |
-        v
-fresh menu-open capability refresh               NEXT
-        |
-        v
-PATH fallback + installation bridge
-        |
-        v
-safe converter execution + OGRE log
-        |
-        v
-conversion validation
-        |
-        v
-project-local output when useful
-        |
-        v
-regression + signed v3.8.2 release
-```
+v3.8.2 is complete when Code::Blocks exposes installed OGRE utilities through the native `OgreTools` plugin under `Tools -> OGRE`, resolves current capabilities using managed-first/PATH-fallback precedence, refreshes availability on demand, provides setup-only OGRE installation/repair through the existing scripted-wizard machinery without creating a project or duplicating installer code, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification.
 
