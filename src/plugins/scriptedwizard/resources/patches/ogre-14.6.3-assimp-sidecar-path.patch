@@ -62,6 +62,18 @@ index de3ad96..7401ba1 100644
          {
              res = source;
              // glTF2 importer wants to open files multiple times
+diff --git a/Samples/Browser/CMakeLists.txt b/Samples/Browser/CMakeLists.txt
+index f9c0108..5b4091b 100644
+--- a/Samples/Browser/CMakeLists.txt
++++ b/Samples/Browser/CMakeLists.txt
+@@ -173,6 +173,7 @@ if (APPLE)
+         Plugin_ParticleFX
+         Plugin_PCZSceneManager
+         Plugin_DotScene
++        Codec_Assimp
+         Codec_STBI
+         Codec_FreeImage
+         RenderSystem_GL
 diff --git a/Tools/AssimpConverter/main.cpp b/Tools/AssimpConverter/main.cpp
 index b1784e2..7d5e513 100644
 --- a/Tools/AssimpConverter/main.cpp

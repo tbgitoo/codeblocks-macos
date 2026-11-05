@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <CodeBlocks_plugin_manifest_file>
     <SdkVersion major="1" minor="10" release="0" />
-    <Plugin name="ProjectTools">
-        <Value title="Project Tools" />
+    <Plugin name="OgreTools">
+        <Value title="OGRE Tools" />
         <Value version="0.1" />
-        <Value description="Provides project-context toolkit detection and actions" />
+        <Value description="Provides integrated access to installed OGRE tools" />
         <Value author="Thomas Braschler" />
         <Value authorEmail="" />
         <Value authorWebsite="" />

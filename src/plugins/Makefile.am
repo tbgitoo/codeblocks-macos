@@ -50,8 +50,8 @@ if BUILD_PROJECTSIMPORTER
 MAYBE_PROJECTSIMPORTER=projectsimporter
 endif
 
-if BUILD_PROJECTTOOLS
-MAYBE_PROJECTTOOLS=projecttools
+if BUILD_OGRETOOLS
+MAYBE_OGRETOOLS=ogretools
 endif
 
 if BUILD_SCRIPTEDWIZARD
@@ -73,7 +73,7 @@ SUBDIRS=$(MAYBE_ABBREVIATIONS) \
 		$(MAYBE_MANIFEST) \
 		$(MAYBE_MIMEHANDLER) \
 		$(MAYBE_PROJECTSIMPORTER) \
-		$(MAYBE_PROJECTTOOLS) \
+		$(MAYBE_OGRETOOLS) \
 		$(MAYBE_OCCURRENCESHIGHLIGHTING) \
 		$(MAYBE_OPENFILESLIST) \
 		$(MAYBE_SCRIPTEDWIZARD) \
@@ -93,7 +93,7 @@ DIST_SUBDIRS = abbreviations \
 		occurrenceshighlighting \
 		openfileslist \
 		projectsimporter \
-		projecttools \
+		ogretools \
 		scriptedwizard \
 		todo \
 		xpmanifest \
