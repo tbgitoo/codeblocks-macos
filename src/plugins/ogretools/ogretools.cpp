@@ -1,7 +1,5 @@
 #include <sdk.h>
 
-#include "ogretools.h"
-
 #include <cbplugin.h>
 
 #include <logmanager.h>
@@ -28,9 +26,15 @@ namespace
     int idOpenToolsFolder   = wxNewId();
     int idSampleBrowser     = wxNewId();
     int idInstallOgre       = wxNewId();
+
+
+
+
+
 }
 
 BEGIN_EVENT_TABLE(OgreTools, cbPlugin)
+    EVT_MENU_OPEN(OgreTools::OnOgreMenuOpen)
     EVT_MENU(idOpenToolsFolder, OgreTools::OnOpenToolsFolder)
     EVT_MENU(idSampleBrowser, OgreTools::OnOpenSampleBrowser)
 END_EVENT_TABLE()
@@ -67,48 +71,59 @@ void OgreTools::BuildMenu(wxMenuBar* menuBar)
     if (!toolsMenu)
         return;
 
-    const OgreToolsAvailability tools = LocateOgreTools();
+    m_OgreMenu = new wxMenu();
 
-    wxMenu* ogreMenu = new wxMenu();
+    m_ImportAsset =
+        m_OgreMenu->Append(
+            idImportAsset,
+            _("Import 3D asset..."));
 
-    wxMenuItem* importAsset =
-        ogreMenu->Append(idImportAsset, _("Import 3D asset..."));
+    m_OgreMenu->AppendSeparator();
 
-    ogreMenu->AppendSeparator();
+    m_AssimpConverter =
+        m_OgreMenu->Append(
+            idAssimpConverter,
+            _("OgreAssimpConverter..."));
 
-    wxMenuItem* assimpConverter =
-        ogreMenu->Append(idAssimpConverter, _("OgreAssimpConverter..."));
+    m_MeshUpgrader =
+        m_OgreMenu->Append(
+            idMeshUpgrader,
+            _("OgreMeshUpgrader..."));
 
-    wxMenuItem* meshUpgrader =
-        ogreMenu->Append(idMeshUpgrader, _("OgreMeshUpgrader..."));
+    m_XmlConverter =
+        m_OgreMenu->Append(
+            idXmlConverter,
+            _("OgreXMLConverter..."));
 
-    wxMenuItem* xmlConverter =
-        ogreMenu->Append(idXmlConverter, _("OgreXMLConverter..."));
+    m_VrmlConverter =
+        m_OgreMenu->Append(
+            idVrmlConverter,
+            _("VRMLConverter..."));
 
-    wxMenuItem* vrmlConverter =
-        ogreMenu->Append(idVrmlConverter, _("VRMLConverter..."));
+    m_OgreMenu->AppendSeparator();
 
-    ogreMenu->AppendSeparator();
+    m_OpenToolsFolder =
+        m_OgreMenu->Append(
+            idOpenToolsFolder,
+            _("Open SDK tools folder"));
 
-    wxMenuItem* openToolsFolder =
-        ogreMenu->Append(idOpenToolsFolder, _("Open SDK tools folder"));
+    m_SampleBrowser =
+        m_OgreMenu->Append(
+            idSampleBrowser,
+            _("Open SampleBrowser"));
 
-    wxMenuItem* sampleBrowser =
-        ogreMenu->Append(idSampleBrowser, _("Open SampleBrowser"));
+    m_OgreMenu->AppendSeparator();
 
-    ogreMenu->AppendSeparator();
+    m_InstallOgre =
+        m_OgreMenu->Append(
+            idInstallOgre,
+            _("Install / Repair OGRE tools..."));
 
-    ogreMenu->Append(idInstallOgre, _("Install / Repair OGRE tools..."));
+    RefreshCapabilities();
 
-    importAsset->Enable(!tools.assimpConverter.IsEmpty());
-    assimpConverter->Enable(!tools.assimpConverter.IsEmpty());
-    meshUpgrader->Enable(!tools.meshUpgrader.IsEmpty());
-    xmlConverter->Enable(!tools.xmlConverter.IsEmpty());
-    vrmlConverter->Enable(!tools.vrmlConverter.IsEmpty());
-    openToolsFolder->Enable(!tools.toolsDirectory.IsEmpty());
-    sampleBrowser->Enable(!tools.sampleBrowser.IsEmpty());
-
-    toolsMenu->AppendSubMenu(ogreMenu, _("OGRE"));
+    toolsMenu->AppendSubMenu(
+        m_OgreMenu,
+        _("OGRE"));
 }
 
 void OgreTools::OnOpenToolsFolder(wxCommandEvent& event)
@@ -134,3 +149,52 @@ void OgreTools::OnOpenSampleBrowser(wxCommandEvent& event)
 
     wxLaunchDefaultApplication(tools.sampleBrowser);
 }
+
+void OgreTools::RefreshCapabilities()
+{
+    if (!m_OgreMenu)
+        return;
+
+    const OgreToolsAvailability tools =
+        LocateOgreTools();
+
+    if (m_ImportAsset)
+        m_ImportAsset->Enable(
+            !tools.assimpConverter.IsEmpty());
+
+    if (m_AssimpConverter)
+        m_AssimpConverter->Enable(
+            !tools.assimpConverter.IsEmpty());
+
+    if (m_MeshUpgrader)
+        m_MeshUpgrader->Enable(
+            !tools.meshUpgrader.IsEmpty());
+
+    if (m_XmlConverter)
+        m_XmlConverter->Enable(
+            !tools.xmlConverter.IsEmpty());
+
+    if (m_VrmlConverter)
+        m_VrmlConverter->Enable(
+            !tools.vrmlConverter.IsEmpty());
+
+    if (m_OpenToolsFolder)
+        m_OpenToolsFolder->Enable(
+            !tools.toolsDirectory.IsEmpty());
+
+    if (m_SampleBrowser)
+        m_SampleBrowser->Enable(
+            !tools.sampleBrowser.IsEmpty());
+    
+    
+}
+
+void OgreTools::OnOgreMenuOpen(wxMenuEvent& event)
+{
+    if (event.GetMenu() == m_OgreMenu)
+        RefreshCapabilities();
+
+    event.Skip();
+}
+
+
