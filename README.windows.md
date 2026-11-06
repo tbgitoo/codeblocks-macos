@@ -13,16 +13,7 @@ The paths below use these names. Substitute your own directories.
 | `<MinGW>` | The MinGW root: the directory that contains `bin\g++.exe` |
 | `<wxWidgets>` | The wxWidgets 3.3.x source tree, after the build in step 2 |
 
-On the computer these instructions were checked on:
-
-| Name | Path |
-|---|---|
-| `<repo>` | `D:\Users\thoma\Documents\git\codeblocks-macos` |
-| `<CodeBlocks>` | `D:\Program Files\CodeBlocks` |
-| `<MinGW>` | `D:\Program Files\CodeBlocks\MinGW` (WinLibs GCC 14.2.0, POSIX threads, SEH, UCRT) |
-| `<wxWidgets>` | `D:\Users\thoma\Documents\wxWidgets-3.3.4` |
-
-A normal Code::Blocks installation directory is `C:\Program Files\CodeBlocks`. Another drive or directory is fine. The bootstrap IDE and the MinGW tree do not have to share a parent directory.
+A normal Code::Blocks installation directory is `C:\Program Files\CodeBlocks`. Another drive or directory is fine. The bootstrap IDE and the MinGW tree do not have to share a parent directory. The MinGW used to check these steps was WinLibs GCC 14.2.0 with POSIX threads, SEH, and UCRT.
 
 ## What you need
 
@@ -109,7 +100,7 @@ The same build from the IDE: open `src\CodeBlocks_wx33_64.cbp`, select the **All
 
 `src\CodeBlocks_wx33_64.workspace` also builds extra tools and contributed plugins. Some of those plugins need libraries that are not part of these steps. They are not required to produce the IDE.
 
-`src\batch_build_core_33_64.bat` runs this project with different default directories (`C:\Devel\CodeBlocks` and a `MinGW64` folder). To use it on the layout above, set `CB_ROOT` to `<CodeBlocks>` and `GCC_ROOT` to `<MinGW>` first. That script keeps the build window open.
+`src\batch_build_core_33_64.bat` runs this project with different default directories (`C:\Devel\CodeBlocks` and a `MinGW64` folder). Set `CB_ROOT` to `<CodeBlocks>` and `GCC_ROOT` to `<MinGW>` before running it. That script keeps the build window open.
 
 ## 5. Copy the runtime DLLs
 
