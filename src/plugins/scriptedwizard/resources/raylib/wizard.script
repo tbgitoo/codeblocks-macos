@@ -2,9 +2,9 @@
 //
 // raylib project wizard
 //
-// First-pass analogue of the SDL3 wizard:
 //   - macOS: Homebrew detection/install and validated prefix
-//   - Windows: existing installation selected manually
+//   - Windows, x86_64-w64-mingw32: official 6.2 MinGW zip, shared library
+//   - Windows, any other compiler: existing installation selected manually
 //   - other Unix-like systems: pkg-config
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,9 +14,16 @@ RaylibPathDefault    <- _T("$(#raylib)");
 RaylibPathDefaultInc <- _T("$(#raylib.include)");
 RaylibPathDefaultLib <- _T("$(#raylib.lib)");
 RaylibPath           <- _T("");
-// Windows: exact directories accepted by the location page
+// Windows: exact directories accepted by the location page, or by the
+// automatic 6.2 tree. RaylibWinAuto 0 keeps the manual location page.
 RaylibWinInclude     <- _T("");
 RaylibWinLib         <- _T("");
+RaylibWinAuto        <- 0;
+RaylibWinDll         <- _T("");
+RaylibWinState       <- _T("");
+RaylibWinEdition     <- _T("");
+RaylibWinUrl         <- _T("");
+RaylibWinHash        <- _T("");
 
 // macOS: filled only after the installed raylib tree is accepted
 RaylibMacPrefix     <- _T("");
@@ -42,17 +49,25 @@ function BeginWizard()
         if (!reason.IsEmpty())
             Wizard.AddInfoPage(_T("RaylibMacDiag"), RaylibMacPageText(reason));
     }
+    else if (PLATFORM == PLATFORM_MSW && RaylibWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        RaylibWinAuto = 1;
+        RaylibWinSelectArchive();
+        local reason = RaylibWinBlockReason();
+        if (!reason.IsEmpty())
+            Wizard.AddInfoPage(_T("RaylibWinDiag"), RaylibWinPageText(reason));
+    }
     else if (PLATFORM == PLATFORM_MSW)
     {
         Wizard.AddInfoPage(_T("RaylibWinManual"),
-            _("This first raylib wizard does not download a Windows SDK automatically.\n\n") +
+            _("The automatic raylib install does not apply to this compiler.\n\n") +
             _("The next page asks for a raylib folder you already have.\n") +
             _("Nothing is downloaded."));
     }
 
     Wizard.AddProjectPathPage();
 
-    if (PLATFORM == PLATFORM_MSW)
+    if (PLATFORM == PLATFORM_MSW && RaylibWinAuto == 0)
     {
         local raylibpath_descr = _("Please select the folder where raylib is installed on your computer.\n\n") +
                                  _("The selected folder must provide an include folder containing raylib.h\n") +
@@ -348,15 +363,237 @@ function RaylibMacAllowForward()
 function OnLeave_ProjectPathPage(fwd)
 {
     if (fwd)
-        return RaylibMacAllowForward();
+    {
+        if (!RaylibMacAllowForward())
+            return false;
+        return RaylibWinAllowForward();
+    }
     return true;
 }
 
 function OnLeave_CompilerPage(fwd)
 {
     if (fwd)
-        return RaylibMacAllowForward();
+    {
+        if (!RaylibMacAllowForward())
+            return false;
+        return RaylibWinAllowForward();
+    }
     return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Official 6.2 MinGW zip (Windows, x86_64-w64-mingw32 only)
+////////////////////////////////////////////////////////////////////////////////
+
+function RaylibWinClear()
+{
+    RaylibWinInclude = _T("");
+    RaylibWinLib = _T("");
+    RaylibWinDll = _T("");
+}
+
+function RaylibWinCompilerMatches(report)
+{
+    if (!RaylibReportField(report, _T("access")).Matches(_T("works")))
+        return false;
+    return RaylibReportField(report, _T("machine")).Matches(_T("x86_64-w64-mingw32"));
+}
+
+function RaylibWinSelectArchive()
+{
+    RaylibWinEdition = _T("6.2-x86_64");
+    RaylibWinUrl = _T("https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_win64_mingw-w64.zip");
+    RaylibWinHash = _T("48ba378d100fe7e13fc2c35d708764b855b815596f3b0a31746e37259283961f");
+}
+
+// True only for the string macro, not RAYLIB_VERSION_MAJOR / _MINOR / _PATCH.
+function RaylibHeaderIs62(text)
+{
+    local key = _T("#define RAYLIB_VERSION");
+    local rest = text;
+    while (!rest.IsEmpty())
+    {
+        local at = rest.Find(key);
+        if (at == -1)
+            return false;
+        local after = at + key.Length();
+        if (after >= rest.Length())
+            return false;
+        local next = rest.Mid(after, 1);
+        if (!next.Matches(_T(" ")) && !next.Matches(_T("\t")))
+        {
+            rest = rest.Mid(after, rest.Length() - after);
+            continue;
+        }
+        local i = after;
+        while (i < rest.Length())
+        {
+            local ch = rest.Mid(i, 1);
+            if (!ch.Matches(_T(" ")) && !ch.Matches(_T("\t")))
+                break;
+            i = i + 1;
+        }
+        if ((i + 5) > rest.Length())
+            return false;
+        return rest.Mid(i, 5).Matches(_T("\"6.2\""));
+    }
+    return false;
+}
+
+// Empty string: this tree may be written into the project.
+function RaylibWinSuitable(prefix)
+{
+    RaylibWinClear();
+    if (prefix.IsEmpty())
+        return _("raylib's directory is missing. No project was created.");
+
+    local sep = _T("\\");
+    local includeDir = prefix + sep + _T("include");
+    local libDir = prefix + sep + _T("lib");
+    local header = includeDir + sep + _T("raylib.h");
+    local implib = libDir + sep + _T("libraylibdll.a");
+    local dll = libDir + sep + _T("raylib.dll");
+
+    if (!IO.FileExists(header))
+        return _("raylib was found, but include/raylib.h is not under ") + prefix + _(". No project was created.");
+    if (!RaylibHeaderIs62(IO.ReadFileContents(header)))
+        return _("raylib.h does not report RAYLIB_VERSION 6.2. No project was created.");
+    if (!IO.FileExists(implib))
+        return _("raylib was found, but lib/libraylibdll.a is not under ") + prefix + _(". No project was created.");
+    if (!IO.FileExists(dll))
+        return _("raylib was found, but lib/raylib.dll is not under ") + prefix + _(". No project was created.");
+
+    RaylibWinInclude = includeDir;
+    RaylibWinLib = libDir;
+    RaylibWinDll = dll;
+    return _T("");
+}
+
+function RaylibWinDecide(prefix, nested)
+{
+    if (RaylibWinSuitable(prefix).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty() && RaylibWinSuitable(nested).IsEmpty())
+        return _T("");
+    if (!nested.IsEmpty())
+        return RaylibWinSuitable(nested);
+    return RaylibWinSuitable(prefix);
+}
+
+function RaylibWinBlockReason()
+{
+    local report = Wizard.WinSdkTree(_T("raylib"));
+    RaylibWinState = RaylibReportField(report, _T("state"));
+    if (RaylibWinState.Matches(_T("installed")))
+        return RaylibWinDecide(RaylibReportField(report, _T("prefix")), RaylibReportField(report, _T("nested")));
+    RaylibWinClear();
+    if (RaylibWinState.Matches(_T("missing")))
+        return _("raylib is not installed. This wizard will not create a project.");
+    return _("raylib could not be checked. This wizard will not create a project.");
+}
+
+function RaylibWinPageText(reason)
+{
+    local text = _("No project is created from this page.\n\n");
+    if (RaylibWinState.Matches(_T("missing")))
+    {
+        text = text + _("raylib is not installed.\n\n") +
+                      _("Press Next to install raylib.\n") +
+                      _("Cancel on that dialog does not start a download.\n") +
+                      _("Use Cancel on this page to close the wizard.\n");
+    }
+    else
+    {
+        text = text + reason + _("\n\n") +
+                      _("Use Cancel to close the wizard.\n");
+    }
+    return text;
+}
+
+function RaylibWinOfferInstall()
+{
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!RaylibWinCompilerMatches(report))
+    {
+        ShowError(_("The automatic raylib install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    RaylibWinSelectArchive();
+    local explanation = _("This project needs raylib.\n\n") +
+                        _("Nothing is downloaded until you choose Install raylib.\n") +
+                        _("Cancel on this dialog does not start a download.");
+    local markers = _T("include/raylib.h;lib/libraylibdll.a;lib/raylib.dll");
+    local staged = Wizard.WinSdkStage(RaylibWinUrl, RaylibWinHash, _T("raylib"), markers, explanation, _("Install raylib"));
+    if (!RaylibReportField(staged, _T("success")).Matches(_T("1")))
+    {
+        if (RaylibReportField(staged, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+            return false;
+        }
+        if (RaylibReportField(staged, _T("launched")).Matches(_T("1")))
+        {
+            ShowError(_("raylib was not installed. No project was created.\n\n") +
+                      RaylibReportField(staged, _T("output")));
+        }
+        return false;
+    }
+
+    local stagedPrefix = RaylibReportField(staged, _T("prefix"));
+    local reason = RaylibWinSuitable(stagedPrefix);
+    if (!reason.IsEmpty())
+    {
+        RaylibWinClear();
+        ShowError(reason);
+        return false;
+    }
+
+    local note = _T("library=raylib\nversion=6.2\nsource=") + RaylibWinUrl +
+                 _T("\nsha256=") + RaylibWinHash +
+                 _T("\nsha256_verified=") + RaylibWinHash +
+                 _T("\ncompiler=") + RaylibReportField(report, _T("version")) + _T(" ") +
+                 RaylibReportField(report, _T("machine"));
+    local published = Wizard.WinSdkPublish(_T("raylib"), RaylibWinEdition, stagedPrefix, note);
+    if (!RaylibReportField(published, _T("success")).Matches(_T("1")))
+    {
+        RaylibWinClear();
+        ShowError(_("raylib was not installed. No project was created.\n\n") +
+                  RaylibReportField(published, _T("output")));
+        return false;
+    }
+    reason = RaylibWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowMessage(RaylibWinPageText(reason));
+    return false;
+}
+
+function OnLeave_RaylibWinDiag(fwd)
+{
+    if (!fwd)
+        return true;
+    if (RaylibWinBlockReason().IsEmpty())
+        return true;
+    if (RaylibWinState.Matches(_T("missing")))
+        return RaylibWinOfferInstall();
+    return false;
+}
+
+function RaylibWinAllowForward()
+{
+    if (PLATFORM != PLATFORM_MSW || RaylibWinAuto == 0)
+        return true;
+    if (!RaylibWinCompilerMatches(Wizard.WinSdkCompiler(Wizard.GetCompilerID())))
+    {
+        ShowError(_("The automatic raylib install does not apply to this compiler. No project was created."));
+        return false;
+    }
+    local reason = RaylibWinBlockReason();
+    if (reason.IsEmpty())
+        return true;
+    ShowError(reason);
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -385,6 +622,20 @@ function SetupProject(project)
         project.AddLinkerOption(_T("-framework Cocoa"));
         project.AddLinkerOption(_T("-framework GLUT"));
         project.AddLinkerOption(_T("-framework OpenGL"));
+    }
+    else if (PLATFORM == PLATFORM_MSW && RaylibWinAuto == 1)
+    {
+        // Official 6.2 MinGW zip. libraylib.a from that zip does not link
+        // with WinLibs GCC 14.2.0. The shared library does, and OpenGL,
+        // GDI, and WinMM are already inside raylib.dll.
+        if (RaylibWinInclude.IsEmpty() || RaylibWinLib.IsEmpty() || RaylibWinDll.IsEmpty())
+            return false;
+
+        project.AddIncludeDir(RaylibWinInclude);
+        project.AddLibDir(RaylibWinLib);
+        project.AddCompilerOption(_T("-DBUILD_LIBTYPE_SHARED"));
+        project.AddLinkLib(_T("raylibdll"));
+        project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + RaylibWinDll + _T("\" \"$(TARGET_OUTPUT_DIR)raylib.dll\""));
     }
     else if (PLATFORM == PLATFORM_MSW)
     {
