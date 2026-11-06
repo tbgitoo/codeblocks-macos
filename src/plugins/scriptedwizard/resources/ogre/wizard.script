@@ -730,67 +730,89 @@ function OgreMacAllReady()
     return true;
 }
 
+function SetupCustom()
+{
+    return OgreMacAllReady();
+}
+
+function AddOgreMacSetupPages()
+{
+    if (PLATFORM != PLATFORM_MAC)
+        return;
+
+    OgreMacLoadPatchBuildState();
+
+    local reason = OgreMacBlockReason();
+
+    if (!reason.IsEmpty())
+    {
+        Wizard.AddInfoPage(
+            _T("OgreMacPrerequisites"),
+            OgreMacPageText(reason));
+    }
+
+    reason = OgreMacNativeCMakeBlockReason();
+
+    Wizard.AddInfoPage(
+        _T("OgreMacCMake"),
+        OgreMacCMakePageText(reason));
+
+    local gitReason = OgreMacGitBlockReason();
+
+    if (!gitReason.IsEmpty())
+    {
+        Wizard.AddInfoPage(
+            _T("OgreMacGit"),
+            OgreMacGitPageText(gitReason));
+    }
+
+    if (!OgreMacSourceReady())
+    {
+        Wizard.AddInfoPage(
+            _T("OgreMacAcquire"),
+            OgreMacAcquirePageText());
+    }
+
+    Wizard.AddInfoPage(
+        _T("OgreMacPatch"),
+        OgreMacPatchPageText());
+
+    Wizard.AddInfoPage(
+        _T("OgreMacConfigure"),
+        OgreMacConfigurePageText());
+
+    Wizard.AddInfoPage(
+        _T("OgreMacBuild"),
+        OgreMacBuildPageText());
+
+    Wizard.AddInfoPage(
+        _T("OgreMacInstall"),
+        OgreMacInstallPageText());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Wizard
 ////////////////////////////////////////////////////////////////////////////////
 
 function BeginWizard()
 {
-    Wizard.AddInfoPage(
-    _T("OgreIntro"),
-    _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.1 validates prerequisites, optionally applies an asset-sidecar compatibility patch, configures, builds, installs and validates the OGRE SDK.\n"));
+    local wiz_type = Wizard.GetWizardType();
 
-    if (PLATFORM == PLATFORM_MAC)
+    if (wiz_type == wizCustom)
     {
-    
-        OgreMacLoadPatchBuildState();
-        local reason = OgreMacBlockReason();
-
-        if (!reason.IsEmpty())
-        {
-            Wizard.AddInfoPage(
-                _T("OgreMacPrerequisites"),
-                OgreMacPageText(reason));
-        }
-
-        reason = OgreMacNativeCMakeBlockReason();
-
         Wizard.AddInfoPage(
-            _T("OgreMacCMake"),
-            OgreMacCMakePageText(reason));
+            _T("OgreSetupIntro"),
+            _("OGRE SDK setup\n\nThis wizard installs, repairs and validates the Code::Blocks-managed OGRE 14.6.3 SDK.\n\nNo project will be created."));
 
-        local gitReason = OgreMacGitBlockReason();
-
-        if (!gitReason.IsEmpty())
-        {
-            Wizard.AddInfoPage(
-                _T("OgreMacGit"),
-                OgreMacGitPageText(gitReason));
-        }
-
-        if (!OgreMacSourceReady())
-        {
-            Wizard.AddInfoPage(
-                _T("OgreMacAcquire"),
-                OgreMacAcquirePageText());
-        }
-
-        Wizard.AddInfoPage(
-            _T("OgreMacPatch"),
-            OgreMacPatchPageText());
-
-        Wizard.AddInfoPage(
-            _T("OgreMacConfigure"),
-            OgreMacConfigurePageText());
-
-        Wizard.AddInfoPage(
-            _T("OgreMacBuild"),
-            OgreMacBuildPageText());
-
-        Wizard.AddInfoPage(
-            _T("OgreMacInstall"),
-            OgreMacInstallPageText());
+        AddOgreMacSetupPages();
+        return;
     }
+
+    Wizard.AddInfoPage(
+        _T("OgreIntro"),
+        _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.2 validates prerequisites, optionally applies the OGRE compatibility patch, configures, builds, installs and validates the OGRE SDK."));
+
+    AddOgreMacSetupPages();
 
     Wizard.AddProjectPathPage();
 

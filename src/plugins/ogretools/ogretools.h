@@ -24,6 +24,7 @@ private:
 
     void OnOpenToolsFolder(wxCommandEvent& event);
     void OnOpenSampleBrowser(wxCommandEvent& event);
+    void OnInstallOgre(wxCommandEvent& event);
 
     wxMenu* m_OgreMenu = nullptr;
 

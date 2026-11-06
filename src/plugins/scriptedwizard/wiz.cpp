@@ -885,6 +885,12 @@ TemplateOutputType Wiz::GetWizardType()
     return m_Wizards[m_LaunchIndex].output_type;
 }
 
+
+wxWindow* Wiz::GetWizardWindow() const
+{
+    return m_pWizard;
+}
+
 void Wiz::FillComboboxWithCompilers(const wxString& name)
 {
     wxWizardPage* page = m_pWizard->GetCurrentPage();
@@ -2037,6 +2043,7 @@ SQInteger Wiz_MacGitClone(HSQUIRRELVM v)
 
     const MacGitCloneResult result =
         CloneMacGitRepository(
+            extractor.p0->GetWizardWindow(),
             *extractor.p1,
             *extractor.p2,
             *extractor.p3,
@@ -2180,6 +2187,7 @@ SQInteger Wiz_MacCMakeConfigure(HSQUIRRELVM v)
 
     const MacCMakeRunResult result =
         ConfigureMacCMake(
+            extractor.p0->GetWizardWindow(),
             *extractor.p1,
             *extractor.p2,
             *extractor.p3,
@@ -2211,6 +2219,7 @@ SQInteger Wiz_MacCMakeBuild(
 
     const MacCMakeRunResult result =
         BuildMacCMake(
+            extractor.p0->GetWizardWindow(),
             *extractor.p1,
             *extractor.p2,
             *extractor.p3);
@@ -2240,6 +2249,7 @@ SQInteger Wiz_MacCMakeInstall(
 
     const MacCMakeRunResult result =
         InstallMacCMake(
+            extractor.p0->GetWizardWindow(),
             *extractor.p1,
             *extractor.p2,
             *extractor.p3,

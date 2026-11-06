@@ -14,6 +14,8 @@
 
 #include <wx/string.h>
 
+class wxWindow;
+
 #if defined(__WXMAC__)
 
 enum MacCMakeAccess
@@ -87,6 +89,7 @@ struct MacCMakeRunResult
 };
 
 MacCMakeRunResult ConfigureMacCMake(
+    wxWindow* parent,
     const wxString& source,
     const wxString& build,
     const wxString& install,
@@ -96,11 +99,13 @@ MacCMakeRunResult ConfigureMacCMake(
 
 
 MacCMakeRunResult BuildMacCMake(
+    wxWindow* parent,
     const wxString& build,
     const wxString& explanation,
     const wxString& confirmLabel);
 
 MacCMakeRunResult InstallMacCMake(
+    wxWindow* parent,
     const wxString& build,
     const wxString& install,
     const wxString& explanation,

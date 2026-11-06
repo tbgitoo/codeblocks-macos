@@ -1,6 +1,7 @@
 #include <sdk.h>
 
 #include <cbplugin.h>
+#include <pluginmanager.h>
 
 #include <logmanager.h>
 #include <manager.h>
@@ -37,6 +38,7 @@ BEGIN_EVENT_TABLE(OgreTools, cbPlugin)
     EVT_MENU_OPEN(OgreTools::OnOgreMenuOpen)
     EVT_MENU(idOpenToolsFolder, OgreTools::OnOpenToolsFolder)
     EVT_MENU(idSampleBrowser, OgreTools::OnOpenSampleBrowser)
+    EVT_MENU(idInstallOgre, OgreTools::OnInstallOgre)
 END_EVENT_TABLE()
 
 OgreTools::OgreTools()
@@ -195,6 +197,45 @@ void OgreTools::OnOgreMenuOpen(wxMenuEvent& event)
         RefreshCapabilities();
 
     event.Skip();
+}
+
+void OgreTools::OnInstallOgre(wxCommandEvent& event)
+{
+    (void)event;
+
+    const PluginsArray wizards =
+        Manager::Get()
+            ->GetPluginManager()
+            ->GetOffersFor(ptWizard);
+
+    for (unsigned int p = 0; p < wizards.GetCount(); ++p)
+    {
+        cbWizardPlugin* wizard =
+            static_cast<cbWizardPlugin*>(wizards[p]);
+
+        if (!wizard)
+            continue;
+
+        for (int i = 0; i < wizard->GetCount(); ++i)
+        {
+            if (wizard->GetOutputType(i) != totCustom)
+                continue;
+
+            if (!wizard->GetScriptFilename(i).Matches(
+                    wxT("ogre/wizard.script")))
+            {
+                continue;
+            }
+
+            wizard->Launch(i);
+            return;
+        }
+    }
+
+    cbMessageBox(
+        _("The OGRE SDK setup wizard could not be found."),
+        _("OGRE Tools"),
+        wxICON_ERROR);
 }
 
 
