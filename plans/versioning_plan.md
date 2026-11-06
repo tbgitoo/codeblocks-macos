@@ -17,6 +17,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v3.2 (SDL2 project wizard becomes SDL3 on Apple Silicon)
   → v3.3 (SFML, GLFW, and SDL3 wizards set up automatically on Windows)
   → v3.4 (Modernization: irrlicht wizard replaced by raylib)
+  → v3.4b (Windows raylib install, the Homebrew step as one official zip)
   → v4.0 (installable Windows distribution; NSIS; no bundled compiler)
 ```
 
@@ -53,6 +54,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.2** | **M5 done** (tree). The SDL2 wizard creates an SDL3 project on Apple Silicon. SDL 1 is not registered on macOS. | [versioning_plan_v3_2.md](versioning_plan_v3_2.md) |
 | **v3.3** | **Complete** (tree). Windows automatic setup for SFML 3.1.0, GLFW 3.5.1, and SDL3 3.4.18. SDL 1 is not registered on Windows. |
 | **v3.4** | **Complete** (tree). Replacement of the irrlicht wizard with a raylib wizard on Mac | [versioning_plan_v3_4.md](versioning_plan_v3_4.md) |
+| **v3.4b** | **Planning.** Windows raylib install through the v3.3 zip helper. Shared library from the official 6.2 MinGW zip. | [versioning_plan_v3_4b.md](versioning_plan_v3_4b.md) |
 | **v4.0** | **Planning.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. M1 is the plan; no installer yet. | [versioning_plan_v3_4.md](versioning_plan_v3_4.md) |
 
 ### One-line outcomes
@@ -71,6 +73,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.2** | The SDL2 wizard creates an SDL3 project on Apple Silicon. SDL 1 is retired on macOS and stays on Unix. |
 | **v3.3** | On Windows, SFML, GLFW, and SDL3 install only after Install SFML, Install GLFW, or Install SDL3, into a versioned tree under the user profile. The generated project uses absolute include and library directories and copies the DLLs beside the executable. SDL 1 is not registered on Windows. |
 | **v3.4** | On Mac, raylib wizard runs and succesfully installs raylib via brew. Not tested on Windows |
+| **v3.4b** | On Windows, Install raylib fetches the official 6.2 MinGW zip and the generated project links `raylib.dll`. The static library in that zip is not used. |
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. |
 
 ---
