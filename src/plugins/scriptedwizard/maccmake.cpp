@@ -391,11 +391,12 @@ void ApplyVersion(MacCMakeProbe& probe)
 }
 
 bool ConfirmConfigure(
+    wxWindow* parent,
     const wxString& explanation,
     const wxString& confirmLabel)
 {
     wxDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         wxID_ANY,
         _("CMake"),
         wxDefaultPosition,
@@ -685,15 +686,10 @@ private:
         m_closed = true;
         m_timer.Stop();
 
-        wxWindow* parent = GetParent();
+        
 
         EndModal(wxID_OK);
 
-        if (parent)
-        {
-            parent->Raise();
-            parent->SetFocus();
-        }
     }
 
     void OnTimer(wxTimerEvent&)
@@ -1510,13 +1506,11 @@ private:
         m_closed = true;
         m_timer.Stop();
 
-        wxWindow* parent =
-            GetParent();
+        
 
         EndModal(wxID_OK);
 
-        if (parent)
-            parent->Raise();
+        
     }
 
     void OnTimer(wxTimerEvent&)
@@ -1772,6 +1766,7 @@ wxString FormatMacCMakePaths(
 }
 
 MacCMakeRunResult BuildMacCMake(
+    wxWindow* parent,
     const wxString& buildInput,
     const wxString& explanation,
     const wxString& confirmLabel)
@@ -1815,6 +1810,7 @@ MacCMakeRunResult BuildMacCMake(
     }
 
     if (!ConfirmConfigure(
+            parent,
             explanation,
             confirmLabel))
     {
@@ -1825,7 +1821,7 @@ MacCMakeRunResult BuildMacCMake(
         BoundedJobCount();
 
     MacCMakeBuildDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         build,
         jobs);
 
@@ -1859,6 +1855,7 @@ MacCMakeRunResult BuildMacCMake(
 }
 
 MacCMakeRunResult InstallMacCMake(
+    wxWindow* parent,
     const wxString& buildInput,
     const wxString& installInput,
     const wxString& explanation,
@@ -1906,6 +1903,7 @@ MacCMakeRunResult InstallMacCMake(
     }
 
     if (!ConfirmConfigure(
+            parent,
             explanation,
             confirmLabel))
     {
@@ -1913,7 +1911,7 @@ MacCMakeRunResult InstallMacCMake(
     }
 
     MacCMakeInstallDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         build,
         install);
 
@@ -1962,6 +1960,7 @@ MacCMakeRunResult InstallMacCMake(
 }
 
 MacCMakeRunResult ConfigureMacCMake(
+    wxWindow* parent,
     const wxString& sourceInput,
     const wxString& buildInput,
     const wxString& installInput,
@@ -2010,11 +2009,11 @@ MacCMakeRunResult ConfigureMacCMake(
 
     // Cancel here occurs before wxExecute.
     // No CMake operation has started.
-    if (!ConfirmConfigure(explanation, confirmLabel))
+    if (!ConfirmConfigure(parent, explanation, confirmLabel))
         return result;
 
     MacCMakeConfigureDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         source,
         build,
         install,

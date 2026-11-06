@@ -36,6 +36,7 @@ function RegisterWizards()
     RegisterWizard(wizProject,     _T("opencv"),       _("OpenCV project"),        _("Console"));
     RegisterWizard(wizProject,     _T("opengl"),       _("OpenGL project"),        _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("ogre"),         _("Ogre project"),          _("2D/3D Graphics"));
+    RegisterWizard(wizCustom,    _T("ogre"),         _("OGRE SDK setup"), _("2D/3D Graphics"));
     RegisterWizard(wizProject,     _T("plugins"),      _("Code::Blocks plugin"),   _("Code::Blocks"));
     RegisterWizard(wizProject,     _T("qt4"),          _("QT4 project"),           _("GUI"));
     RegisterWizard(wizProject,     _T("qt4dll"),       _("QT4 (shared) project"),  _("GUI"));

@@ -14,6 +14,8 @@
 
 #include <wx/string.h>
 
+class wxWindow;
+
 #if defined(__WXMAC__)
 
 // A saved path is only a location hint. Every probe runs --version again.
@@ -96,6 +98,7 @@ struct MacGitCloneResult
 // Cancel before launch does not start Git.
 // Success means that Git finished with exit code 0.
 MacGitCloneResult CloneMacGitRepository(
+    wxWindow* parent,
     const wxString& url,
     const wxString& tag,
     const wxString& destination,

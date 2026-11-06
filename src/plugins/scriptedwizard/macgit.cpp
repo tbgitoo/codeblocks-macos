@@ -264,11 +264,12 @@ void ApplyVersion(MacGitProbe& probe)
     probe.access = MacGitWorks;
 }
 
-bool ConfirmClone(const wxString& explanation,
+bool ConfirmClone(wxWindow* parent,
+                  const wxString& explanation,
                   const wxString& confirmLabel)
 {
     wxDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         wxID_ANY,
         _("Git"),
         wxDefaultPosition,
@@ -707,6 +708,7 @@ wxString FormatMacGitProbe(const MacGitProbe& probe)
 }
 
 MacGitCloneResult CloneMacGitRepository(
+    wxWindow* parent,
     const wxString& url,
     const wxString& tag,
     const wxString& destination,
@@ -754,11 +756,11 @@ MacGitCloneResult CloneMacGitRepository(
     }
 
     // Cancel here is before wxExecute. No clone is started.
-    if (!ConfirmClone(explanation, confirmLabel))
+    if (!ConfirmClone(parent, explanation, confirmLabel))
         return result;
 
     MacGitCloneDialog dlg(
-        Manager::Get()->GetAppWindow(),
+        parent,
         tag,
         destination);
 

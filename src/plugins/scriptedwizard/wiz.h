@@ -170,6 +170,8 @@ class Wiz : public cbWizardPlugin
         void Finalize();
         void RegisterWizard();
         wxString FindTemplateFile(const wxString& filename);
+        wxWindow* GetWizardWindow() const;
+   
 	protected:
         void OnAttach() override;
         void OnRelease(bool appShutDown) override;
