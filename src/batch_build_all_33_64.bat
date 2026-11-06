@@ -2,11 +2,11 @@
 rem ----------------------------------------
 rem Setup C::B root folder of *binaries* (!)
 rem ----------------------------------------
-if not defined CB_ROOT set CB_ROOT=C:\Devel\CodeBlocks
+if not defined CB_ROOT set CB_ROOT=D:\Program Files\CodeBlocks
 rem ------------------------------------------
 rem Setup GCC root folder with "bin" subfolder
 rem ------------------------------------------
-if not defined GCC_ROOT set GCC_ROOT=%CB_ROOT%\MinGW64
+if not defined GCC_ROOT set GCC_ROOT=%CB_ROOT%\MinGW
 
 rem -------------------------------------------
 rem Usually below here no changes are required.
