@@ -15,11 +15,14 @@ For download, installation, debugger and build information, see:
 
 [README.macos.md](README.macos.md)
 
-## Windows and Linux users
+## Windows
 
-This repository is concerned only with the unofficial native macOS port.
+There is no Windows installer in this tree. To build the 64-bit IDE from
+source, see [README.windows.md](README.windows.md).
 
-For Windows, Linux and the official Code::Blocks project, please visit:
+## Linux users
+
+For Linux and the official Code::Blocks project, please visit:
 
 [Official Code::Blocks website](https://www.codeblocks.org)
 
