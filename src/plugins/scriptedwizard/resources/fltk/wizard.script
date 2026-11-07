@@ -11,6 +11,19 @@ FLTKPathDefaultInc <- _T("$(#fltk.include)");
 FLTKPathDefaultLib <- _T("$(#fltk.lib)");
 FLTKPath           <- _T("");
 
+// Windows automatic install. These stay empty on the folder-page path.
+FLTKWinAuto        <- false;
+FLTKWinRoot        <- _T("");
+FLTKWinSource      <- _T("");
+FLTKWinBuild       <- _T("");
+FLTKWinInstall     <- _T("");
+FLTKWinInclude     <- _T("");
+FLTKWinLib         <- _T("");
+FLTKWinSourceLeaf  <- _T("fltk-source-1.4.5");
+FLTKWinInstallLeaf <- _T("fltk-1.4.5");
+FLTKWinRepository  <- _T("https://github.com/fltk/fltk.git");
+FLTKWinTag         <- _T("release-1.4.5");
+
 // macOS: filled only after the installed Homebrew FLTK tree is accepted
 FLTKMacPrefix     <- _T("");
 FLTKMacInclude    <- _T("");
@@ -41,12 +54,18 @@ function BeginWizard()
 
     if (PLATFORM == PLATFORM_MSW)
     {
-        local fltkpath_descr = _("Please select the folder where FLTK is installed on your computer.\n\n") +
-                               _("The selected folder must provide FLTK's include and library directories.\n") +
-                               _("The include directory must contain FL/Fl.H.\n\n") +
-                               _("You can also use a global variable, e.g. $(#fltk).\n");
-        Wizard.AddGenericSelectPathPage(_T("FLTKPath"), fltkpath_descr,
-                                        _("Please select FLTK's location:"), FLTKPathDefault);
+        FLTKWinAuto = FLTKWinAutomatic();
+        if (FLTKWinAuto)
+            FLTKWinAddSetupPages();
+        else
+        {
+            local fltkpath_descr = _("Please select the folder where FLTK is installed on your computer.\n\n") +
+                                   _("The selected folder must provide FLTK's include and library directories.\n") +
+                                   _("The include directory must contain FL/Fl.H.\n\n") +
+                                   _("You can also use a global variable, e.g. $(#fltk).\n");
+            Wizard.AddGenericSelectPathPage(_T("FLTKPath"), fltkpath_descr,
+                                            _("Please select FLTK's location:"), FLTKPathDefault);
+        }
     }
 
     Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
@@ -294,9 +313,432 @@ function OnLeave_ProjectPathPage(fwd)
 
 function OnLeave_CompilerPage(fwd)
 {
-    if (fwd)
+    if (!fwd)
+        return true;
+    if (PLATFORM == PLATFORM_MAC)
         return FLTKMacAllowForward();
+    if (!FLTKWinAuto)
+        return true;
+    if (!FLTKWinAutomatic())
+    {
+        ShowError(_("FLTK was prepared for the 64-bit MinGW compiler. Choose that compiler, or cancel. No project was created."));
+        return false;
+    }
+    if (!FLTKWinInstalled())
+    {
+        ShowError(_("FLTK 1.4.5 is not installed. No project was created."));
+        return false;
+    }
     return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Windows: shallow clone of tag release-1.4.5, then a static MinGW build
+////////////////////////////////////////////////////////////////////////////////
+
+function FLTKWinKey(path)
+{
+    // Mid copies. Assigning a wxString here would share the original,
+    // and MakeLower would change the path the wizard still displays.
+    local out = path.Mid(0, path.Length());
+    out.Replace(_T("/"), _T("\\"));
+    while (out.Length() > 3 && out.Right(1) == _T("\\"))
+        out = out.Mid(0, out.Length() - 1);
+    out.MakeLower();
+    return out;
+}
+
+function FLTKWinMakePath(gcc)
+{
+    local dir = gcc.BeforeLast(_T("\\"));
+    if (dir.IsEmpty() || dir == gcc)
+        dir = gcc.BeforeLast(_T("/"));
+    if (dir.IsEmpty() || dir == gcc)
+        return _T("");
+    return dir + _T("\\mingw32-make.exe");
+}
+
+function FLTKWinAutomatic()
+{
+    if (PLATFORM != PLATFORM_MSW)
+        return false;
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    if (!FLTKReportField(report, _T("access")).Matches(_T("works")))
+        return false;
+    if (!FLTKReportField(report, _T("machine")).Matches(_T("x86_64-w64-mingw32")))
+        return false;
+    local make = FLTKWinMakePath(FLTKReportField(report, _T("executable")));
+    if (make.IsEmpty())
+        return false;
+    return IO.FileExists(make);
+}
+
+function FLTKWinResolve()
+{
+    local report = Wizard.WinCMakePaths(FLTKWinSourceLeaf, FLTKWinInstallLeaf);
+    if (!FLTKReportField(report, _T("valid")).Matches(_T("1")))
+        return FLTKReportField(report, _T("error"));
+    FLTKWinRoot = FLTKReportField(report, _T("root"));
+    FLTKWinSource = FLTKReportField(report, _T("source"));
+    FLTKWinBuild = FLTKReportField(report, _T("build"));
+    FLTKWinInstall = FLTKReportField(report, _T("install"));
+    if (FLTKWinRoot.IsEmpty() || FLTKWinSource.IsEmpty() || FLTKWinBuild.IsEmpty() || FLTKWinInstall.IsEmpty())
+        return _("FLTK path resolution returned an incomplete result.");
+    FLTKWinInclude = FLTKWinInstall + _T("\\include");
+    FLTKWinLib = FLTKWinInstall + _T("\\lib");
+    return _T("");
+}
+
+function FLTKWinGitWorks()
+{
+    local report = Wizard.WinGitProbe();
+    return FLTKReportField(report, _T("access")).Matches(_T("works"));
+}
+
+function FLTKWinCMakeWorks()
+{
+    local report = Wizard.WinCMakeProbe();
+    return FLTKReportField(report, _T("access")).Matches(_T("works"));
+}
+
+function FLTKWinSourceReady()
+{
+    if (FLTKWinSource.IsEmpty())
+    {
+        if (!FLTKWinResolve().IsEmpty())
+            return false;
+    }
+    return IO.FileExists(FLTKWinSource + _T("\\.git\\HEAD"))
+        && IO.FileExists(FLTKWinSource + _T("\\CMakeLists.txt"))
+        && IO.FileExists(FLTKWinSource + _T("\\FL\\Fl.H"));
+}
+
+function FLTKWinCacheVariable(name)
+{
+    local cache = FLTKWinBuild + _T("\\CMakeCache.txt");
+    if (!IO.FileExists(cache))
+        return _T("");
+    local text = IO.ReadFileContents(cache);
+    local needle = name + _T(":");
+    local at = text.Find(needle);
+    if (at == -1)
+        return _T("");
+    local rest = text.Mid(at, text.Length() - at);
+    local eq = rest.Find(_T("="));
+    if (eq == -1)
+        return _T("");
+    rest = rest.Mid(eq + 1, rest.Length() - (eq + 1));
+    local nl = rest.Find(_T("\n"));
+    local value = nl == -1 ? rest : rest.Mid(0, nl);
+    if (value.Right(1) == _T("\r"))
+        value = value.Mid(0, value.Length() - 1);
+    return value;
+}
+
+function FLTKWinConfigured()
+{
+    if (FLTKWinBuild.IsEmpty() || FLTKWinInstall.IsEmpty())
+    {
+        if (!FLTKWinResolve().IsEmpty())
+            return false;
+    }
+    if (!IO.FileExists(FLTKWinBuild + _T("\\CMakeCache.txt")))
+        return false;
+    if (!(FLTKWinKey(FLTKWinCacheVariable(_T("CMAKE_INSTALL_PREFIX"))) == FLTKWinKey(FLTKWinInstall)))
+        return false;
+    local compiler = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    local gcc = FLTKReportField(compiler, _T("executable"));
+    return FLTKWinKey(FLTKWinCacheVariable(_T("CMAKE_C_COMPILER"))) == FLTKWinKey(gcc);
+}
+
+function FLTKWinBuilt()
+{
+    if (FLTKWinBuild.IsEmpty())
+    {
+        if (!FLTKWinResolve().IsEmpty())
+            return false;
+    }
+    return IO.FileExists(FLTKWinBuild + _T("\\lib\\libfltk.a"));
+}
+
+function FLTKWinDefineIs(text, name, value)
+{
+    local needle = _T("#define ") + name;
+    local at = text.Find(needle);
+    if (at == -1)
+        return false;
+    local rest = text.Mid(at + needle.Length(), text.Length() - (at + needle.Length()));
+    while (rest.Length() > 0 && (rest.Left(1) == _T(" ") || rest.Left(1) == _T("\t")))
+        rest = rest.Mid(1, rest.Length() - 1);
+    if (rest.Length() < value.Length())
+        return false;
+    if (!(rest.Left(value.Length()) == value))
+        return false;
+    if (rest.Length() == value.Length())
+        return true;
+    local next = rest.Mid(value.Length(), 1);
+    return next == _T(" ") || next == _T("\t") || next == _T("\r") || next == _T("\n") || next == _T("/");
+}
+
+function FLTKWinHeaderIs145()
+{
+    local header = FLTKWinInstall + _T("\\include\\FL\\Enumerations.H");
+    if (!IO.FileExists(header))
+        return false;
+    local text = IO.ReadFileContents(header);
+    return FLTKWinDefineIs(text, _T("FL_MAJOR_VERSION"), _T("1"))
+        && FLTKWinDefineIs(text, _T("FL_MINOR_VERSION"), _T("4"))
+        && FLTKWinDefineIs(text, _T("FL_PATCH_VERSION"), _T("5"));
+}
+
+function FLTKWinInstalled()
+{
+    if (FLTKWinInstall.IsEmpty())
+    {
+        if (!FLTKWinResolve().IsEmpty())
+            return false;
+    }
+    FLTKWinInclude = FLTKWinInstall + _T("\\include");
+    FLTKWinLib = FLTKWinInstall + _T("\\lib");
+    return IO.FileExists(FLTKWinInclude + _T("\\FL\\Fl.H"))
+        && IO.FileExists(FLTKWinLib + _T("\\libfltk.a"))
+        && FLTKWinHeaderIs145();
+}
+
+function FLTKWinConsiderTool(kind, path)
+{
+    if (path.IsEmpty())
+        return _T("");
+    local report = kind == _T("git") ? Wizard.WinGitTry(path) : Wizard.WinCMakeTry(path);
+    if (FLTKReportField(report, _T("access")).Matches(_T("works")))
+    {
+        local key = kind == _T("git") ? _T("/windows/git/executable") : _T("/windows/cmake/executable");
+        GetConfigManager().Write(key, path);
+        return _T("");
+    }
+    return _("That file did not pass --version, so it was not remembered.\n\n")
+        + FLTKReportField(report, _T("version")) + _("\n")
+        + FLTKReportField(report, _T("error"));
+}
+
+function FLTKWinRunFailed(report, stopped, failed)
+{
+    if (FLTKReportField(report, _T("success")).Matches(_T("1")))
+        return true;
+    if (FLTKReportField(report, _T("cancelled")).Matches(_T("1")))
+        ShowMessage(stopped);
+    else if (FLTKReportField(report, _T("launched")).Matches(_T("1")))
+        ShowError(failed + _("\n\n") + FLTKReportField(report, _T("output")));
+    else
+        ShowError(failed + _("\n\n") + FLTKReportField(report, _T("output")));
+    return false;
+}
+
+function OnLeave_FLTKWinGit(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinGitWorks())
+        return true;
+    local picked = IO.SelectFile(_("Choose the Git executable"), _T(""), _("Executable (*.exe)|*.exe"));
+    local rejected = FLTKWinConsiderTool(_T("git"), picked);
+    if (!rejected.IsEmpty())
+        ShowError(rejected);
+    if (FLTKWinGitWorks())
+        return true;
+    ShowError(_("Git could not be found. Code::Blocks does not install Git."));
+    return false;
+}
+
+function OnLeave_FLTKWinCMake(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinCMakeWorks())
+        return true;
+    local picked = IO.SelectFile(_("Choose the CMake executable"), _T(""), _("Executable (*.exe)|*.exe"));
+    local rejected = FLTKWinConsiderTool(_T("cmake"), picked);
+    if (!rejected.IsEmpty())
+        ShowError(rejected);
+    if (FLTKWinCMakeWorks())
+        return true;
+    ShowError(_("CMake could not be found. Code::Blocks does not download CMake."));
+    return false;
+}
+
+function OnLeave_FLTKWinAcquire(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinSourceReady())
+        return true;
+    if (!FLTKWinGitWorks())
+    {
+        ShowError(_("Git is not ready. Code::Blocks does not install Git."));
+        return false;
+    }
+    local reason = FLTKWinResolve();
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+    local explanation = _("Code::Blocks will download the official FLTK 1.4.5 source.\n\nRepository:\n")
+        + FLTKWinRepository + _("\n\nRelease tag:\n") + FLTKWinTag
+        + _("\n\nDestination:\n") + FLTKWinSource
+        + _("\n\nThis step downloads the source only.");
+    local report = Wizard.WinGitClone(FLTKWinRepository, FLTKWinTag, FLTKWinSource, explanation, _("Download FLTK 1.4.5"));
+    if (FLTKWinRunFailed(report,
+                         _("The FLTK download was stopped. Partial files are left in place. No project was created."),
+                         _("FLTK 1.4.5 was not downloaded. No project was created.")))
+        return FLTKWinSourceReady();
+    return false;
+}
+
+function OnLeave_FLTKWinConfigure(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinConfigured())
+        return true;
+    if (!FLTKWinSourceReady())
+    {
+        ShowError(_("The FLTK 1.4.5 source is not present."));
+        return false;
+    }
+    if (!FLTKWinCMakeWorks())
+    {
+        ShowError(_("CMake is not ready. Code::Blocks does not download CMake."));
+        return false;
+    }
+    local explanation = _("Code::Blocks will configure FLTK 1.4.5 with CMake.\n\nSource:\n")
+        + FLTKWinSource + _("\n\nBuild:\n") + FLTKWinBuild
+        + _("\n\nInstall:\n") + FLTKWinInstall
+        + _("\n\nBuild type:\nRelease\n\nThe install prefix is fixed during this step.\nFLTK is not built or installed by this operation.");
+    local report = Wizard.WinCMakeConfigure(FLTKWinSource, FLTKWinBuild, FLTKWinInstall, _T("Release"), explanation, _("Configure FLTK 1.4.5"));
+    if (FLTKWinRunFailed(report,
+                         _("CMake configuration was stopped. Files already written are left in place. No project was created."),
+                         _("FLTK 1.4.5 was not configured. No project was created.")))
+        return FLTKWinConfigured();
+    return false;
+}
+
+function OnLeave_FLTKWinBuild(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinBuilt())
+        return true;
+    if (!FLTKWinConfigured())
+    {
+        ShowError(_("FLTK 1.4.5 has not been configured."));
+        return false;
+    }
+    local explanation = _("Code::Blocks will build FLTK 1.4.5 with CMake.\n\nBuild directory:\n")
+        + FLTKWinBuild + _("\n\nThis operation does not install FLTK.");
+    local report = Wizard.WinCMakeBuild(FLTKWinBuild, explanation, _("Build FLTK 1.4.5"));
+    if (FLTKWinRunFailed(report,
+                         _("The FLTK build was stopped. Files already produced are left in place. No project was created."),
+                         _("FLTK 1.4.5 was not built. No project was created.")))
+        return FLTKWinBuilt();
+    return false;
+}
+
+function OnLeave_FLTKWinInstall(fwd)
+{
+    if (!fwd)
+        return true;
+    if (FLTKWinInstalled())
+        return true;
+    if (!FLTKWinBuilt())
+    {
+        ShowError(_("FLTK 1.4.5 has not been built."));
+        return false;
+    }
+    local explanation = _("Code::Blocks will install FLTK 1.4.5 with CMake.\n\nBuild directory:\n")
+        + FLTKWinBuild + _("\n\nInstall prefix:\n") + FLTKWinInstall
+        + _("\n\nThe install prefix was fixed during configuration.\nCode::Blocks will not pass a replacement --prefix.");
+    local report = Wizard.WinCMakeInstall(FLTKWinBuild, FLTKWinInstall, explanation, _("Install FLTK 1.4.5"));
+    if (FLTKWinRunFailed(report,
+                         _("The FLTK install was stopped. Files already installed are left in place. No project was created."),
+                         _("FLTK 1.4.5 was not installed. No project was created.")))
+        return FLTKWinInstalled();
+    return false;
+}
+
+function FLTKWinAddSetupPages()
+{
+    local reason = FLTKWinResolve();
+    if (!reason.IsEmpty())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinPaths"), reason + _("\n\nNo project is created from this page.\n"));
+        return;
+    }
+    if (!FLTKWinGitWorks())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinGit"),
+            _("FLTK 1.4.5 is obtained from the official upstream Git repository.\n\n") +
+            _("Git could not be found. Code::Blocks does not install Git.\n") +
+            _("Press Next to choose an existing git.exe.\n"));
+    }
+    if (!FLTKWinCMakeWorks())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinCMake"),
+            _("CMake configures and builds FLTK. Code::Blocks does not download CMake.\n\n") +
+            _("CMake could not be found.\n") +
+            _("Press Next to choose an existing cmake.exe.\n"));
+    }
+    if (!FLTKWinSourceReady())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinAcquire"),
+            _("The official FLTK 1.4.5 source is not present yet.\n\nRepository:\n    ") + FLTKWinRepository +
+            _("\n\nRelease tag:\n    ") + FLTKWinTag +
+            _("\n\nDestination:\n    ") + FLTKWinSource +
+            _("\n\nPress Next to approve a shallow tagged clone.\nThis step downloads source only.\n"));
+    }
+    if (!FLTKWinConfigured())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinConfigure"),
+            _("FLTK 1.4.5 is ready to be configured with CMake.\n\nSource:\n    ") + FLTKWinSource +
+            _("\n\nBuild:\n    ") + FLTKWinBuild +
+            _("\n\nInstall:\n    ") + FLTKWinInstall +
+            _("\n\nBuild type:\n    Release\n\nPress Next to configure FLTK.\nThis step does not build or install FLTK.\n"));
+    }
+    if (!FLTKWinBuilt())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinBuild"),
+            _("FLTK 1.4.5 is configured and ready to build.\n\nBuild directory:\n    ") + FLTKWinBuild +
+            _("\n\nPress Next to build FLTK.\nThis step does not install FLTK.\n"));
+    }
+    if (!FLTKWinInstalled())
+    {
+        Wizard.AddInfoPage(_T("FLTKWinInstall"),
+            _("FLTK 1.4.5 is built and ready to install.\n\nBuild directory:\n    ") + FLTKWinBuild +
+            _("\n\nInstall prefix fixed during configuration:\n    ") + FLTKWinInstall +
+            _("\n\nPress Next to install FLTK.\nNo replacement --prefix is supplied during installation.\n"));
+    }
+}
+
+// Taken from the MinGW fltk-config produced by the 1.4.5 build:
+// LDFLAGS=-mwindows and LDLIBS=-lfltk -lgdiplus -lole32 -luuid -lcomctl32 -lws2_32 -lwinspool.
+function FLTKWinAddLinkLibs(project)
+{
+    project.AddLinkerOption(_T("-mwindows"));
+    project.AddLinkLib(_T("fltk"));
+    project.AddLinkLib(_T("gdiplus"));
+    project.AddLinkLib(_T("ole32"));
+    project.AddLinkLib(_T("uuid"));
+    project.AddLinkLib(_T("comctl32"));
+    project.AddLinkLib(_T("ws2_32"));
+    project.AddLinkLib(_T("winspool"));
+}
+
+function OnLeave_FLTKWinPaths(fwd)
+{
+    if (!fwd)
+        return true;
+    ShowError(_("FLTK's directories could not be resolved. No project was created."));
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -319,6 +761,15 @@ function SetupProject(project)
         // complete FLTK/macOS compiler and linker contract without global vars.
         project.AddCompilerOption(_T("`") + FLTKMacConfig + _T(" --cxxflags`"));
         project.AddLinkerOption(_T("`") + FLTKMacConfig + _T(" --ldflags`"));
+    }
+    else if (PLATFORM == PLATFORM_MSW && FLTKWinAuto)
+    {
+        if (FLTKWinInclude.IsEmpty() || FLTKWinLib.IsEmpty() || !FLTKWinInstalled())
+            return false;
+
+        project.AddIncludeDir(FLTKWinInclude);
+        project.AddLibDir(FLTKWinLib);
+        FLTKWinAddLinkLibs(project);
     }
     else if (PLATFORM == PLATFORM_MSW)
     {

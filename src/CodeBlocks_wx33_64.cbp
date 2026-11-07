@@ -2240,6 +2240,18 @@
 		<Unit filename="plugins/scriptedwizard/resources/wxwidgets/wizard.xrc">
 			<Option target="Scripted wizard" />
 		</Unit>
+		<Unit filename="plugins/scriptedwizard/wincmake.cpp">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/wincmake.h">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/wingit.cpp">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/wingit.h">
+			<Option target="Scripted wizard" />
+		</Unit>
 		<Unit filename="plugins/scriptedwizard/winsdk.cpp">
 			<Option target="Scripted wizard" />
 		</Unit>

@@ -50,6 +50,8 @@
 #include "macpatch.h"
 #include "maccmake.h"
 #include "winsdk.h"
+#include "wingit.h"
+#include "wincmake.h"
 
 #include "scripting/bindings/sc_utils.h"
 #include "scripting/bindings/sc_typeinfo_all.h"
@@ -2315,6 +2317,105 @@ SQInteger Wiz_WinSdkPublish(HSQUIRRELVM v)
     const WinSdkFetch result = PublishWinSdk(*extractor.p1, *extractor.p2, *extractor.p3, *extractor.p4);
     return ConstructAndReturnInstance(v, FormatWinSdkFetch(result));
 }
+
+SQInteger Wiz_WinGitProbe(HSQUIRRELVM v)
+{
+    ExtractParams1<Wiz*> extractor(v);
+    if (!extractor.Process("Wiz::WinGitProbe"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, FormatWinGitProbe(ProbeWinGit()));
+}
+
+SQInteger Wiz_WinGitTry(HSQUIRRELVM v)
+{
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinGitTry"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, FormatWinGitProbe(ProbeWinGitPath(*extractor.p1)));
+}
+
+SQInteger Wiz_WinGitClone(HSQUIRRELVM v)
+{
+    ExtractParams6<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinGitClone"))
+        return extractor.ErrorMessage();
+    const WinGitCloneResult result = CloneWinGitRepository(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4,
+        *extractor.p5);
+    return ConstructAndReturnInstance(v, FormatWinGitClone(result));
+}
+
+SQInteger Wiz_WinCMakeProbe(HSQUIRRELVM v)
+{
+    ExtractParams1<Wiz*> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakeProbe"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, FormatWinCMakeProbe(ProbeWinCMake()));
+}
+
+SQInteger Wiz_WinCMakeTry(HSQUIRRELVM v)
+{
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakeTry"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, FormatWinCMakeProbe(ProbeWinCMakePath(*extractor.p1)));
+}
+
+SQInteger Wiz_WinCMakePaths(HSQUIRRELVM v)
+{
+    ExtractParams3<Wiz*, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakePaths"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, FormatWinCMakePaths(ResolveWinCMakePaths(*extractor.p1, *extractor.p2)));
+}
+
+SQInteger Wiz_WinCMakeConfigure(HSQUIRRELVM v)
+{
+    ExtractParams7<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakeConfigure"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = ConfigureWinCMake(
+        extractor.p0->GetWizardWindow(),
+        extractor.p0->GetCompilerID(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4,
+        *extractor.p5,
+        *extractor.p6);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinCMakeBuild(HSQUIRRELVM v)
+{
+    ExtractParams4<Wiz*, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakeBuild"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = BuildWinCMake(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinCMakeInstall(HSQUIRRELVM v)
+{
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinCMakeInstall"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = InstallWinCMake(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2658,7 +2759,15 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("WinSdkFetch"), Wiz_WinSdkFetch, _SC("Wiz::WinSdkFetch"));
         BindMethod(v, _SC("WinSdkStage"), Wiz_WinSdkStage, _SC("Wiz::WinSdkStage"));
         BindMethod(v, _SC("WinSdkPublish"), Wiz_WinSdkPublish, _SC("Wiz::WinSdkPublish"));
-        
+        BindMethod(v, _SC("WinGitProbe"), Wiz_WinGitProbe, _SC("Wiz::WinGitProbe"));
+        BindMethod(v, _SC("WinGitTry"), Wiz_WinGitTry, _SC("Wiz::WinGitTry"));
+        BindMethod(v, _SC("WinGitClone"), Wiz_WinGitClone, _SC("Wiz::WinGitClone"));
+        BindMethod(v, _SC("WinCMakeProbe"), Wiz_WinCMakeProbe, _SC("Wiz::WinCMakeProbe"));
+        BindMethod(v, _SC("WinCMakeTry"), Wiz_WinCMakeTry, _SC("Wiz::WinCMakeTry"));
+        BindMethod(v, _SC("WinCMakePaths"), Wiz_WinCMakePaths, _SC("Wiz::WinCMakePaths"));
+        BindMethod(v, _SC("WinCMakeConfigure"), Wiz_WinCMakeConfigure, _SC("Wiz::WinCMakeConfigure"));
+        BindMethod(v, _SC("WinCMakeBuild"), Wiz_WinCMakeBuild, _SC("Wiz::WinCMakeBuild"));
+        BindMethod(v, _SC("WinCMakeInstall"), Wiz_WinCMakeInstall, _SC("Wiz::WinCMakeInstall"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);
