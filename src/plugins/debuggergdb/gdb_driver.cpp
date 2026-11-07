@@ -1096,12 +1096,21 @@ void GDB_driver::ParseOutput(const wxString& output)
             }
             else if (reBreak3.Matches(lines[i]) )
             {
-                m_Cursor.file=wxEmptyString;
-                m_Cursor.function= reBreak3.GetMatch(lines[i], 2);
-                m_Cursor.address = reBreak3.GetMatch(lines[i], 1);
-                m_Cursor.line = -1;
-                m_Cursor.changed = true;
-                m_needsUpdate = true;
+                const wxString function = reBreak3.GetMatch(lines[i], 2);
+                if (LeavingDUserCode(function, wxEmptyString))
+                {
+                    m_pDBG->Log(_("Returned from the program; running to exit."));
+                    QueueCommand(new GdbCmd_Continue(this));
+                }
+                else
+                {
+                    m_Cursor.file=wxEmptyString;
+                    m_Cursor.function= function;
+                    m_Cursor.address = reBreak3.GetMatch(lines[i], 1);
+                    m_Cursor.line = -1;
+                    m_Cursor.changed = true;
+                    m_needsUpdate = true;
+                }
             }
             else if (reCatchThrow.Matches(lines[i]) )
             {
@@ -1177,20 +1186,29 @@ void GDB_driver::HandleMainBreakPoint(const wxRegEx& reBreak_in, wxString line)
         {
             m_ManualBreakOnEntry = false;
             wxString lineStr;
+            wxString file;
 
             if (platform::windows)
             {
-                m_Cursor.file = reBreak_in.GetMatch(line, 1) + reBreak_in.GetMatch(line, 2);
+                file = reBreak_in.GetMatch(line, 1) + reBreak_in.GetMatch(line, 2);
                 if (m_CygwinPresent)
-                    cbGetWindowsPathFromCygwinPath(m_Cursor.file);
+                    cbGetWindowsPathFromCygwinPath(file);
             }
             else
             {
                 // For debugging of usual linux application 'GetMatch(line, 1)' is empty.
                 // While for debugging of application under wine the name of the disk is useless.
-                m_Cursor.file = reBreak_in.GetMatch( line, 2);
+                file = reBreak_in.GetMatch( line, 2);
             }
 
+            if (LeavingDUserCode(wxEmptyString, file))
+            {
+                m_pDBG->Log(_("Returned from the program; running to exit."));
+                QueueCommand(new GdbCmd_Continue(this));
+                return;
+            }
+
+            m_Cursor.file = file;
             lineStr = reBreak_in.GetMatch(line, 3);
             m_Cursor.address = reBreak_in.GetMatch(line, 4);
 
@@ -1206,6 +1224,21 @@ void GDB_driver::HandleMainBreakPoint(const wxRegEx& reBreak_in, wxString line)
         m_Cursor.changed = true;
         m_needsUpdate = true;
     }
+}
+
+bool GDB_driver::LeavingDUserCode(const wxString& function, const wxString& file) const
+{
+    if (!m_pTarget)
+        return false;
+    const wxString id = m_pTarget->GetCompilerID();
+    if (!id.StartsWith(wxT("ldc")) && !id.StartsWith(wxT("dmd")) && !id.StartsWith(wxT("gdc")))
+        return false;
+    if (function.StartsWith(wxT("??")))
+        return true;
+    wxString norm = file;
+    norm.Replace(wxT("\\"), wxT("/"));
+    norm.MakeLower();
+    return norm.Contains(wxT("core/internal/entrypoint.d"));
 }
 
 void GDB_driver::DetermineLanguage()
