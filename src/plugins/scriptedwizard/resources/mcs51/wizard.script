@@ -23,6 +23,11 @@ SDCCMacAccess     <- _T("");
 SDCCMacExecutable <- _T("");
 SDCCMacPrefix     <- _T("");
 
+// Windows: master path from Wizard.AutoDetectCompiler("sdcc").
+// The wizard does not install SDCC and does not assign this path itself.
+SDCCWinMaster <- _T("");
+SDCCWinPage <- _T("https://sourceforge.net/projects/sdcc/files/sdcc-win64/4.6.0/");
+
 ////////////////////////////////////////////////////////////////////////////////
 // Homebrew support (macOS)
 ////////////////////////////////////////////////////////////////////////////////
@@ -211,6 +216,94 @@ function SDCCMacAllowForward()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Windows: detect the vendor install, or open its download page
+////////////////////////////////////////////////////////////////////////////////
+
+function SDCCWinHas(master, relative)
+{
+    if (master.IsEmpty())
+        return false;
+    return IO.FileExists(master + _T("\\") + relative);
+}
+
+// Empty when every tool the wizard needs is in the detected tree.
+function SDCCWinMissing(master)
+{
+    if (!SDCCWinHas(master, _T("bin\\sdcc.exe")))
+        return _T("bin\\sdcc.exe");
+    if (!SDCCWinHas(master, _T("bin\\sdar.exe")))
+        return _T("bin\\sdar.exe");
+    if (!SDCCWinHas(master, _T("bin\\packihx.exe")))
+        return _T("bin\\packihx.exe");
+    if (!SDCCWinHas(master, _T("bin\\s51.exe")))
+        return _T("bin\\s51.exe");
+    if (!SDCCWinHas(master, _T("include\\mcs51\\8051.h")))
+        return _T("include\\mcs51\\8051.h");
+    return _T("");
+}
+
+function SDCCWinOfferInstaller(missing)
+{
+    local text = _T("");
+    if (missing.IsEmpty())
+    {
+        text = _("SDCC is not available to Code::Blocks.\n\n");
+    }
+    else
+    {
+        text = _("SDCC was found, but ") + missing + _(" is missing.\n\n");
+    }
+    text += _("Code::Blocks does not install SDCC.\n\n");
+    text += _("Yes opens the official SDCC 4.6.0 Windows x64 download page.\n");
+    text += _("Install SDCC with that installer, then press Next.\n");
+    text += _("Next detects the installation again. A compiler directory is not required.\n\n");
+    text += _("No stays on this page without opening the browser.");
+
+    local choice = Message(text, _("SDCC"), wxICON_QUESTION | wxYES_NO);
+    if (choice == wxID_YES)
+    {
+        if (!wxLaunchDefaultBrowser(SDCCWinPage, 0))
+            ShowError(_("The SDCC download page could not be opened.\n\n") + SDCCWinPage);
+    }
+    return false;
+}
+
+function SDCCWinAllowForward()
+{
+    if (!GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
+        return true;
+
+    SDCCWinMaster = _T("");
+    local report = Wizard.AutoDetectCompiler(_T("sdcc"));
+    if (!SDCCReportField(report, _T("found")).Matches(_T("1")))
+    {
+        ShowError(_("The Code::Blocks SDCC compiler profile could not be found. No project was created."));
+        return false;
+    }
+
+    local master = SDCCReportField(report, _T("master"));
+    local missing = SDCCWinMissing(master);
+    local detected = SDCCReportField(report, _T("detected")).Matches(_T("1"));
+
+    if (detected && missing.IsEmpty())
+    {
+        SDCCWinMaster = master;
+        return true;
+    }
+
+    // sdcc.exe and the other tools are present, but auto-detect still failed.
+    // That is the make program: the SDCC tree has no make.exe, and the GNU
+    // GCC profile has no mingw32-make.exe.
+    if (missing.IsEmpty() && SDCCWinHas(master, _T("bin\\sdcc.exe")))
+    {
+        ShowError(_("SDCC was found, but this Code::Blocks installation has no mingw32-make.exe in the GNU GCC compiler profile. No project was created."));
+        return false;
+    }
+
+    return SDCCWinOfferInstaller(SDCCWinHas(master, _T("bin\\sdcc.exe")) ? missing : _T(""));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Wizard
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -228,6 +321,12 @@ function BeginWizard()
             intro_msg += _("On macOS, SDCC is the supported MCS51 compiler.\n") +
                          _("The wizard can use Homebrew to install SDCC when it is missing.\n") +
                          _("Code::Blocks does not install Homebrew.\n\n");
+        }
+        else if (PLATFORM == PLATFORM_MSW)
+        {
+            intro_msg += _("On Windows, SDCC is detected from an installation you already have.\n") +
+                         _("Code::Blocks does not install SDCC.\n") +
+                         _("If SDCC is missing, the wizard can open the official download page.\n\n");
         }
 
         intro_msg += _("When you're ready to proceed, please click \"Next\"...");
@@ -248,9 +347,11 @@ function BeginWizard()
 
 function OnLeave_CompilerPage(fwd)
 {
-    if (fwd)
-        return SDCCMacAllowForward();
-    return true;
+    if (!fwd)
+        return true;
+    if (PLATFORM == PLATFORM_MSW)
+        return SDCCWinAllowForward();
+    return SDCCMacAllowForward();
 }
 
 function GetGeneratedFile(file_index)
@@ -335,22 +436,31 @@ function OnLeave_memoryModelChoice(fwd)
 
 function ConfigureSDCCSimulator(target, imagePath)
 {
-    if (PLATFORM == PLATFORM_MAC &&
-        IntelHex &&
-        !SDCCMacPrefix.IsEmpty() &&
-        GetCompilerFactory().CompilerInheritsFrom(
-            Wizard.GetCompilerID(),
-            _T("sdcc*")))
+    if (!IntelHex)
+        return;
+    if (!GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
+        return;
+
+    local host = _T("");
+    if (PLATFORM == PLATFORM_MAC && !SDCCMacPrefix.IsEmpty())
+        host = SDCCMacPrefix + _T("/bin/s51");
+    else if (PLATFORM == PLATFORM_MSW && !SDCCWinMaster.IsEmpty())
+        host = SDCCWinMaster + _T("\\bin\\s51.exe");
+    if (host.IsEmpty())
+        return;
+
+    target.SetHostApplication(host);
+    if (PLATFORM == PLATFORM_MSW)
     {
-        target.SetHostApplication(
-            SDCCMacPrefix + _T("/bin/s51"));
-
-        target.SetExecutionParameters(
-   		 _T("\"$(PROJECT_DIR)") + imagePath + _T("\""));
-
-        target.SetRunHostApplicationInTerminal(true);
-        target.SetUseConsoleRunner(true);
+        // uCsim reads file[:offset]. A drive letter is that colon, so
+        // D:\...\mcs51.ihx is loaded as a file named D. A console target's
+        // working directory is its output directory, and this name has no colon.
+        target.SetExecutionParameters(_T("\"$(TARGET_OUTPUT_FILENAME)\""));
     }
+    else
+        target.SetExecutionParameters(_T("\"$(PROJECT_DIR)") + imagePath + _T("\""));
+    target.SetRunHostApplicationInTerminal(true);
+    target.SetUseConsoleRunner(true);
 }
 
 function SetupProject(project)
@@ -505,7 +615,13 @@ function SetupProject(project)
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
-    target.SetTargetType(ttNative);
+    // Set the type before the output filename. SetTargetType replaces that filename.
+    // On Windows, SDCC Intel HEX is a console target so Run's working directory
+    // is the output directory. uCsim can then open the image by name.
+    if (PLATFORM == PLATFORM_MSW && IntelHex && GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
+        target.SetTargetType(ttConsoleOnly);
+    else
+        target.SetTargetType(ttNative);
     target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
 
     local outputFile =
@@ -522,7 +638,10 @@ function SetupProject(project)
     target = project.GetBuildTarget(Wizard.GetReleaseName());
    if (!IsNull(target))
    {
-    target.SetTargetType(ttNative);
+    if (PLATFORM == PLATFORM_MSW && IntelHex && GetCompilerFactory().CompilerInheritsFrom(Wizard.GetCompilerID(), _T("sdcc*")))
+        target.SetTargetType(ttConsoleOnly);
+    else
+        target.SetTargetType(ttNative);
     target.SetTargetFilenameGenerationPolicy(tgfpPlatformDefault, tgfpNone);
 
     local outputFile =

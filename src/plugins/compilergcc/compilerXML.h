@@ -33,6 +33,9 @@ class CompilerXML : public Compiler
         // The official Windows LDC archive has no make.exe. Use mingw32-make
         // from the GNU GCC profile when the LDC tree does not provide one.
         bool EnsureWindowsLdcMake();
+        // The official Windows SDCC installer also ships no make.exe.
+        // Same rule, kept separate so the LDC detector is unchanged.
+        bool EnsureWindowsSdccMake();
 #endif
 
         wxString m_fileName;

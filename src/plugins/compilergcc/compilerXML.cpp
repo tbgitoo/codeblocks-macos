@@ -322,12 +322,48 @@ AutoDetectResult CompilerXML::AutoDetectInstallationDir()
 #ifdef __WXMSW__
     if (result == adrDetected && GetID() == wxT("ldc") && !EnsureWindowsLdcMake())
         result = adrGuessed;
+    if (result == adrDetected && GetID() == wxT("sdcc") && !EnsureWindowsSdccMake())
+        result = adrGuessed;
 #endif
     return result;
 }
 
 #ifdef __WXMSW__
 bool CompilerXML::EnsureWindowsLdcMake()
+{
+    const wxString sep = wxFILE_SEP_PATH;
+    CompilerPrograms programs = m_Programs;
+    if (wxFileExists(m_MasterPath + sep + wxT("bin") + sep + wxT("make.exe")))
+    {
+        programs.MAKE = wxT("make.exe");
+        SetPrograms(programs);
+        return true;
+    }
+
+    Compiler* gcc = CompilerFactory::GetCompiler(wxT("gcc"));
+    if (!gcc)
+        return false;
+    wxString gccMaster = gcc->GetMasterPath();
+    Manager::Get()->GetMacrosManager()->ReplaceMacros(gccMaster);
+    while (!gccMaster.empty() && (gccMaster.Last() == wxT('\\') || gccMaster.Last() == wxT('/')))
+        gccMaster.RemoveLast();
+    if (gccMaster.empty())
+        return false;
+
+    const wxString gccBin = gccMaster + sep + wxT("bin");
+    if (!wxFileExists(gccBin + sep + wxT("mingw32-make.exe")))
+        return false;
+
+    wxArrayString paths = m_ExtraPaths;
+    if (paths.Index(gccBin, false) == wxNOT_FOUND)
+        paths.Add(gccBin);
+    SetExtraPaths(paths);
+    programs.MAKE = wxT("mingw32-make.exe");
+    SetPrograms(programs);
+    return true;
+}
+
+bool CompilerXML::EnsureWindowsSdccMake()
 {
     const wxString sep = wxFILE_SEP_PATH;
     CompilerPrograms programs = m_Programs;

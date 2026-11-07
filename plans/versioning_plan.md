@@ -22,6 +22,8 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v3.5b (Windows LDC install, the Homebrew step as the official 1.43.0 x64 archive)
   → v3.6 (FLTK application wizard uses Homebrew FLTK on macOS)
   → v3.6b (Windows FLTK install, the Homebrew step as a shallow clone of tag release-1.4.5 built with the selected GCC)
+  → v3.7 (MCS51 wizard: Homebrew SDCC, then s51 in Program Console and Terminal.app)
+  → v3.7b (Windows SDCC: detect an existing install, or open the official 4.6.0 x64 page; Run launches s51.exe)
   → v4.0 (installable Windows distribution; NSIS; no bundled compiler)
 ```
 
@@ -63,6 +65,8 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.5b** | **Planning.** Windows LDC install through the v3.3 archive helper. Official 1.43.0 x64 archive, then the existing auto-detect bridge. | [versioning_plan_v3_5b.md](versioning_plan_v3_5b.md) |
 | **v3.6** | **DONE.** The FLTK application wizard creates a project that builds and runs against Homebrew FLTK on the tested Apple Silicon Mac. | [versioning_plan_v3_6.md](versioning_plan_v3_6.md) |
 | **v3.6b** | **In progress.** Windows FLTK install through a Windows pair beside the OGRE git helpers. Shallow clone, configure, build, and install of `release-1.4.5` are confirmed on one machine. The generated project's Build and Run is still open. | [versioning_plan_v3_6b.md](versioning_plan_v3_6b.md) |
+| **v3.7** | **DONE.** The MCS51 wizard uses Homebrew SDCC on the tested Apple Silicon Mac. Run launches the image through `s51` in Program Console and Terminal.app. | [versioning_plan_v3_7.md](versioning_plan_v3_7.md) |
+| **v3.7b** | **In progress.** On Windows the MCS51 wizard detects an existing SDCC install. If none is found, Yes opens the official 4.6.0 x64 page. The wizard does not download or run the installer. Run through `s51.exe` is still open. | [versioning_plan_v3_7b.md](versioning_plan_v3_7b.md) |
 | **v4.0** | **Planning.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. M1 is the plan; no installer yet. | [versioning_plan_v3_4.md](versioning_plan_v3_4.md) |
 
 ### One-line outcomes
@@ -86,6 +90,8 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.5b** | On Windows, Install LDC fetches the official 1.43.0 x64 archive and auto-detect points the LLVM D Compiler profile at that tree. DMD and GDC are not downloaded. |
 | **v3.6** | File → New → Project → FLTK application on the tested Apple Silicon Mac uses Homebrew FLTK. The generated application builds and shows the Hello World window. |
 | **v3.6b** | On Windows, the FLTK wizard clones tag `release-1.4.5` and builds a static library with the selected 64-bit MinGW GCC. New `wingit` and `wincmake` files carry that workflow. `macgit` and `maccmake` stay macOS-only. |
+| **v3.7** | File → New → Project → MCS51 on the tested Apple Silicon Mac uses Homebrew SDCC. Build and Run opens `s51` on the generated Intel HEX image. |
+| **v3.7b** | On Windows, a detected SDCC installation is accepted. Otherwise Yes opens the official 4.6.0 x64 download page, and Next detects again. Run launches `s51.exe`. Keil and IAR are left alone. |
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. |
 
 ---
