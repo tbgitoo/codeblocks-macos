@@ -20,6 +20,8 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v3.4b (Windows raylib install, the Homebrew step as one official zip)
   → v3.5 (D application wizard: LDC preferred, Homebrew on macOS)
   → v3.5b (Windows LDC install, the Homebrew step as the official 1.43.0 x64 archive)
+  → v3.6 (FLTK application wizard uses Homebrew FLTK on macOS)
+  → v3.6b (Windows FLTK install, the Homebrew step as a shallow clone of tag release-1.4.5 built with the selected GCC)
   → v4.0 (installable Windows distribution; NSIS; no bundled compiler)
 ```
 
@@ -59,6 +61,8 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.4b** | **Planning.** Windows raylib install through the v3.3 zip helper. Shared library from the official 6.2 MinGW zip. | [versioning_plan_v3_4b.md](versioning_plan_v3_4b.md) |
 | **v3.5** | **DONE** (tree). D application wizard prefers LDC, installs it with Homebrew on macOS, and re-runs native compiler auto-detection. | [versioning_plan_v3_5.md](versioning_plan_v3_5.md) |
 | **v3.5b** | **Planning.** Windows LDC install through the v3.3 archive helper. Official 1.43.0 x64 archive, then the existing auto-detect bridge. | [versioning_plan_v3_5b.md](versioning_plan_v3_5b.md) |
+| **v3.6** | **DONE.** The FLTK application wizard creates a project that builds and runs against Homebrew FLTK on the tested Apple Silicon Mac. | [versioning_plan_v3_6.md](versioning_plan_v3_6.md) |
+| **v3.6b** | **Planning.** Windows FLTK install through a Windows pair beside the OGRE git helpers. Shallow clone of tag `release-1.4.5`, then a static build with the selected 64-bit MinGW GCC. | [versioning_plan_v3_6b.md](versioning_plan_v3_6b.md) |
 | **v4.0** | **Planning.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. M1 is the plan; no installer yet. | [versioning_plan_v3_4.md](versioning_plan_v3_4.md) |
 
 ### One-line outcomes
@@ -80,6 +84,8 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.4b** | On Windows, Install raylib fetches the official 6.2 MinGW zip and the generated project links `raylib.dll`. The static library in that zip is not used. |
 | **v3.5** | File → New → Project → D application preselects LDC. On macOS, Homebrew can install the selected compiler, and the LLVM D Compiler profile is re-detected before the project is created. |
 | **v3.5b** | On Windows, Install LDC fetches the official 1.43.0 x64 archive and auto-detect points the LLVM D Compiler profile at that tree. DMD and GDC are not downloaded. |
+| **v3.6** | File → New → Project → FLTK application on the tested Apple Silicon Mac uses Homebrew FLTK. The generated application builds and shows the Hello World window. |
+| **v3.6b** | On Windows, the FLTK wizard clones tag `release-1.4.5` and builds a static library with the selected 64-bit MinGW GCC. New `wingit` and `wincmake` files carry that workflow. `macgit` and `maccmake` stay macOS-only. |
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. |
 
 ---

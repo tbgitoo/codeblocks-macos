@@ -26,7 +26,9 @@ libscriptedwizard_la_SOURCES = buildtargetpanel.cpp \
 								macgit.cpp \
 								macpatch.cpp \
 								maccmake.cpp \
-								winsdk.cpp
+								winsdk.cpp \
+								wingit.cpp \
+								wincmake.cpp
 
 noinst_HEADERS = buildtargetpanel.h \
                     compilerpanel.h \
@@ -41,4 +43,6 @@ noinst_HEADERS = buildtargetpanel.h \
 					maccmake.h \
 					macgit.h \
 					macpatch.h \
-					winsdk.h
+					winsdk.h \
+					wingit.h \
+					wincmake.h
