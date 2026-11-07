@@ -2,9 +2,9 @@
 <!DOCTYPE CodeBlocks_compiler_options>
 <CodeBlocks_compiler_options>
     <if platform="windows">
-        <Program name="C"         value="ldc.exe"/>
-        <Program name="CPP"       value="ldc.exe"/>
-        <Program name="LD"        value="ldc.exe"/>
+        <Program name="C"         value="ldc2.exe"/>
+        <Program name="CPP"       value="ldc2.exe"/>
+        <Program name="LD"        value="ldc2.exe"/>
         <Program name="DBGconfig" value="gdb_debugger:Default"/>
         <Program name="LIB"       value="ar.exe"/>
         <Program name="WINDRES"   value=""/>

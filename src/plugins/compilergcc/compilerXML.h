@@ -29,6 +29,11 @@ class CompilerXML : public Compiler
         };
 
         bool AddPath(const wxString& pth, SearchMode sm, int rmDirs = 0);
+#ifdef __WXMSW__
+        // The official Windows LDC archive has no make.exe. Use mingw32-make
+        // from the GNU GCC profile when the LDC tree does not provide one.
+        bool EnsureWindowsLdcMake();
+#endif
 
         wxString m_fileName;
 };
