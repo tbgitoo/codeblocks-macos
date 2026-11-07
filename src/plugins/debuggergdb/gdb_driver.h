@@ -78,6 +78,9 @@ class GDB_driver : public DebuggerDriver
     protected:
     private:
         void HandleMainBreakPoint(const wxRegEx& reBreak, wxString line);
+        // True when a D program has returned from user code into the runtime
+        // epilogue. That frame has no source GDB can step.
+        bool LeavingDUserCode(const wxString& function, const wxString& file) const;
 
         bool m_CygwinPresent;
 
