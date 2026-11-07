@@ -1,6 +1,6 @@
 # Code::Blocks v3.6b — FLTK on Windows
 
-**Status: planning.** v3.6 is done. It makes the FLTK application wizard use a Homebrew FLTK prefix on macOS. Windows in v3.6 still asks for a folder the user already has and downloads nothing. This version is the Windows install path for that same wizard.
+**Status: in progress.** v3.6 is done. It makes the FLTK application wizard use a Homebrew FLTK prefix on macOS. Windows in v3.6 still asks for a folder the user already has and downloads nothing. This version is the Windows install path for that same wizard. The helpers and the wizard script are in the tree. On one Windows machine the shallow clone, the MinGW configure, the static build, and the install contract have succeeded, and a later wizard run skips those four steps. The generated project's Build and Run is still open.
 
 **Question this version answers:** what replaces `brew install fltk` on Windows?
 
@@ -10,7 +10,7 @@ The clone is tag `release-1.4.5` of `https://github.com/fltk/fltk.git`. The buil
 
 Upstream baseline remains Code::Blocks trunk **r14050** / IDE **25.03**.
 
-Evidence labels: **CONFIRMED FROM SOURCE** (this tree, 7 November 2026), **CONFIRMED FROM WEB** (GitHub release `release-1.4.5`, published 25 April 2026), **PROPOSED DESIGN**. The clone, the MinGW configure, and the Windows libraries the static library needs are not yet confirmed on a machine.
+Evidence labels: **CONFIRMED FROM SOURCE** (this tree, 7 November 2026), **CONFIRMED FROM WEB** (GitHub release `release-1.4.5`, published 25 April 2026), **CONFIRMED ON WINDOWS** (one machine, 7 November 2026), **PROPOSED DESIGN**. The clone, the MinGW configure, the installed header, and the libraries named by this build's `fltk-config` are confirmed. The wizard-generated project has not yet been built from the IDE.
 
 ---
 
@@ -115,13 +115,16 @@ cmake -S <source> -B <build> -G "MinGW Makefiles"
     -DCMAKE_C_COMPILER=<gcc.exe>
     -DCMAKE_CXX_COMPILER=<g++.exe>
     -DCMAKE_MAKE_PROGRAM=<mingw32-make.exe>
-    -DBUILD_SHARED_LIBS=OFF
+    -DFLTK_BUILD_SHARED_LIBS=OFF
     -DFLTK_BUILD_TEST=OFF
     -DFLTK_BUILD_FLUID=OFF
     -DFLTK_BUILD_EXAMPLES=OFF
+    -DFLTK_BUILD_FLTK_OPTIONS=OFF
+    -DFLTK_BUILD_FORMS=OFF
+    -DFLTK_BUILD_GL=OFF
 ```
 
-The generator and the compiler paths are set so a machine that also has Visual Studio still builds with the selected GCC. The CMake option names are read from the cloned `CMakeLists.txt` before this list is treated as frozen. Install runs `cmake --install <build>` and does not pass a replacement `--prefix`.
+**CONFIRMED FROM SOURCE.** Those option names are the ones in FLTK 1.4.5 `CMake/options.cmake`. The shared-library switch is `FLTK_BUILD_SHARED_LIBS`. The generator and the compiler paths are set so a machine that also has Visual Studio still builds with the selected GCC. Install runs `cmake --install <build>` and does not pass a replacement `--prefix`.
 
 Success is the installed contract, not the process exit alone:
 
@@ -132,7 +135,7 @@ Success is the installed contract, not the process exit alone:
 
 A failed clone, configure, build, version check, or install leaves any previous install in place and does not publish a new one. Cancel stops that step only.
 
-The automatic project links `libfltk.a` from the install prefix, plus the Windows libraries that this static build needs. Those names are read from the build during implementation. They are not copied from the macOS `fltk-config` output. The manual folder page keeps today's link line, which is only `-lfltk`.
+**CONFIRMED ON WINDOWS.** The `fltk-config` written by this static build reports `LDFLAGS` as `-mwindows` and `LDLIBS` as `-lgdiplus -lole32 -luuid -lcomctl32 -lws2_32 -lwinspool`. The automatic project adds `-mwindows`, then `-lfltk`, then those libraries, in that order. The same install also writes `libfltk_images.a`, `libfltk_jpeg.a`, `libfltk_png.a`, and `libfltk_z.a`. The starter links only `libfltk.a`. The manual folder page keeps today's link line, which is only `-lfltk`. A hand link of the starter with this line produced an executable. The wizard-generated project is still the M5 check.
 
 ---
 
@@ -145,25 +148,45 @@ The automatic project links `libfltk.a` from the install prefix, plus the Window
 
 `SetupProject` on the automatic path writes the install include and library directories, `-lfltk`, and the Windows libraries from section 3. It does not write `$(#fltk)`, and it does not point at `fltk-source-1.4.5` or `build-codeblocks`. Debug stays an executable target with debug symbols. Release stays an ordinary optimised executable. The starter source is unchanged.
 
-Leaving the compiler page forward re-checks the probe. A compiler that is not `x86_64-w64-mingw32` does not receive the automatic project.
+Leaving the compiler page forward re-checks the probe. A compiler that is not `x86_64-w64-mingw32` does not receive the automatic project. The compiler page is last, so configure, build, and install use the compiler id current when those pages run.
 
 ---
 
-## 5. Milestones
+## 5. Technical lessons
+
+These are the corrections the first Windows run forced. The argv in section 3 and the checks in `wincmake.cpp` and `wizard.script` already include them.
+
+**The CMake cache type is not part of the name.** CMake 4.4 wrote `CMAKE_C_COMPILER:STRING` and `CMAKE_CXX_COMPILER:STRING` in the same cache that wrote `CMAKE_INSTALL_PREFIX:PATH` and `CMAKE_MAKE_PROGRAM:FILEPATH`. A check that required `CMAKE_C_COMPILER:FILEPATH` rejected a finished configure, and the wizard reported "CMake finished, but the cache does not record this install prefix and gcc". The check matches `NAME:` and then the value after `=`, for whichever type CMake wrote. Paths compare case-insensitively after slash normalisation. The script uses the same rule in `FLTKWinCacheVariable`.
+
+**The installed version macros are padded.** `include\FL\Enumerations.H` from this install contains `#define FL_MAJOR_VERSION        1`, and the same run of spaces for minor 4 and patch 5. A search for one space between the name and the number fails. `cmake --install` had succeeded, the C++ check allows the extra whitespace, and the script check did not. `OnLeave` of the install page returns the script result with no further dialog, so Next stayed on that page and ran install again. Both checks now accept whitespace between the name and the number and require the number to end at whitespace or a comment. A tree that already satisfies the contract skips the install page.
+
+**A Squirrel `wxString` assignment shares the object.** `local out = path` followed by `out.MakeLower()` lowercases `path` as well. `FLTKWinConfigured` compared the install prefix through that function, so the prefix drawn on the install page was entirely lowercase while the build directory, which had not been passed through it, kept its case. The copy is `path.Mid(0, path.Length())` before `Replace` or `MakeLower`. Windows file lookup is case-insensitive, so the lowercased prefix still found the files.
+
+**The install helper refuses a prefix that is not already in the cache.** `cmake --install` receives the build directory and no replacement `--prefix`. A prefix token that a shell does not expand is a relative directory under the working directory. That is how a hand install, outside the wizard, wrote a tree whose directory name was the unexpanded token.
+
+**Tool search stays on the two absolute candidates.** Git at `%ProgramFiles%\Git\cmd\git.exe` was found by the probe. CMake was absent from `%ProgramFiles%\CMake\bin\cmake.exe` on this machine. The wizard asked once, remembered the chosen `cmake.exe` after `cmake --version`, and did not search `PATH`. The saved keys are `/windows/git/executable` and `/windows/cmake/executable`.
+
+**The built library is `build-codeblocks\lib\libfltk.a`.** The build page is skipped when that file exists. The install page is skipped when `include\FL\Fl.H`, the 1.4.5 macros, and `<install>\lib\libfltk.a` all exist.
+
+**A script change and a DLL change land differently.** The wizard reads `wizard.script` from the installed templates tree when the wizard opens, so a script-only fix is copied into both the devel and output template trees and takes effect on the next wizard run. A new `scriptedwizard.dll` is loaded when Code::Blocks starts.
+
+---
+
+## 6. Milestones
 
 | | Objective | Check | Status |
 |---|---|---|---|
-| M1 | Add `wingit` without touching `macgit`. | On Windows, probe and try report `git --version`. Clone of `release-1.4.5` lands in the resolved source directory. Cancel starts no process. `macgit.cpp` is unchanged. | |
-| M2 | Add `wincmake` without touching `maccmake`. | Paths resolve under `%LOCALAPPDATA%\codeblocks`. Configure writes `CMakeCache.txt` with the install prefix and the selected GCC. `maccmake.cpp` is unchanged. | |
-| M3 | Build and install the static library. | `cmake --install` leaves `include\FL\Fl.H` reporting 1.4.5 and `lib\libfltk.a`. A failed step does not replace a previous install. | |
-| M4 | Generate the project from the install prefix. | The `.cbp` links that prefix. It has no `$(#fltk)` and no source or build directory. The macOS Homebrew path is unchanged. | |
-| M5 | Run the wizard on the WinLibs compiler. | A fresh project builds without hand repair and opens the FLTK window. A second run skips clone, configure, build, and install while the markers still validate. | |
+| M1 | Add `wingit` without touching `macgit`. | On Windows, probe and try report `git --version`. Clone of `release-1.4.5` lands in the resolved source directory. Cancel starts no process. `macgit.cpp` is unchanged. | Confirmed on one machine. |
+| M2 | Add `wincmake` without touching `maccmake`. | Paths resolve under `%LOCALAPPDATA%\codeblocks`. Configure writes `CMakeCache.txt` with the install prefix and the selected GCC. `maccmake.cpp` is unchanged. | Confirmed. The cache records the prefix as `PATH` and gcc as `STRING`. |
+| M3 | Build and install the static library. | `cmake --install` leaves `include\FL\Fl.H` reporting 1.4.5 and `lib\libfltk.a`. A failed step does not replace a previous install. | Confirmed, after the version check was taught to allow the padded macros. |
+| M4 | Generate the project from the install prefix. | The `.cbp` links that prefix. It has no `$(#fltk)` and no source or build directory. The macOS Homebrew path is unchanged. | Open. The link line is confirmed by a hand link of the starter. The wizard has not yet emitted the `.cbp`. |
+| M5 | Run the wizard on the WinLibs compiler. | A fresh project builds without hand repair and opens the FLTK window. A second run skips clone, configure, build, and install while the markers still validate. | Open. A later run does skip the four setup steps. Build and Run of the generated project is still ahead. |
 
 M5 is the wizard. A hand clone does not close M5.
 
 ---
 
-## 6. Acceptance
+## 7. Acceptance
 
 v3.6b is accepted when all of the following hold:
 
@@ -178,7 +201,7 @@ v3.6b is accepted when all of the following hold:
 
 ---
 
-## 7. What stays rejected
+## 8. What stays rejected
 
 - A Windows branch inside `macgit.cpp` or `maccmake.cpp`.
 - A shared process file that requires editing those macOS helpers in this version.
@@ -192,7 +215,7 @@ v3.6b is accepted when all of the following hold:
 
 ---
 
-## 8. Done when
+## 9. Done when
 
 A Windows user with the selected 64-bit WinLibs GCC, an existing Git, and an existing CMake can choose the FLTK application from New Project, confirm the shallow clone and the static build once, and build and run the starter. The next run does not ask again while the checkout and the installed tree still validate.
 
