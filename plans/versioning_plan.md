@@ -62,7 +62,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.5** | **DONE** (tree). D application wizard prefers LDC, installs it with Homebrew on macOS, and re-runs native compiler auto-detection. | [versioning_plan_v3_5.md](versioning_plan_v3_5.md) |
 | **v3.5b** | **Planning.** Windows LDC install through the v3.3 archive helper. Official 1.43.0 x64 archive, then the existing auto-detect bridge. | [versioning_plan_v3_5b.md](versioning_plan_v3_5b.md) |
 | **v3.6** | **DONE.** The FLTK application wizard creates a project that builds and runs against Homebrew FLTK on the tested Apple Silicon Mac. | [versioning_plan_v3_6.md](versioning_plan_v3_6.md) |
-| **v3.6b** | **Planning.** Windows FLTK install through a Windows pair beside the OGRE git helpers. Shallow clone of tag `release-1.4.5`, then a static build with the selected 64-bit MinGW GCC. | [versioning_plan_v3_6b.md](versioning_plan_v3_6b.md) |
+| **v3.6b** | **In progress.** Windows FLTK install through a Windows pair beside the OGRE git helpers. Shallow clone, configure, build, and install of `release-1.4.5` are confirmed on one machine. The generated project's Build and Run is still open. | [versioning_plan_v3_6b.md](versioning_plan_v3_6b.md) |
 | **v4.0** | **Planning.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. M1 is the plan; no installer yet. | [versioning_plan_v3_4.md](versioning_plan_v3_4.md) |
 
 ### One-line outcomes
