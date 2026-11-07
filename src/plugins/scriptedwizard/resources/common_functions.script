@@ -101,6 +101,17 @@ function DebugSymbolsOn(compileTargetBase, compilerID)
     {
         compileTargetBase.AddCompilerOption(_T("-g"));
 
+        // MinGW GDB reads DWARF. LDC's Windows -g is CodeView, and the
+        // Microsoft linker drops DWARF sections, so a Windows LDC debug
+        // target emits DWARF and links with LDC's internal linker.
+        if (PLATFORM == PLATFORM_MSW
+            && GetCompilerFactory().CompilerInheritsFrom(compilerID, _T("ldc")))
+        {
+            compileTargetBase.AddCompilerOption(_T("--gdwarf"));
+            compileTargetBase.AddLinkerOption(_T("-g"));
+            compileTargetBase.AddLinkerOption(_T("--link-internally"));
+        }
+
         if  (GetCompilerFactory().CompilerInheritsFrom(compilerID, _T("dmd")))
         {
             compileTargetBase.AddCompilerOption(_T("-debug"));

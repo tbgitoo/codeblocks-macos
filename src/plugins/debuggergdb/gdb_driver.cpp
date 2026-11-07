@@ -17,6 +17,7 @@
 
 #include "cbdebugger_interfaces.h"
 #include "configmanager.h"
+#include "projectbuildtarget.h"
 #include "cygwin.h"
 #include "globals.h"
 #include "infowindow.h"
@@ -296,7 +297,23 @@ void GDB_driver::Start(bool breakOnEntry)
         m_ManualBreakOnEntry = !m_isRemoteDebugging;
         // start the process
         if (breakOnEntry)
-            QueueCommand(new GdbCmd_Start(this, m_isRemoteDebugging ? "continue" : "start"));
+        {
+            // GDB's "start" looks for a minimal symbol named main. LDC names
+            // the D entry point "D main" and a PE built with its linker has
+            // no COFF symbol table, so "start" exits with
+            // "No symbol table loaded" even when DWARF is present.
+            const wxString compilerId = m_pTarget ? m_pTarget->GetCompilerID() : wxString();
+            const bool dMain = compilerId.StartsWith(wxT("ldc"))
+                            || compilerId.StartsWith(wxT("dmd"))
+                            || compilerId.StartsWith(wxT("gdc"));
+            if (!m_isRemoteDebugging && dMain)
+            {
+                QueueCommand(new DebuggerCmd(this, "tbreak D main"));
+                QueueCommand(new GdbCmd_Start(this, "run"));
+            }
+            else
+                QueueCommand(new GdbCmd_Start(this, m_isRemoteDebugging ? "continue" : "start"));
+        }
         else
         {
             // if breakOnEntry is not set, we need to use 'run' to make gdb stop at a breakpoint at first instruction

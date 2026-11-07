@@ -2087,14 +2087,27 @@ int CompilerGCC::RunSingleFile(const wxString& filename)
     // Build the complete command payload first. For an external terminal,
     // cb_console_runner must be inside $SCRIPT so that it launches the program
     // and keeps the terminal open after the program exits.
+    // Windows CreateProcess does not treat "\ " as an escaped space, so quote.
+    wxString runnerPath = baseDir + strSLASH + strCONSOLE_RUNNER;
+    wxString exeArg = exe_filename;
+    if (platform::windows)
+    {
+        QuoteStringIfNeeded(runnerPath);
+        QuoteStringIfNeeded(exeArg);
+    }
+    else
+    {
+        runnerPath = EscapeSpaces(runnerPath);
+        exeArg = EscapeSpaces(exeArg);
+    }
+
     if (!useProgramConsole &&
         wxFileExists(baseDir + strSLASH + strCONSOLE_RUNNER))
     {
-        payload << EscapeSpaces(baseDir + strSLASH + strCONSOLE_RUNNER)
-                << strSPACE;
+        payload << runnerPath << strSPACE;
     }
 
-    payload << EscapeSpaces(exe_filename);
+    payload << exeArg;
 
     if (useProgramConsole)
     {
