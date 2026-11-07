@@ -7,6 +7,8 @@
         <Search envVar="PATH"
                 for="C"/>
         <if platform="windows">
+            <Search path="%LOCALAPPDATA%\codeblocks\sdk\ldc\1.43.0-x86_64"
+                    for="C"/>
             <Fallback path="C:\ldc"/>
         </if>
         <else>

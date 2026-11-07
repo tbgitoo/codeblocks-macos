@@ -5,6 +5,8 @@
 // Project: D application
 // Original author: Yiannis Mandravellos
 // tbgitoo: macOS Homebrew discovery/install support added for DMD, GDC and LDC.
+// Windows: LDC can be installed from the official 1.43.0 x64 archive.
+// DMD and GDC stay selectable and are not downloaded.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -21,10 +23,21 @@ function BeginWizard()
 {
     local intro_msg = _("Welcome to the new D application wizard!\n") +
                       _("This wizard will guide you to create a new D application.\n\n") +
-                      _("LDC is the preferred compiler; DMD and GDC can also be selected on the compiler page.\n\n") +
-                      _("On macOS, the wizard can use Homebrew to install the compiler selected on the compiler page.\n") +
-                      _("Code::Blocks does not install Homebrew.\n\n") +
-                      _("When you're ready to proceed, please click \"Next\"...");
+                      _("LDC is the preferred compiler; DMD and GDC can also be selected on the compiler page.\n\n");
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        intro_msg = intro_msg +
+                    _("On macOS, the wizard can use Homebrew to install the compiler selected on the compiler page.\n") +
+                    _("Code::Blocks does not install Homebrew.\n\n");
+    }
+    else if (PLATFORM == PLATFORM_MSW)
+    {
+        intro_msg = intro_msg +
+                    _("On Windows, the wizard can install LDC.\n") +
+                    _("DMD and GDC are used when Code::Blocks already detects them.\n") +
+                    _("Nothing is downloaded until you choose Install LDC.\n\n");
+    }
+    intro_msg = intro_msg + _("When you're ready to proceed, please click \"Next\"...");
 
     Wizard.AddInfoPage(_T("DIntro"), intro_msg);
     Wizard.AddProjectPathPage();
@@ -236,9 +249,147 @@ function DMacAllowForward()
 function OnLeave_CompilerPage(fwd)
 {
     if (fwd)
-        return DMacAllowForward();
+    {
+        if (!DMacAllowForward())
+            return false;
+        return DWinAllowForward();
+    }
 
     return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Official LDC 1.43.0 x64 archive (Windows)
+////////////////////////////////////////////////////////////////////////////////
+
+DWinEdition <- _T("1.43.0-x86_64");
+DWinUrl     <- _T("https://github.com/ldc-developers/ldc/releases/download/v1.43.0/ldc2-1.43.0-windows-x64.7z");
+DWinHash    <- _T("60ae3d5e34287aa25433c7550520060a52f9f212e3d5ff6472a9067d8d17e47e");
+
+function DWinDetectOk(compilerID)
+{
+    local report = Wizard.AutoDetectCompiler(compilerID);
+    if (!DReportField(report, _T("found")).Matches(_T("1")))
+        return false;
+    if (!DReportField(report, _T("detected")).Matches(_T("1")))
+        return false;
+    local master = DReportField(report, _T("master"));
+    if (master.IsEmpty())
+        return false;
+    if (compilerID.Matches(_T("ldc")))
+    {
+        if (!IO.FileExists(master + _T("\\bin\\ldc2.exe")))
+            return false;
+    }
+    return true;
+}
+
+// ldc2.exe is present, but auto-detect still rejected the profile.
+// That is the make-program check, so do not download again.
+function DWinCompilerPresent(compilerID)
+{
+    if (!compilerID.Matches(_T("ldc")))
+        return false;
+    local report = Wizard.AutoDetectCompiler(compilerID);
+    local master = DReportField(report, _T("master"));
+    if (master.IsEmpty())
+        return false;
+    return IO.FileExists(master + _T("\\bin\\ldc2.exe"));
+}
+
+function DWinTreeOk(prefix)
+{
+    if (prefix.IsEmpty())
+        return false;
+    local sep = _T("\\");
+    if (!IO.FileExists(prefix + sep + _T("bin") + sep + _T("ldc2.exe")))
+        return false;
+    if (!IO.FileExists(prefix + sep + _T("import") + sep + _T("std") + sep + _T("stdio.d")))
+        return false;
+    if (!IO.FileExists(prefix + sep + _T("lib") + sep + _T("phobos2-ldc.lib")))
+        return false;
+    return true;
+}
+
+function DWinOfferInstall()
+{
+    local explanation = _("This project needs LDC.\n\n") +
+                        _("Nothing is downloaded until you choose Install LDC.\n") +
+                        _("Cancel on this dialog does not start a download.");
+    local markers = _T("bin/ldc2.exe;import/std/stdio.d;lib/phobos2-ldc.lib");
+    local staged = Wizard.WinSdkStage(DWinUrl, DWinHash, _T("ldc"), markers, explanation, _("Install LDC"));
+    if (!DReportField(staged, _T("success")).Matches(_T("1")))
+    {
+        if (DReportField(staged, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The download was stopped. Files already written are left in place. No project was created."));
+            return false;
+        }
+        if (DReportField(staged, _T("launched")).Matches(_T("1")))
+        {
+            ShowError(_("LDC was not installed. No project was created.\n\n") +
+                      DReportField(staged, _T("output")));
+        }
+        return false;
+    }
+
+    local stagedPrefix = DReportField(staged, _T("prefix"));
+    if (!DWinTreeOk(stagedPrefix))
+    {
+        ShowError(_("LDC was downloaded, but the archive does not contain the expected 1.43.0 files. No project was created."));
+        return false;
+    }
+
+    local note = _T("library=ldc\nversion=1.43.0\nsource=") + DWinUrl +
+                 _T("\nsha256=") + DWinHash +
+                 _T("\nsha256_verified=") + DWinHash;
+    local published = Wizard.WinSdkPublish(_T("ldc"), DWinEdition, stagedPrefix, note);
+    if (!DReportField(published, _T("success")).Matches(_T("1")))
+    {
+        ShowError(_("LDC was not installed. No project was created.\n\n") +
+                  DReportField(published, _T("output")));
+        return false;
+    }
+
+    if (DWinDetectOk(_T("ldc")))
+        return true;
+    if (DWinCompilerPresent(_T("ldc")))
+    {
+        ShowError(_("LDC was installed, but Code::Blocks could not find a make program for it. No project was created."));
+        return false;
+    }
+    ShowError(_("LDC was installed, but Code::Blocks could not detect it. No project was created."));
+    return false;
+}
+
+function DWinAllowForward()
+{
+    if (PLATFORM != PLATFORM_MSW)
+        return true;
+
+    local compilerID = Wizard.GetCompilerID();
+    if (compilerID.Matches(_T("ldc")))
+    {
+        if (DWinDetectOk(compilerID))
+            return true;
+        if (DWinCompilerPresent(compilerID))
+        {
+            ShowError(_("LDC was found, but Code::Blocks could not find a make program for it. No project was created."));
+            return false;
+        }
+        return DWinOfferInstall();
+    }
+
+    if (compilerID.Matches(_T("dmd")) || compilerID.Matches(_T("gdc")))
+    {
+        if (DWinDetectOk(compilerID))
+            return true;
+        ShowError(_("The automatic compiler install applies to LDC. No project was created."));
+        return false;
+    }
+
+    ShowError(_("The selected compiler is not supported by the Windows automatic setup. No project was created."));
+    return false;
 }
 
 function GetFilesDir()

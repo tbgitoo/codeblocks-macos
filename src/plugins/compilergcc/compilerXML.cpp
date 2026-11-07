@@ -14,8 +14,11 @@
 
 #include "compilerXML.h"
 
+#include "compilerfactory.h"
 #include "manager.h"
 #include "macrosmanager.h"
+
+#include <wx/confbase.h>
 
 CompilerXML::CompilerXML(const wxString& name, const wxString& ID, const wxString& file)
     : Compiler(wxGetTranslation(name), ID), m_fileName(file)
@@ -156,6 +159,9 @@ AutoDetectResult CompilerXML::AutoDetectInstallationDir()
                 // **** Path
                 else if (node->GetAttribute("path", &value))
                 {
+                    // %VAR% is written in several compiler XML files and was previously
+                    // compared as a literal path. Expand it before the existence test.
+                    value = wxExpandEnvVars(value);
                     wxString targ = GetExecName(node->GetAttribute("for", wxEmptyString));
                     if (wxIsWild(value))
                     {
@@ -294,20 +300,67 @@ AutoDetectResult CompilerXML::AutoDetectInstallationDir()
     wxString master_path_without_macros(m_MasterPath);
     Manager::Get()->GetMacrosManager()->ReplaceMacros(master_path_without_macros);
 
+    AutoDetectResult result = adrGuessed;
     if (   wxFileExists(master_path_without_macros + wxFILE_SEP_PATH + "bin" + wxFILE_SEP_PATH + m_Programs.C)
         || wxFileExists(master_path_without_macros + wxFILE_SEP_PATH + m_Programs.C)
         || (GetID() == "null") ) // Special case so "No Compiler" is valid
     {
-        return adrDetected;
+        result = adrDetected;
+    }
+    else
+    {
+        for (size_t i = 0; i < m_ExtraPaths.GetCount(); ++i)
+        {
+            if (wxFileExists(m_ExtraPaths[i] + wxFILE_SEP_PATH + m_Programs.C))
+            {
+                result = adrDetected;
+                break;
+            }
+        }
     }
 
-    for (size_t i = 0; i < m_ExtraPaths.GetCount(); ++i)
-    {
-        if (wxFileExists(m_ExtraPaths[i] + wxFILE_SEP_PATH + m_Programs.C))
-            return adrDetected;
-    }
-    return adrGuessed;
+#ifdef __WXMSW__
+    if (result == adrDetected && GetID() == wxT("ldc") && !EnsureWindowsLdcMake())
+        result = adrGuessed;
+#endif
+    return result;
 }
+
+#ifdef __WXMSW__
+bool CompilerXML::EnsureWindowsLdcMake()
+{
+    const wxString sep = wxFILE_SEP_PATH;
+    CompilerPrograms programs = m_Programs;
+    if (wxFileExists(m_MasterPath + sep + wxT("bin") + sep + wxT("make.exe")))
+    {
+        programs.MAKE = wxT("make.exe");
+        SetPrograms(programs);
+        return true;
+    }
+
+    Compiler* gcc = CompilerFactory::GetCompiler(wxT("gcc"));
+    if (!gcc)
+        return false;
+    wxString gccMaster = gcc->GetMasterPath();
+    Manager::Get()->GetMacrosManager()->ReplaceMacros(gccMaster);
+    while (!gccMaster.empty() && (gccMaster.Last() == wxT('\\') || gccMaster.Last() == wxT('/')))
+        gccMaster.RemoveLast();
+    if (gccMaster.empty())
+        return false;
+
+    const wxString gccBin = gccMaster + sep + wxT("bin");
+    if (!wxFileExists(gccBin + sep + wxT("mingw32-make.exe")))
+        return false;
+
+    wxArrayString paths = m_ExtraPaths;
+    if (paths.Index(gccBin, false) == wxNOT_FOUND)
+        paths.Add(gccBin);
+    SetExtraPaths(paths);
+    programs.MAKE = wxT("mingw32-make.exe");
+    SetPrograms(programs);
+    return true;
+}
+#endif
 
 bool CompilerXML::AddPath(const wxString& pth, SearchMode sm, int rmDirs)
 {
