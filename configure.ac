@@ -1,8 +1,8 @@
-AC_PREREQ(2.50)
+AC_PREREQ([2.73])
 
 m4_include([revision.m4])
 
-AC_INIT([codeblocks], SVN_REVISION)
+AC_INIT([codeblocks],[SVN_REVISION])
 
 AC_CANONICAL_TARGET
 
@@ -29,7 +29,7 @@ AX_PROG_CXX_FOR_BUILD
 
 LT_INIT
 AC_CONFIG_MACRO_DIRS([m4])
-AC_CONFIG_HEADER([src/include/config.h])
+AC_CONFIG_HEADERS([src/include/config.h])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES])
 
@@ -54,7 +54,15 @@ CODEBLOCKS_SETUP_FOR_TARGET
 
 dnl Checks for header files.
 AC_HEADER_DIRENT
-AC_HEADER_STDC
+m4_warn([obsolete],
+[The preprocessor macro 'STDC_HEADERS' is obsolete.
+  Except in unusual embedded environments, you can safely include all
+  C89 headers unconditionally.])dnl
+# Autoupdate added the next two lines to ensure that your configure
+# script's behavior did not change.  They are probably safe to remove.
+AC_CHECK_INCLUDES_DEFAULT
+AC_PROG_EGREP
+
 AC_CHECK_HEADERS([fcntl.h limits.h stdlib.h string.h sys/param.h unistd.h malloc.h sys/malloc.h malloc/malloc.h])
 
 dnl Checks for typedefs, structures, and compiler characteristics.
@@ -62,7 +70,20 @@ AC_HEADER_STDBOOL
 AC_C_CONST
 AC_C_INLINE
 AC_TYPE_SIZE_T
-AC_HEADER_TIME
+m4_warn([obsolete],
+[Update your code to rely only on HAVE_SYS_TIME_H,
+then remove this warning and the obsolete code below it.
+All current systems provide time.h; it need not be checked for.
+Not all systems provide sys/time.h, but those that do, all allow
+you to include it and time.h simultaneously.])dnl
+AC_CHECK_HEADERS_ONCE([sys/time.h])
+# Obsolete code to be removed.
+if test $ac_cv_header_sys_time_h = yes; then
+  AC_DEFINE([TIME_WITH_SYS_TIME],[1],[Define to 1 if you can safely include both <sys/time.h>
+	     and <time.h>.  This macro is obsolete.])
+fi
+# End of obsolete code.
+
 AC_C_VOLATILE
 
 dnl Checks for library functions.
@@ -80,7 +101,7 @@ AC_CHECK_FUNC(vsnprintf, AC_DEFINE(HAVE_VSNPRINTF,,vsnprintf))
 AC_MSG_CHECKING(whether to disable system libraries and use bundled libraries)
 enable_sys_libs_default="yes"
 AC_ARG_ENABLE(sys-libs,
-    [AC_HELP_STRING([--disable-sys-libs], [disable system libraries and use bundled libraries when possible (default NO)])],
+    [AS_HELP_STRING([--disable-sys-libs],[disable system libraries and use bundled libraries when possible (default NO)])],
     enable_sys_libs=$enableval,
     enable_sys_libs=$enable_sys_libs_default)
 if test "x$enable_sys_libs" = "xno"; then
