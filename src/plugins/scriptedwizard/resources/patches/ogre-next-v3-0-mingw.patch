@@ -12,7 +12,7 @@ index becf262..bcff20e 100644
 +			# MinGW ignores MSVC #pragma comment(lib) that pulls in d3dcompiler,
 +			# and OgreNsightChecker calls PSAPI directly.
 +			list(APPEND DirectX11_LIBRARY psapi.lib)
-+		endif() 
++		endif()
  		# but it is usefull to output selected version to the log
  		message(STATUS "Found DirectX11 headers: ${DirectX11_INCLUDE_DIR}")
  	endif()
