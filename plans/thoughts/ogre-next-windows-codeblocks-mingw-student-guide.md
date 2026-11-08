@@ -1,61 +1,76 @@
-# OGRE-Next on Windows with Code::Blocks MinGW
+OGRE-Next on Windows with Code::Blocks MinGW
 
 This guide builds OGRE-Next with the MinGW compiler supplied by Code::Blocks, installs a clean SDK, and runs a small independent program that opens a rendered window.
 
-The first build is large. Allow approximately **1 to 2 hours** and keep the same Command Prompt open throughout.
+The first build is large. Allow approximately 1 to 2 hours and keep the same Command Prompt open throughout.
 
-## 1\. Versions and files used
+
+0. General approach ======================================================
+
+This is OGRE-Next plus the necessary ogre-next-deps.
+
+We want to get this compiling using a Code::Blocks MINGW tool chain.
+
+So what is done is generally download the source, patch, build, install.
+
+
+
+1. Versions and files used ===============================================
+
+We want to be reproducible, that's why we use exact versions. We pin these:
 
 Exact source revisions:
 
-```text
 ogre-next-deps  f7e23191f4fd89ed41134996bc47f9ee23d009df
 OGRE-Next       4859016ad2cc956a653dfc4e4a859505696c6509
-                 branch v3-0, version Eris 3.0.0
-```
+                branch v3-0, version Eris 3.0.0
+                
+This is our tool chain:
 
 Code::Blocks compiler:
 
-```text
-D:\\Program Files\\CodeBlocks\\MinGW
-```
+D:\Program Files\CodeBlocks\MinGW
 
-Example files:
+And this is our test: This must compile
 
-```text
-D:\\Users\\thoma\\Documents\\git\\codeblocks-macos\\plans\\thoughts\\ogre\_next\_example\\Tutorial00\_Basic.cpp
-D:\\Users\\thoma\\Documents\\git\\codeblocks-macos\\plans\\thoughts\\ogre\_next\_example\\CMakeLists.txt
-```
+D:\Users\thoma\Documents\git\codeblocks-macos\plans\thoughts\ogre_next_example\Tutorial00_Basic.cpp
+D:\Users\thoma\Documents\git\codeblocks-macos\plans\thoughts\ogre_next_example\CMakeLists.txt
 
-Use **Command Prompt**, not PowerShell.
+Now to the protocol: First, use Command Prompt, not PowerShell. On Windows, press Windows+R, enter cmd, and press Enter
 
-## 2\. Prepare a clean working folder
+2. Prepare a clean working folder =======================================================s
+
+If there are remants from a previous build, remove D:\Users\thoma\Documents\git\ogre-next-test (remove only the ogre-next-test folder) 
 
 Open Command Prompt and run:
 
-```bat
-mkdir D:\\Users\\thoma\\Documents\\git\\ogre-next-test
-cd /d D:\\Users\\thoma\\Documents\\git\\ogre-next-test
+mkdir D:\Users\thoma\Documents\git\ogre-next-test
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
 
 mkdir window-test
-copy /Y "D:\\Users\\thoma\\Documents\\git\\codeblocks-macos\\plans\\thoughts\\ogre\_next\_example\\Tutorial00\_Basic.cpp" window-test\\
-copy /Y "D:\\Users\\thoma\\Documents\\git\\codeblocks-macos\\plans\\thoughts\\ogre\_next\_example\\CMakeLists.txt" window-test\\
+copy /Y "D:\Users\thoma\Documents\git\codeblocks-macos\plans\thoughts\ogre_next_example\Tutorial00_Basic.cpp" window-test\
+copy /Y "D:\Users\thoma\Documents\git\codeblocks-macos\plans\thoughts\ogre_next_example\CMakeLists.txt" window-test\
+copy /Y "D:\Users\thoma\Documents\git\codeblocks-macos\plans\thoughts\ogre_next_example\ogrehead.mesh" window-test\
 
-dir window-test\\CMakeLists.txt
-dir window-test\\Tutorial00\_Basic.cpp
-```
 
-Both files must be listed. The folders `ogre-next-deps`, `ogre-next`, and `install` should not exist yet.
+Make sure things worked as expected:
 
-## 3\. Select the Code::Blocks compiler
+dir window-test\CMakeLists.txt
+dir window-test\Tutorial00_Basic.cpp
+dir window-test\ogrehead.mesh
+
+All three files must be listed. The folders ogre-next-deps, ogre-next, and install should not exist yet.
+
+3. Select the Code::Blocks compiler ======================================================s
 
 Run:
 
-```bat
-set "CB\_MINGW=D:\\Program Files\\CodeBlocks\\MinGW"
-set "PATH=%CB\_MINGW%\\bin;%PATH%"
-set "CC=%CB\_MINGW%\\bin\\gcc.exe"
-set "CXX=%CB\_MINGW%\\bin\\g++.exe"
+set "CB_MINGW=D:\Program Files\CodeBlocks\MinGW"
+set "PATH=%CB_MINGW%\bin;%PATH%"
+set "CC=%CB_MINGW%\bin\gcc.exe"
+set "CXX=%CB_MINGW%\bin\g++.exe"
+
+And test:
 
 where gcc
 where g++
@@ -67,34 +82,26 @@ gcc -dumpmachine
 gcc --version
 cmake --version
 git --version
-```
 
-The first path printed for `gcc`, `g++`, `ar`, `mingw32-make`, and `windres` must begin with:
+The first path printed for gcc, g++, ar, mingw32-make, and windres must begin with:
 
-```text
-D:\\Program Files\\CodeBlocks\\MinGW\\bin
-```
+D:\Program Files\CodeBlocks\MinGW\bin
 
-`gcc -dumpmachine` must print:
+gcc -dumpmachine must print:
 
-```text
-x86\_64-w64-mingw32
-```
+x86_64-w64-mingw32
 
 The tested compiler is GCC 14.2.0. If a new Command Prompt is opened later, repeat this section.
 
-
-
 The reason for doing this configuration is that otherwise, the compilation will mix different compiler and tooling and that's going to be a mess.
 
+4. Clone the dependencies ===========================================================s
 
-
-## 4\. Clone the dependencies
+In this section we get ogre-next-deps from the internet. We also pin the versions.
 
 Run:
 
-```bat
-cd /d D:\\Users\\thoma\\Documents\\git\\ogre-next-test
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
 
 git clone https://github.com/OGRECave/ogre-next-deps.git
 cd ogre-next-deps
@@ -102,309 +109,233 @@ git checkout f7e23191f4fd89ed41134996bc47f9ee23d009df
 git submodule update --init --recursive --depth 1
 
 git rev-parse HEAD
-git -C src\\SDL2 rev-parse HEAD
-```
+git -C src\SDL2 rev-parse HEAD
 
 Expected revisions:
 
-```text
 ogre-next-deps  f7e23191f4fd89ed41134996bc47f9ee23d009df
 SDL2            5d249570393f7a37e037abf22cd6012a4cc56a71
-```
-
-
 
 Here we get our source from internet. We want an exactly identical starting point if we have to repeat.
 
+5. Correct the dependency source code ======================================================s
 
-
-## 5\. Correct the dependency source code
+In this section we have to do little updates to the code. These are related to Windows 64 bits and the specific mingw environment from Code::Blocks that we are using. It won't run without these changes.
 
 Use a text editor. Make only the edits in this section, then save each file.
 
-### 5.1 Use the Windows SDL2 DLL name
+5.1 Use the Windows SDL2 DLL name
 
-SDL2 creates `SDL2.dll` on this toolchain. The original build instruction expects the Unix-style name `libSDL2.dll`, so the expected filename must be corrected.
+SDL2 is a graphics library used by OGRE-next. It is included as dynamic link library (dll). 
+SDL2 creates SDL2.dll on our Windows tool chain. The original build instruction expects the Unix-style name libSDL2.dll, so the expected filename must be corrected.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\CMakeLists.txt
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\CMakeLists.txt
 
 Search for:
 
-```cmake
-set(SDL2\_BIN\_NAME "libSDL2.dll")
-```
+set(SDL2_BIN_NAME "libSDL2.dll")
 
 Replace it with:
 
-```cmake
-set(SDL2\_BIN\_NAME "SDL2.dll")
-```
-
-
+set(SDL2_BIN_NAME "SDL2.dll")
 
 The reason why we have to do this is that are really two conventions of naming library files: the Windows one (SDL2.dll) and the Linux one (libSDL2.so, by extension libSDL2.dll when ported to windows). And well, it's the exact file name that counts so this messes up every once a while.
 
+5.2 Select the Windows version of the JPEG XR code
 
+LibJXR is a library for reading some particular jpeg format sometimes found on Windows.
 
-### 5.2 Select the Windows version of the JPEG XR code
-
-LibJXR contains separate platform paths. Defining both the Windows and ANSI paths at the same time gives 32-bit integer definitions to a 64-bit Windows build, so MinGW must use the Windows path only.
+There is an issue with Integer definitions (number of bytes in an integer) that we need to fix.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\FreeImage\\CMakeLists.txt
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\FreeImage\CMakeLists.txt
 
-Search for the block starting with `# LibJXR` and ending with the first `endif()`:
+Search for the block starting with # LibJXR and ending with the first endif():
 
-```cmake
 # LibJXR
-add\_definitions( "-DDISABLE\_PERF\_MEASUREMENT" )
+add_definitions( "-DDISABLE_PERF_MEASUREMENT" )
 if( NOT MSVC )
-    add\_definitions( "-D\_\_ANSI\_\_=1" )
+    add_definitions( "-D__ANSI__=1" )
 endif()
-```
 
 Replace the complete block with:
 
-```cmake
 # LibJXR
-add\_definitions( "-DDISABLE\_PERF\_MEASUREMENT" )
+add_definitions( "-DDISABLE_PERF_MEASUREMENT" )
 if( NOT MSVC AND NOT WIN32 )
-    add\_definitions( "-D\_\_ANSI\_\_=1" )
+    add_definitions( "-D__ANSI__=1" )
 endif()
 if( MINGW )
-    add\_definitions( "-D\_\_MINGW64\_TOOLCHAIN\_\_" )
+    add_definitions( "-D__MINGW64_TOOLCHAIN__" )
 endif()
-```
-
-
 
 The reason why we have to do this is historical: People have increased the size of integers as machines grew bigger. But some old code has survived.
 
+5.3 Use MinGW's Windows GUID header
 
-
-
-
-### 5.3 Use MinGW's Windows GUID header
-
-LibJXR includes an old private copy of `guiddef.h`. MinGW already supplies the correct Windows header, and the private copy can hide it. Delete only the private file, not the directory containing the other LibJXR headers.
+Here we get rid of duplicate header file definition that otherwise causes a crash during compilation.
 
 Run in Command Prompt:
 
-```bat
-del src\\FreeImage\\Source\\LibJXR\\common\\include\\guiddef.h
-```
-
-
+del src\FreeImage\Source\LibJXR\common\include\guiddef.h
 
 Long ago, LibJXR needed the Windows definitions from a file called guiddef.h, so a copy of that file was included inside LibJXR. Meanwhile, Windows and MinGW continued evolving their own guiddef.h. The two copies kept the same name but no longer evolved together. Now they are conflicting, so we need to remove one.
 
+On those guid things: Windows uses GUIDs (Globally Unique Identifiers) to identify many kinds of objects and definitions. Among these things are pixel formats - how colors are stored, and LibJXR needs to use these GUIDS to access to color formats. Unfortunately, the file defining that GUID format for C has become duplicated in different places and now there are collisions. We need to take care of this.
 
+5.4 Include the fixed-width integer definitions in Imath
 
-
-
-
-
-### 5.4 Include the fixed-width integer definitions in Imath
-
-The bundled Imath code uses names such as `int64\_t`. Modern C++ declares these names in `<cstdint>`, so the header should include what it uses instead of depending on another header to include it indirectly.
+Here, in an image math library, we need to explicitly provide integer definitions (machine format for integers)
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\FreeImage\\Source\\OpenEXR\\Imath\\ImathVec.h
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\FreeImage\Source\OpenEXR\Imath\ImathVec.h
 
 Search for:
 
-```cpp
 #include "ImathMath.h"
 
 #include <iostream>
-```
 
 Replace it with:
 
-```cpp
 #include "ImathMath.h"
 
 #include <cstdint>
 #include <iostream>
-```
-
-
-
-
 
 This one is from the deep ocean floor of image mathematics. Here, IMath expects the integer sizes to be predefined, but does not explicitly include the necessary "hashtag file". Fortunately, including the cstdint "hashtag file" is enough (this provides machine integer definitions).
 
+More precisely, the bundled Imath code uses names such as int64_t. Modern C++ declares these names in <cstdint>, so the header should include what it uses instead of depending on another header to include it indirectly.
 
+5.5 Keep MinGW's 64-bit rsize_t
 
-### 5.5 Keep MinGW's 64-bit `rsize\_t`
-
-On 64-bit Windows, MinGW already defines `rsize\_t` with the correct pointer-sized type. Remotery must not redefine it as a 32-bit `unsigned int`.
+Another correction related to integer sizes.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\Remotery\\src\\Remotery.c
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\Remotery\src\Remotery.c
 
 Search for:
 
-```c
-#if (!defined(\_WIN64) \&\& !defined(\_\_APPLE\_\_)) || (defined(\_\_MINGW32\_\_) \&\& !defined(RSIZE\_T\_DEFINED))
-typedef unsigned int rsize\_t;
+#if (!defined(_WIN64) && !defined(__APPLE__)) || (defined(__MINGW32__) && !defined(RSIZE_T_DEFINED))
+typedef unsigned int rsize_t;
 #endif
-```
 
 Replace it with:
 
-```c
-#if !defined(\_WIN64) \&\& !defined(\_\_APPLE\_\_) \&\& !defined(\_\_MINGW32\_\_)
-typedef unsigned int rsize\_t;
+#if !defined(_WIN64) && !defined(__APPLE__) && !defined(__MINGW32__)
+typedef unsigned int rsize_t;
 #endif
-```
+
+Windows changed its addressing system on the road from 32-bit to 64-bit. Think of going from "Fritz Muller, Bern" to "Fritz Muller, Langgasse, Bern": the new address needs a larger envelope to write everything down.
+
+Here we are not directly changing the addresses themselves, but the size of the "envelopes" used to describe sizes in memory (rsize_t). MinGW already knows that the modern 64-bit format needs a larger envelope. Remotery contains an older compatibility rule that tries to replace it with the old, smaller format. We therefore ask Remotery to leave MinGW's modern definition alone.
 
 
 
-Windows changed its addressing system on the road from 32-bit to 64-bit. Think of going from “Fritz Müller, Bern” to “Fritz Müller, Länggasse, Bern”: the new address needs a larger envelope to write everything down.
+5.6 Link Remotery with Windows sockets
 
-
-
-Here we are not directly changing the addresses themselves, but the size of the “envelopes” used to describe sizes in memory (rsize\_t). MinGW already knows that the modern 64-bit format needs a larger envelope. Remotery contains an older compatibility rule that tries to replace it with the old, smaller format. We therefore ask Remotery to leave MinGW's modern definition alone.
-
-
-
-### 5.6 Link Remotery with Windows sockets
-
-Remotery communicates through network sockets. Microsoft compilers can obtain some Windows libraries implicitly, while MinGW expects the build file to name the Winsock library explicitly.
+Here, we are including a library explicitly that is not found on mingw without our intervention.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\Remotery\\CMakeLists.txt
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\Remotery\CMakeLists.txt
 
 Search for:
 
-```cmake
 if( APPLE )
-    set( RMT\_USE\_METAL 1 )
+    set( RMT_USE_METAL 1 )
 endif()
-configure\_file( RemoteryConfig.h.in ${CMAKE\_CURRENT\_SOURCE\_DIR}/src/RemoteryConfig.h )
-```
+configure_file( RemoteryConfig.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/RemoteryConfig.h )
 
 Replace it with:
 
-```cmake
 if( APPLE )
-    set( RMT\_USE\_METAL 1 )
+    set( RMT_USE_METAL 1 )
 endif()
 if( WIN32 )
-    target\_link\_libraries( Remotery ws2\_32 )
+    target_link_libraries( Remotery ws2_32 )
 endif()
-configure\_file( RemoteryConfig.h.in ${CMAKE\_CURRENT\_SOURCE\_DIR}/src/RemoteryConfig.h )
-```
+configure_file( RemoteryConfig.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/RemoteryConfig.h )
+
+Remotery is used to survey the performance of program parts of Ogre-next. It's like a phone operator that from time to time calls in to say where the work stands. For that it uses a phone line. Remotery knows how to make calls, but phone calls need to be made through the Windows phone call company (e.g. Swisscom, not Salt; here "Remotery ws2_32"), otherwise it doesn't work.
+
+More precisely, this bug arises because Microsoft compilers can obtain some Windows libraries implicitly, while MinGW expects the build file to name the Winsock library explicitly.
 
 
+5.7 Adapt zziplib's read and write functions
 
-Remotery is used to survey the performance of program parts of Ogre-next. It's like a phone operator that from time to time calls in to say where the work stands. For that it uses a phone line. Remotery knows how to make calls, but phone calls need to be made through the Windows phone call company (e.g. Swisscom, not Salt; here "Remotery ws2\_32"), otherwise it doesn't work. 
-
-
-
-### 5.7 Adapt zziplib's read and write functions
-
-The old zziplib interface uses a 64-bit length on this platform, while the Windows `\_read` and `\_write` functions accept a 32-bit count. Small wrapper functions make that conversion explicitly. A single `\_read` or `\_write` call is therefore limited to `0xffffffff` bytes, which is already far larger than the files used by this example.
+Another integer size issue, now in zipping/unzipping.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\src\\zziplib\\zzip\\plugin.c
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\src\zziplib\zzip\plugin.c
 
 Search for:
 
-```c
 #include <zzip/format.h>
-```
 
 Immediately after that line, insert:
 
-```c
-#if defined(\_\_MINGW32\_\_)
-static zzip\_ssize\_t zzip\_mingw\_read(int fd, void \*buf, zzip\_size\_t len)
+#if defined(__MINGW32__)
+static zzip_ssize_t zzip_mingw_read(int fd, void *buf, zzip_size_t len)
 {
     if (len > 0xffffffffu)
         len = 0xffffffffu;
-    return (zzip\_ssize\_t) \_read(fd, buf, (unsigned int) len);
+    return (zzip_ssize_t) _read(fd, buf, (unsigned int) len);
 }
 
-static zzip\_ssize\_t zzip\_mingw\_write(int fd, const void \*buf, zzip\_size\_t len)
+static zzip_ssize_t zzip_mingw_write(int fd, const void *buf, zzip_size_t len)
 {
     if (len > 0xffffffffu)
         len = 0xffffffffu;
-    return (zzip\_ssize\_t) \_write(fd, buf, (unsigned int) len);
+    return (zzip_ssize_t) _write(fd, buf, (unsigned int) len);
 }
 #endif
-```
 
-In the `default\_io` block, search for:
+In the default_io block, search for:
 
-```c
-    \&\_zzip\_read,
-```
+    &_zzip_read,
 
 Replace it with:
 
-```c
-#if defined(\_\_MINGW32\_\_)
-    \&zzip\_mingw\_read,
+#if defined(__MINGW32__)
+    &zzip_mingw_read,
 #else
-    \&\_zzip\_read,
+    &_zzip_read,
 #endif
-```
 
 In the same block, search for:
 
-```c
-    \&\_zzip\_write
-```
+    &_zzip_write
 
 Replace it with:
 
-```c
-#if defined(\_\_MINGW32\_\_)
-    \&zzip\_mingw\_write
+#if defined(__MINGW32__)
+    &zzip_mingw_write
 #else
-    \&\_zzip\_write
+    &_zzip_write
 #endif
-```
-
-
 
 This one goes the other way around: Windows has increased integer size, but we use a zip utility that hasn't :(
 
+More precisely: The old zziplib interface uses a 64-bit length on this platform, while the Windows _read and _write functions accept a 32-bit count. Small wrapper functions make that conversion explicitly. A single _read or _write call is therefore limited to 0xffffffff bytes, which is already far larger than the files used by this example.
 
+5.8 Check the dependency edits
 
-### 5.8 Check the dependency edits
+This is to check again that all the edits have been made.
 
 Run:
 
-```bat
 git status --short
 git diff --stat
-```
 
 The changed paths should be:
 
-```text
 src/CMakeLists.txt
 src/FreeImage/CMakeLists.txt
 src/FreeImage/Source/LibJXR/common/include/guiddef.h  deleted
@@ -412,236 +343,211 @@ src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
 src/Remotery/CMakeLists.txt
 src/Remotery/src/Remotery.c
 src/zziplib/zzip/plugin.c
-```
 
+It should be exactly those files and nothing else.
 
+6. Configure, build, and install the dependencies =========================================
 
-
-
-
-
-This just make sure that we actually edited the targetted files 
-
-
-
-## 6\. Configure, build, and install the dependencies
+This to prepare the compilation, it explores the tools we have and sets all sorts of options correspondingly. This is necessary to make compilation possible on our machine.
 
 Run:
 
-```bat
 cmake -S . -B build ^
   -G "MinGW Makefiles" ^
-  -DCMAKE\_BUILD\_TYPE=Release ^
-  -DCMAKE\_MAKE\_PROGRAM=mingw32-make.exe ^
-  -DCMAKE\_C\_COMPILER="%CB\_MINGW%\\bin\\gcc.exe" ^
-  -DCMAKE\_CXX\_COMPILER="%CB\_MINGW%\\bin\\g++.exe" ^
-  -DCMAKE\_RC\_COMPILER=windres.exe
-```
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER="%CB_MINGW%\bin\gcc.exe" ^
+  -DCMAKE_CXX_COMPILER="%CB_MINGW%\bin\g++.exe" ^
+  -DCMAKE_RC_COMPILER=windres.exe
 
 The last line should say that build files were written to:
 
-```text
 D:/Users/thoma/Documents/git/ogre-next-test/ogre-next-deps/build
-```
+
+Now we can actually compile ("build"), and then install the resulting files as a Software Development Kit SDK (a collection of library files)
 
 Build and install:
 
-```bat
 cmake --build build --parallel 4
 cmake --install build
-```
 
 Check the installed dependency SDK:
 
-```bat
-dir build\\ogredeps\\include\\FreeImage.h
-dir build\\ogredeps\\include\\SDL2\\SDL.h
-dir build\\ogredeps\\include\\shaderc\\shaderc.h
-dir build\\ogredeps\\lib\\Release\\libFreeImage.a
-dir build\\ogredeps\\lib\\libSDL2.dll.a
-dir build\\ogredeps\\lib\\libshaderc\_combined.a
-dir build\\ogredeps\\bin\\Release\\SDL2.dll
-```
+dir build\ogredeps\include\FreeImage.h
+dir build\ogredeps\include\SDL2\SDL.h
+dir build\ogredeps\include\shaderc\shaderc.h
+dir build\ogredeps\lib\Release\libFreeImage.a
+dir build\ogredeps\lib\libSDL2.dll.a
+dir build\ogredeps\lib\libshaderc_combined.a
+dir build\ogredeps\bin\Release\SDL2.dll
 
 Every file must exist. The installed dependency SDK is:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next-deps\\build\\ogredeps
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps\build\ogredeps
 
-## 7\. Clone OGRE-Next
+7. Clone OGRE-Next ==================================================================
+
+With steps 1-6 we have now the complete set of dependencies that we need, properly installed as SDK.
+
+We now download, patch and compile ogre-next itself.
 
 Run:
 
-```bat
-cd /d D:\\Users\\thoma\\Documents\\git\\ogre-next-test
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
 
 git clone --branch v3-0 https://github.com/OGRECave/ogre-next.git
 cd ogre-next
 git checkout 4859016ad2cc956a653dfc4e4a859505696c6509
 git rev-parse HEAD
-```
 
 The final command must print:
 
-```text
 4859016ad2cc956a653dfc4e4a859505696c6509
-```
 
-## 8\. Correct the OGRE-Next source code
+8. Patchhing: Correct the OGRE-Next source code ===========================================
 
-### 8.1 Link the Windows libraries explicitly
+8.1 Link the Windows libraries explicitly
+
+Another library that is found on some compilers but not this one.
+
+Open:
+
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next\CMake\Packages\FindDirectX11.cmake
+
+Search for the line beginning with set(DirectX11_LIBRARY:
+
+set(DirectX11_LIBRARY d3d11.lib dxgi.lib dxguid.lib)
 
 OGRE-Next uses the Direct3D shader compiler and the Windows Process Status API. Microsoft compilers can obtain these libraries through compiler-specific source directives, but MinGW needs them listed in the CMake link libraries.
 
-Open:
-
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next\\CMake\\Packages\\FindDirectX11.cmake
-```
-
-Search for the line beginning with `set(DirectX11\_LIBRARY`:
-
-```cmake
-set(DirectX11\_LIBRARY d3d11.lib dxgi.lib dxguid.lib)
-```
-
 Replace it with:
 
-```cmake
-set(DirectX11\_LIBRARY d3d11.lib dxgi.lib dxguid.lib d3dcompiler.lib)
+set(DirectX11_LIBRARY d3d11.lib dxgi.lib dxguid.lib d3dcompiler.lib)
 if(MINGW)
-    list(APPEND DirectX11\_LIBRARY psapi.lib)
+    list(APPEND DirectX11_LIBRARY psapi.lib)
 endif()
-```
 
-### 8.2 Provide a Direct3D flag missing from this MinGW header set
+8.2 Provide a Direct3D flag missing from this MinGW header set
 
-`D3D11\_RLDO\_IGNORE\_INTERNAL` asks the Direct3D debugging interface to ignore objects held only by internal references. The value is `0x4` in the Windows SDK, but the MinGW header supplied with this Code::Blocks compiler does not declare it.
+Here we patch a missing flag, i.e. we substitute it directly where it is needed because the mingw headers don't define it while other compilers do.
 
 Open:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\ogre-next\\RenderSystems\\Direct3D11\\src\\OgreD3D11Device.cpp
-```
+D:\Users\thoma\Documents\git\ogre-next-test\ogre-next\RenderSystems\Direct3D11\src\OgreD3D11Device.cpp
 
 Search for:
 
-```cpp
 #include "OgreException.h"
-```
 
 Immediately after that line, insert:
 
-```cpp
-#ifndef D3D11\_RLDO\_IGNORE\_INTERNAL
-#define D3D11\_RLDO\_IGNORE\_INTERNAL ( (D3D11\_RLDO\_FLAGS)0x4 )
+#ifndef D3D11_RLDO_IGNORE_INTERNAL
+#define D3D11_RLDO_IGNORE_INTERNAL ( (D3D11_RLDO_FLAGS)0x4 )
 #endif
-```
 
-### 8.3 Check the OGRE-Next edits
+
+D3D11_RLDO_IGNORE_INTERNAL asks the Direct3D debugging interface to ignore objects held only by internal references. The value is 0x4 in the Windows SDK, but the MinGW header supplied with this Code::Blocks compiler does not declare it.
+
+8.3 Check the OGRE-Next edits
+
+With this, we are done with the edits, let's check:
 
 Run:
 
-```bat
 git status --short
-git diff --check
 git diff --stat
-```
 
 The changed paths should be:
 
-```text
 CMake/Packages/FindDirectX11.cmake
 RenderSystems/Direct3D11/src/OgreD3D11Device.cpp
-```
 
-`git diff --check` should print nothing.
 
-## 9\. Configure, build, and install OGRE-Next
+
+9. Configure, build, and install OGRE-Next ===================================================
+
+As above, configuring means setting local options as a function of the detected environment
 
 Run:
 
-```bat
 cmake -S . -B build ^
   -G "MinGW Makefiles" ^
-  -DCMAKE\_BUILD\_TYPE=Release ^
-  -DCMAKE\_MAKE\_PROGRAM=mingw32-make.exe ^
-  -DCMAKE\_C\_COMPILER="%CB\_MINGW%\\bin\\gcc.exe" ^
-  -DCMAKE\_CXX\_COMPILER="%CB\_MINGW%\\bin\\g++.exe" ^
-  -DCMAKE\_RC\_COMPILER=windres.exe ^
-  -DOGRE\_DEPENDENCIES\_DIR=D:/Users/thoma/Documents/git/ogre-next-test/ogre-next-deps/build/ogredeps ^
-  -DCMAKE\_INSTALL\_PREFIX=D:/Users/thoma/Documents/git/ogre-next-test/install
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER="%CB_MINGW%\bin\gcc.exe" ^
+  -DCMAKE_CXX_COMPILER="%CB_MINGW%\bin\g++.exe" ^
+  -DCMAKE_RC_COMPILER=windres.exe ^
+  -DOGRE_DEPENDENCIES_DIR=D:/Users/thoma/Documents/git/ogre-next-test/ogre-next-deps/build/ogredeps ^
+  -DCMAKE_INSTALL_PREFIX=D:/Users/thoma/Documents/git/ogre-next-test/install
+
+And then compile
 
 cmake --build build --parallel 4
+
+And install the finished ogre-next SDK
+
 cmake --install build
-```
 
 Check the installed SDK:
 
-```bat
-dir ..\\install\\include\\OGRE\\OgreRoot.h
-dir ..\\install\\include\\OGRE\\Hlms\\Unlit\\OgreHlmsUnlit.h
-dir ..\\install\\include\\OGRE\\Hlms\\Pbs\\OgreHlmsPbs.h
-dir ..\\install\\lib\\Release\\libOgreMain.dll.a
-dir ..\\install\\bin\\Release\\OgreMain.dll
-dir ..\\install\\bin\\Release\\RenderSystem\_Direct3D11.dll
-dir ..\\install\\bin\\Release\\RenderSystem\_GL3Plus.dll
-dir ..\\install\\bin\\Release\\RenderSystem\_Vulkan.dll
-dir ..\\install\\bin\\Release\\plugins.cfg
-dir ..\\install\\bin\\Release\\resources2.cfg
-dir ..\\install\\Media\\Hlms\\Unlit
-dir ..\\install\\Media\\Hlms\\Pbs
-```
+dir ..\install\include\OGRE\OgreRoot.h
+dir ..\install\include\OGRE\Hlms\Unlit\OgreHlmsUnlit.h
+dir ..\install\include\OGRE\Hlms\Pbs\OgreHlmsPbs.h
+dir ..\install\lib\Release\libOgreMain.dll.a
+dir ..\install\bin\Release\OgreMain.dll
+dir ..\install\bin\Release\RenderSystem_Direct3D11.dll
+dir ..\install\bin\Release\RenderSystem_GL3Plus.dll
+dir ..\install\bin\Release\RenderSystem_Vulkan.dll
+dir ..\install\bin\Release\plugins.cfg
+dir ..\install\bin\Release\resources2.cfg
+dir ..\install\Media\Hlms\Unlit
+dir ..\install\Media\Hlms\Pbs
 
 Every file or directory must exist. The installed OGRE-Next SDK is:
 
-```text
-D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\install
-```
+D:\Users\thoma\Documents\git\ogre-next-test\install
 
-## 10\. Build the independent test program
+10. Build the independent test program ==============================================
 
 Run:
 
-```bat
-cd /d D:\\Users\\thoma\\Documents\\git\\ogre-next-test
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
 
-cmake -S window-test -B window-test\\build ^
+cmake -S window-test -B window-test\build ^
   -G "MinGW Makefiles" ^
-  -DCMAKE\_BUILD\_TYPE=Release ^
-  -DCMAKE\_MAKE\_PROGRAM=mingw32-make.exe ^
-  -DCMAKE\_C\_COMPILER="%CB\_MINGW%\\bin\\gcc.exe" ^
-  -DCMAKE\_CXX\_COMPILER="%CB\_MINGW%\\bin\\g++.exe" ^
-  -DOGRE\_SDK=D:/Users/thoma/Documents/git/ogre-next-test/install
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER="%CB_MINGW%\bin\gcc.exe" ^
+  -DCMAKE_CXX_COMPILER="%CB_MINGW%\bin\g++.exe" ^
+  -DOGRE_SDK=D:/Users/thoma/Documents/git/ogre-next-test/install
 
-cmake --build window-test\\build --parallel 4
-dir window-test\\build\\window-test.exe
-```
+cmake --build window-test\build --parallel 4
+dir window-test\build\window-test.exe
 
-The example must use the installed SDK. Do not add `ogre-next` or `ogre-next\\build` to its include or library paths.
+The example must use the installed SDK. Do not add ogre-next or ogre-next\build to its include or library paths.
 
-## 11\. Run the test program
+11. Run the test program ========================================================
 
 Run:
 
-```bat
-copy /Y window-test\\build\\window-test.exe install\\bin\\Release\\window-test.exe
-cd /d D:\\Users\\thoma\\Documents\\git\\ogre-next-test\\install\\bin\\Release
+copy /Y window-test\build\window-test.exe install\bin\Release\window-test.exe
+copy /Y window-test\ogrehead.mesh install\bin\Release\ogrehead.mesh
+cd /d D:\Users\thoma\Documents\git\ogre-next-test\install\bin\Release
 window-test.exe
-```
+
 
 The build is successful when:
 
-1. a window titled `Tutorial 00: Basic` opens;
-2. the window interior is blue;
-3. the console reports the selected render system;
-4. closing the window prints `Rendered and closed cleanly.`;
-5. `Ogre.log` records successful initialization and clean shutdown.
+1. a window titled OGRE-Next Light Show opens;
+2. the Ogre head is visible and rotating;
+3. red, blue and gold light move around the Ogre head;
+4. the changing illumination is visible on the Ogre head;
+5. the console reports the selected render system;
+6. closing the window prints Light show rendered and closed cleanly.;
+7. Ogre.log records successful initialization and clean shutdown.
 
-## 12\. What happened?
+12. What happened? =========================================================
 
-```text
 Git downloaded exact source revisions.
 We made the required MinGW compatibility edits.
 CMake configured the sources for the Code::Blocks compiler.
@@ -649,6 +555,6 @@ MinGW built the dependencies.
 CMake installed a clean dependency SDK.
 MinGW built OGRE-Next against that SDK.
 CMake installed a clean OGRE-Next SDK.
-The small program used only the installed SDK and opened a rendered window.
-```
+The small program used only the installed SDK, loaded an Ogre mesh, created moving lights, and rendered an animated 3D scene.
+
 
