@@ -1,0 +1,366 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index b26b116..c014cad 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -197,7 +197,7 @@ if (OGREDEPS_BUILD_SDL2)
+   endif()
+   if (MINGW)
+     list(APPEND SDL2_CMAKE_ARGS "-DDIRECTX=0")
+-    set(SDL2_BIN_NAME "libSDL2.dll")
++    set(SDL2_BIN_NAME "SDL2.dll")
+     # set(SDL2_LIB_NAME "libSDL2.a")
+   elseif (APPLE AND NOT OGRE_BUILD_PLATFORM_APPLE_IOS)
+     set(SDL2_BIN_NAME "SDL2.dylib")
+diff --git a/src/FreeImage/CMakeLists.txt b/src/FreeImage/CMakeLists.txt
+index 8ee0c99..7202d04 100644
+--- a/src/FreeImage/CMakeLists.txt
++++ b/src/FreeImage/CMakeLists.txt
+@@ -948,9 +948,18 @@ endif()
+ 
+ # LibJXR
+ add_definitions( "-DDISABLE_PERF_MEASUREMENT" )
+-if( NOT MSVC )
++# __ANSI__ selects LibJXR's non-Windows platform header. MinGW is a WIN32
++# target, and defining both activates x86.h and ansi.h together. ansi.h then
++# redefines UINTPTR_T/INTPTR_T as 32-bit int on Windows x64.
++if( NOT MSVC AND NOT WIN32 )
+     add_definitions( "-D__ANSI__=1" )
+ endif()
++# FreeImage's MinGW-w64 makefiles define this. Without it, LibJXR treats
++# MinGW-w64 as "some other platform" and declares _byteswap_ulong(U32), which
++# conflicts with the MinGW-w64 CRT declaration in stdlib.h.
++if( MINGW )
++    add_definitions( "-D__MINGW64_TOOLCHAIN__" )
++endif()
+ 
+ # ======== BEGIN OpenEXR definitions ========
+ check_include_files(ucontext.h IEX_HAVE_UCONTEXT_H)
+diff --git a/src/FreeImage/Source/LibJXR/common/include/guiddef.h b/src/FreeImage/Source/LibJXR/common/include/guiddef.h
+deleted file mode 100644
+index 17e0ed3..0000000
+--- a/src/FreeImage/Source/LibJXR/common/include/guiddef.h
++++ /dev/null
+@@ -1,230 +0,0 @@
+-//+---------------------------------------------------------------------------
+-//
+-// Copyright © Microsoft Corp.
+-// All rights reserved.
+-// 
+-// Redistribution and use in source and binary forms, with or without
+-// modification, are permitted provided that the following conditions are met:
+-// 
+-// • Redistributions of source code must retain the above copyright notice,
+-//   this list of conditions and the following disclaimer.
+-// • Redistributions in binary form must reproduce the above copyright notice,
+-//   this list of conditions and the following disclaimer in the documentation
+-//   and/or other materials provided with the distribution.
+-// 
+-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+-// POSSIBILITY OF SUCH DAMAGE.
+-//
+-//  File:       guiddef.h
+-//
+-//  Contents:   GUID definition
+-//
+-//----------------------------------------------------------------------------
+-
+-#ifndef GUID_DEFINED
+-#define GUID_DEFINED
+-#if defined(__midl)
+-typedef struct {
+-    unsigned long  Data1;
+-    unsigned short Data2;
+-    unsigned short Data3;
+-    byte           Data4[ 8 ];
+-} GUID;
+-#else
+-typedef struct _GUID {
+-#if defined(_WINDOWS_) || !__LP64__
+-    unsigned long  Data1;
+-#else
+-    unsigned int   Data1;
+-#endif
+-    unsigned short Data2;
+-    unsigned short Data3;
+-    unsigned char  Data4[ 8 ];
+-} GUID;
+-#endif
+-#endif
+-
+-#ifndef FAR
+-#if defined(_WIN32) || defined(__ANSI__)
+-#define FAR
+-#else
+-#define FAR _far
+-#endif
+-#endif
+-
+-#ifndef DECLSPEC_SELECTANY
+-#if (_MSC_VER >= 1100)
+-#define DECLSPEC_SELECTANY  __declspec(selectany)
+-#else
+-#define DECLSPEC_SELECTANY
+-#endif
+-#endif
+-
+-#ifndef EXTERN_C
+-#ifdef __cplusplus
+-#define EXTERN_C    extern "C"
+-#else
+-#define EXTERN_C    extern
+-#endif
+-#endif
+-
+-#ifdef DEFINE_GUID
+-#undef DEFINE_GUID
+-#endif
+-
+-#ifdef INITGUID
+-#define DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
+-        const GUID DECLSPEC_SELECTANY name \
+-                = { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }
+-#else
+-#define DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
+-    EXTERN_C const GUID FAR name
+-#endif // INITGUID
+-
+-#define DEFINE_OLEGUID(name, l, w1, w2) DEFINE_GUID(name, l, w1, w2, 0xC0,0,0,0,0,0,0,0x46)
+-
+-#ifndef _GUIDDEF_H_
+-#define _GUIDDEF_H_
+-
+-#ifndef __LPGUID_DEFINED__
+-#define __LPGUID_DEFINED__
+-typedef GUID *LPGUID;
+-#endif
+-
+-#ifndef __LPCGUID_DEFINED__
+-#define __LPCGUID_DEFINED__
+-typedef const GUID *LPCGUID;
+-#endif
+-
+-#ifndef __IID_DEFINED__
+-#define __IID_DEFINED__
+-
+-typedef GUID IID;
+-typedef IID *LPIID;
+-#define IID_NULL            GUID_NULL
+-#define IsEqualIID(riid1, riid2) IsEqualGUID(riid1, riid2)
+-typedef GUID CLSID;
+-typedef CLSID *LPCLSID;
+-#define CLSID_NULL          GUID_NULL
+-#define IsEqualCLSID(rclsid1, rclsid2) IsEqualGUID(rclsid1, rclsid2)
+-typedef GUID FMTID;
+-typedef FMTID *LPFMTID;
+-#define FMTID_NULL          GUID_NULL
+-#define IsEqualFMTID(rfmtid1, rfmtid2) IsEqualGUID(rfmtid1, rfmtid2)
+-
+-#ifdef __midl_proxy
+-#define __MIDL_CONST
+-#else
+-#define __MIDL_CONST const
+-#endif
+-
+-#ifndef _REFGUID_DEFINED
+-#define _REFGUID_DEFINED
+-#ifdef __cplusplus
+-#define REFGUID const GUID &
+-#else
+-#define REFGUID const GUID * __MIDL_CONST
+-#endif
+-#endif
+-
+-#ifndef _REFIID_DEFINED
+-#define _REFIID_DEFINED
+-#ifdef __cplusplus
+-#define REFIID const IID &
+-#else
+-#define REFIID const IID * __MIDL_CONST
+-#endif
+-#endif
+-
+-#ifndef _REFCLSID_DEFINED
+-#define _REFCLSID_DEFINED
+-#ifdef __cplusplus
+-#define REFCLSID const IID &
+-#else
+-#define REFCLSID const IID * __MIDL_CONST
+-#endif
+-#endif
+-
+-#ifndef _REFFMTID_DEFINED
+-#define _REFFMTID_DEFINED
+-#ifdef __cplusplus
+-#define REFFMTID const IID &
+-#else
+-#define REFFMTID const IID * __MIDL_CONST
+-#endif
+-#endif
+-
+-#endif // !__IID_DEFINED__
+-
+-#if !defined (__midl)
+-#if !defined (_SYS_GUID_OPERATORS_)
+-#define _SYS_GUID_OPERATORS_
+-#include <string.h>
+-
+-// Faster (but makes code fatter) inline version...use sparingly
+-#ifdef __cplusplus
+-__inline int InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
+-{
+-   return (
+-      ((unsigned long *) &rguid1)[0] == ((unsigned long *) &rguid2)[0] &&
+-      ((unsigned long *) &rguid1)[1] == ((unsigned long *) &rguid2)[1] &&
+-      ((unsigned long *) &rguid1)[2] == ((unsigned long *) &rguid2)[2] &&
+-      ((unsigned long *) &rguid1)[3] == ((unsigned long *) &rguid2)[3]);
+-}
+-
+-__inline int IsEqualGUID(REFGUID rguid1, REFGUID rguid2)
+-{
+-    return !memcmp(&rguid1, &rguid2, sizeof(GUID));
+-}
+-
+-#else   // ! __cplusplus
+-
+-#define InlineIsEqualGUID(rguid1, rguid2)  \
+-        (((unsigned long *) rguid1)[0] == ((unsigned long *) rguid2)[0] &&   \
+-        ((unsigned long *) rguid1)[1] == ((unsigned long *) rguid2)[1] &&    \
+-        ((unsigned long *) rguid1)[2] == ((unsigned long *) rguid2)[2] &&    \
+-        ((unsigned long *) rguid1)[3] == ((unsigned long *) rguid2)[3])
+-
+-#define IsEqualGUID(rguid1, rguid2) (!memcmp(rguid1, rguid2, sizeof(GUID)))
+-
+-#endif  // __cplusplus
+-
+-#ifdef __INLINE_ISEQUAL_GUID
+-#undef IsEqualGUID
+-#define IsEqualGUID(rguid1, rguid2) InlineIsEqualGUID(rguid1, rguid2)
+-#endif
+-
+-// Same type, different name
+-
+-#define IsEqualIID(riid1, riid2) IsEqualGUID(riid1, riid2)
+-#define IsEqualCLSID(rclsid1, rclsid2) IsEqualGUID(rclsid1, rclsid2)
+-
+-
+-#if !defined _SYS_GUID_OPERATOR_EQ_ && !defined _NO_SYS_GUID_OPERATOR_EQ_
+-#define _SYS_GUID_OPERATOR_EQ_
+-// A couple of C++ helpers
+-
+-#ifdef __cplusplus
+-__inline int operator==(REFGUID guidOne, REFGUID guidOther)
+-{
+-    return IsEqualGUID(guidOne,guidOther);
+-}
+-
+-__inline int operator!=(REFGUID guidOne, REFGUID guidOther)
+-{
+-    return !(guidOne == guidOther);
+-}
+-#endif
+-#endif  // _SYS_GUID_OPERATOR_EQ_
+-#endif  // _SYS_GUID_OPERATORS_
+-#endif  // __midl
+-#endif  // _GUIDDEF_H_
+diff --git a/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h b/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
+index 12862bd..d19d4e1 100644
+--- a/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
++++ b/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
+@@ -16,6 +16,7 @@
+ 
+ #include "ImathMath.h"
+ 
++#include <cstdint>
+ #include <iostream>
+ #include <limits>
+ #include <stdexcept>
+diff --git a/src/Remotery/CMakeLists.txt b/src/Remotery/CMakeLists.txt
+index 6a13cbf..e877b4d 100644
+--- a/src/Remotery/CMakeLists.txt
++++ b/src/Remotery/CMakeLists.txt
+@@ -24,6 +24,11 @@ endif()
+ if( APPLE )
+ 	set( RMT_USE_METAL 1 )
+ endif()
++if( WIN32 )
++	# Remotery's viewer socket uses the Windows Sockets API. MinGW does not
++	# link ws2_32 automatically the way MSVC's default libraries can.
++	target_link_libraries( Remotery ws2_32 )
++endif()
+ configure_file( RemoteryConfig.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/RemoteryConfig.h )
+ 
+ install_dep( Remotery include src/Remotery.h src/RemoteryConfig.h )
+diff --git a/src/Remotery/src/Remotery.c b/src/Remotery/src/Remotery.c
+index 24e6af0..0bd818d 100644
+--- a/src/Remotery/src/Remotery.c
++++ b/src/Remotery/src/Remotery.c
+@@ -1167,7 +1167,9 @@ static void rmtThread_Destructor(rmtThread* thread)
+ typedef int errno_t;
+ #endif
+ 
+-#if (!defined(_WIN64) && !defined(__APPLE__)) || (defined(__MINGW32__) && !defined(RSIZE_T_DEFINED))
++/* MinGW-w64 already typedefs rsize_t to size_t in corecrt.h. Redefining it
++ * as unsigned int conflicts on x64, where size_t is 64-bit. */
++#if !defined(_WIN64) && !defined(__APPLE__) && !defined(__MINGW32__)
+ typedef unsigned int rsize_t;
+ #endif
+ 
+diff --git a/src/zziplib/zzip/plugin.c b/src/zziplib/zzip/plugin.c
+index ee578f4..0daa56a 100644
+--- a/src/zziplib/zzip/plugin.c
++++ b/src/zziplib/zzip/plugin.c
+@@ -26,6 +26,25 @@
+ #include <zzip/file.h>
+ #include <zzip/format.h>
+ 
++#if defined(__MINGW32__)
++/* The MSVC CRT _read/_write take an unsigned int count. zziplib's plugin
++ * calls use zzip_size_t, which is 64-bit on Win64. GCC 14 rejects the
++ * incompatible function-pointer types. Adapt at the boundary. */
++static zzip_ssize_t zzip_mingw_read(int fd, void *buf, zzip_size_t len)
++{
++    if (len > 0xffffffffu)
++        len = 0xffffffffu;
++    return (zzip_ssize_t) _read(fd, buf, (unsigned int) len);
++}
++
++static zzip_ssize_t zzip_mingw_write(int fd, const void *buf, zzip_size_t len)
++{
++    if (len > 0xffffffffu)
++        len = 0xffffffffu;
++    return (zzip_ssize_t) _write(fd, buf, (unsigned int) len);
++}
++#endif
++
+ zzip_off_t
+ zzip_filesize(int fd)
+ {
+@@ -46,11 +65,19 @@ zzip_filesize(int fd)
+ static const struct zzip_plugin_io default_io = {
+     &open,
+     &close,
++#if defined(__MINGW32__)
++    &zzip_mingw_read,
++#else
+     &_zzip_read,
++#endif
+     &_zzip_lseek,
+     &zzip_filesize,
+     1, 1,
++#if defined(__MINGW32__)
++    &zzip_mingw_write
++#else
+     &_zzip_write
++#endif
+ };
+ 
+ /** => zzip_init_io
