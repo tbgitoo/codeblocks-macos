@@ -1,6 +1,6 @@
 # Code::Blocks v3.8.2 - OGRE tool integration
 
-**Status: IN PROGRESS - the native OgreTools plugin, managed macOS capability discovery, PATH fallback, live `Tools -> OGRE` refresh, SDK-folder action, SampleBrowser action, and the complete setup-only Install / Repair bridge are proven. A clean menu-launched reacquisition, configure, build, install, validation, and immediate in-session capability refresh succeeded without creating a project. Native Git/CMake dialogs now retain the wizard correctly through explicit parent ownership. M4.1, the `Import 3D asset...` workflow, is next.**
+**Status: IN PROGRESS - the native OgreTools plugin, managed macOS capability discovery, PATH fallback, live `Tools -> OGRE` refresh, SDK-folder action, SampleBrowser action, and the complete setup-only Install / Repair bridge are proven. A clean menu-launched reacquisition, configure, build, install, validation, and immediate in-session capability refresh succeeded without creating a project. Native Git/CMake dialogs now retain the wizard correctly through explicit parent ownership. M4.1, the `Import 3D asset...` dialog, is implemented. M4.2 runs `OgreAssimpConverter` with an explicit argument vector, a `plugins.cfg` working directory, captured stdout, stderr, and exit status. M4.3 records that run in a dedicated `OGRE Tools` log. Generated mesh and material files stay in the chosen destination. `resources.cfg` and the project file stay unchanged unless the user confirms the registration in section 12. M4.5 asks before adding the destination directory to an existing `resources.cfg`, creates a starter `resources.cfg` when that directory has none, and asks before listing the generated files in an open project. M4.4, conversion validation beyond exit status plus written mesh and material files, is next.**
 
 v3.8.2 follows the released v3.8.1 OGRE baseline and makes the OGRE tools installed by the Code::Blocks OGRE workflow discoverable and usable directly from the IDE.
 
@@ -252,6 +252,7 @@ The menu exists independently of project state. Unavailable capabilities remain 
 Working handlers:
 
 ```text
+Import 3D asset...
 Open SDK tools folder
 Open SampleBrowser
 Install / Repair OGRE tools...
@@ -648,7 +649,7 @@ This behavior is proven.
 
 ---
 
-## 8. First high-level workflow: Import 3D asset - NEXT
+## 8. First high-level workflow: Import 3D asset
 
 `Tools -> OGRE -> Import 3D asset...`
 
@@ -665,6 +666,25 @@ The first high-level action uses `OgreAssimpConverter` and should:
 9. inspect expected outputs;
 10. distinguish partial conversion from genuine success;
 11. avoid modifying the source asset.
+
+### 8.1 Import dialog - IMPLEMENTED
+
+`Tools -> OGRE -> Import 3D asset...` calls `ShowOgreImportDialog()` after a fresh `OgreAssimpConverter` check. A missing converter produces a warning and does not open the dialog.
+
+The dialog shows the verified converter path, asks for a source asset, and asks for a destination directory. The active editor supplies the initial destination when its file belongs to no project and that file's directory lies outside the managed OGRE prefix. Otherwise an open project supplies that project's directory when it lies outside the managed prefix. Directories inside the managed OGRE prefix are never offered. Selecting a source fills an empty destination with the source directory only when that directory is outside the managed prefix.
+
+Import checks the converter again, requires an existing source file and an existing destination directory, and refuses a destination inside the managed OGRE prefix.
+
+### 8.2 Converter execution and log - IMPLEMENTED
+
+A confirmed Import runs `OgreAssimpConverter` through `wxExecute` with separate arguments: `-log`, the source file, and the destination directory. The working directory is the directory that contains `plugins.cfg`, which for the managed layout is `bin/` rather than `bin/macosx/`. The converter log is a temporary file, so the SDK directory is not used for output. Stdout, stderr, the converter log, and the exit status are written to a dedicated `OGRE Tools` log.
+
+The run reports a mesh only when that file was created or rewritten, and likewise for the material script. Exit status 0 together with both written files is the successful result. The source asset is left unchanged. `resources.cfg` and the project file are also left unchanged until the user confirms the registration in section 12. Deeper material-content checks remain M4.4.
+
+```text
+src/plugins/ogretools/ogreimportdlg.h
+src/plugins/ogretools/ogreimportdlg.cpp
+```
 
 ---
 
@@ -702,11 +722,21 @@ The importer should distinguish launch failure, non-zero exit, missing mesh, mes
 
 ---
 
-## 12. Project-local resource workflow
+## 12. Project-local resource workflow - IMPLEMENTED
 
 The importer may use project context for destination convenience without making discovery project dependent.
 
-The workflow should leave source assets unchanged, keep output outside the installed SDK, offer a project-local destination when useful, allow an explicit destination without an active project, and avoid silently modifying `resources.cfg` or `.cbp` files.
+The workflow leaves the source asset unchanged, keeps output outside the installed SDK, offers a project-local destination when useful, and allows an explicit destination without an active project. It does not classify the active project as an OGRE project, and it does not change menu visibility.
+
+After a successful conversion, registration is a separate explicit choice. Declining it leaves `resources.cfg` and the project file unchanged.
+
+`resources.cfg` records resource directories, not mesh filenames. The offered change is one `FileSystem` entry for the destination directory. A mesh filename is not a valid entry. When that directory is already listed, no change is offered.
+
+The file to consider is `resources.cfg` in the destination directory. An open editor file in some other directory does not select a different file. For a project whose destination is the project directory, this is the `resources.cfg` beside the executable, which is the file `OgreBites::ApplicationContext` already searches. A second `resources.cfg` elsewhere is not loaded by that running program.
+
+When that file exists, the import asks before adding the destination directory. When it does not exist, the import creates one beside the mesh and tells the user that the new file is a starter. OGRE loads it automatically only when it sits in a directory the program already searches.
+
+When a project is open, the import asks before adding the generated `.mesh` and `.material` to the project tree. A `resources.cfg` created by this same import is included in that confirmation. The added files are visible in the tree and are not compiled. When no project is open, there is no project-tree question.
 
 ---
 
@@ -729,7 +759,8 @@ The earlier project-context investigation remains preserved in `project_context_
 | Area | v3.8.2 role |
 |---|---|
 | `src/plugins/ogretools/` | Native plugin implementation. |
-| `ogretools.cpp/.h` | Menu, refresh, simple actions, and implemented install/repair launcher. |
+| `ogretools.cpp/.h` | Menu, refresh, simple actions, import dialog launch, and implemented install/repair launcher. |
+| `ogreimportdlg.cpp/.h` | Import 3D asset dialog. |
 | `ogretoolslocator.cpp/.h` | Managed discovery, PATH fallback, and verification. |
 | `src/plugins/scriptedwizard/resources/config.script` | Project and setup-only registrations pointing at the same OGRE script. |
 | `src/plugins/scriptedwizard/resources/ogre/wizard.script` | Shared setup pages, type branch, `SetupProject()`, and `SetupCustom()`. |
@@ -768,11 +799,11 @@ The earlier project-context investigation remains preserved in `project_context_
 | M3.3g | Correct native Git/CMake modal ownership so the OGRE wizard remains frontmost. | **DONE** |
 | M3.4 | Add SDK-folder and SampleBrowser actions. | **DONE** |
 | M3.5 | Correct SampleBrowser Assimp bundle. | **DONE LOCALLY / MERGED UPSTREAM / NOT YET TAGGED** |
-| M4.1 | Implement Import 3D asset dialog. | **NEXT** |
-| M4.2 | Execute converter safely with explicit argv. | **PLANNED** |
-| M4.3 | Add dedicated OGRE log. | **PLANNED** |
-| M4.4 | Validate converter outcome beyond `.mesh` existence. | **PLANNED** |
-| M4.5 | Validate project-local/non-project output workflow. | **PLANNED** |
+| M4.1 | Implement Import 3D asset dialog. | **DONE** |
+| M4.2 | Execute converter safely with explicit argv. | **DONE** |
+| M4.3 | Add dedicated OGRE log. | **DONE** |
+| M4.4 | Validate converter outcome beyond `.mesh` existence. | **NEXT** |
+| M4.5 | Confirm destination registration in `resources.cfg` and, when a project is open, in the project tree. | **DONE** |
 | M5.1 | Regression-test complete managed installation. | **PLANNED** |
 | M5.2 | Regression-test partial/no managed installation. | **PARTLY COVERED BY CLEAN REINSTALL / BROADER MATRIX PLANNED** |
 | M5.3 | Broaden PATH fallback regression beyond the proven VRML case. | **PLANNED** |
@@ -811,7 +842,7 @@ v3.8.2 is accepted only if:
 23. The upstream-merged SampleBrowser correction remains locally patched for v14.6.3 until a containing tagged release is adopted and retested.
 24. Command-line tool execution uses separated executable/arguments and captures output and exit status.
 25. Conversion success is not inferred solely from `.mesh` existence.
-26. Source assets, `resources.cfg`, and project files are not silently modified.
+26. The source asset is not modified. `resources.cfg` and the project file change only after the user confirms that specific change. A confirmed `resources.cfg` change adds the destination directory, not the mesh filename. A confirmed project change lists the generated files without compiling them. Declining either change leaves that file untouched.
 27. Generated output does not default into installed SDK media.
 28. Ordinary projects are not classified as OGRE projects merely because tools are installed.
 29. The final macOS bundle passes packaging and code-signing validation.
@@ -841,6 +872,10 @@ v3.8.2 is accepted only if:
 - `.mesh` existence as sole success criterion.
 - Copying user assets into installed SDK media.
 - Hidden resource/project rewrites.
+- A `resources.cfg` entry that names a mesh file instead of its destination directory.
+- Editing a `resources.cfg` that is not in the destination directory.
+- Adding generated files to the project tree without confirmation.
+- Marking generated `.mesh`, `.material`, or `resources.cfg` files for compilation.
 - Converter machinery in generated `main.cpp`.
 - Expansion into an asset database, package manager, or scene editor.
 
@@ -870,16 +905,12 @@ setup-only OGRE wizard                           DONE
         +-- native modal ownership               FIXED + PROVEN
         |
         v
-Import 3D asset dialog                           NEXT
+Import 3D asset dialog                           DONE
+safe converter process + OGRE log                DONE
         |
         v
-safe converter process + OGRE log
-        |
-        v
-conversion validation
-        |
-        v
-project-local output when useful
+conversion validation                            NEXT
+explicit resources.cfg and project-tree registration   DONE
         |
         v
 regression + signed v3.8.2 release
@@ -891,4 +922,4 @@ regression + signed v3.8.2 release
 
 **Status: IN PROGRESS.**
 
-v3.8.2 is complete when Code::Blocks exposes installed OGRE utilities through the native `OgreTools` plugin under `Tools -> OGRE`, resolves capabilities using managed-first/PATH-fallback precedence, refreshes availability on demand, launches and visibly maintains setup-only OGRE installation/repair through the existing shared scripted-wizard machinery without creating a project or duplicating installer code, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification.
+v3.8.2 is complete when Code::Blocks exposes installed OGRE utilities through the native `OgreTools` plugin under `Tools -> OGRE`, resolves capabilities using managed-first/PATH-fallback precedence, refreshes availability on demand, launches and visibly maintains setup-only OGRE installation/repair through the existing shared scripted-wizard machinery without creating a project or duplicating installer code, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification. After a successful conversion, the user can confirm adding the destination directory to the `resources.cfg` in that directory and, when a project is open, listing the generated files in the project tree. Declining those choices leaves both files unchanged.

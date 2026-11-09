@@ -6,6 +6,7 @@
 class wxMenu;
 class wxMenuItem;
 class wxMenuEvent;
+class TextCtrlLogger;
 
 class OgreTools : public cbPlugin
 {
@@ -19,9 +20,12 @@ public:
 
 private:
     void RefreshCapabilities();
+    void EnsureLog();
+    void WriteLog(const wxString& text);
 
     void OnOgreMenuOpen(wxMenuEvent& event);
 
+    void OnImportAsset(wxCommandEvent& event);
     void OnOpenToolsFolder(wxCommandEvent& event);
     void OnOpenSampleBrowser(wxCommandEvent& event);
     void OnInstallOgre(wxCommandEvent& event);
@@ -36,6 +40,9 @@ private:
     wxMenuItem* m_OpenToolsFolder = nullptr;
     wxMenuItem* m_SampleBrowser = nullptr;
     wxMenuItem* m_InstallOgre = nullptr;
+
+    TextCtrlLogger* m_Log = nullptr;
+    int m_LogPageIndex = -1;
 
     DECLARE_EVENT_TABLE();
 };

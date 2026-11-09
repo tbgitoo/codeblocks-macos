@@ -12,10 +12,12 @@ libogretools_la_LIBADD = ../../sdk/libcodeblocks.la $(WX_LIBS)
 
 libogretools_la_SOURCES = \
 	ogretools.cpp \
+	ogreimportdlg.cpp \
 	ogretoolslocator.cpp
 
 noinst_HEADERS = \
 	ogretools.h \
+	ogreimportdlg.h \
 	ogretoolslocator.h
 
 EXTRA_DIST = manifest.xml

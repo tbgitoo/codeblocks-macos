@@ -3,10 +3,13 @@
 #include <cbplugin.h>
 #include <pluginmanager.h>
 
+#include <loggers.h>
 #include <logmanager.h>
 #include <manager.h>
+#include <sdk_events.h>
 
 #include "ogretools.h"
+#include "ogreimportdlg.h"
 #include "ogretoolslocator.h"
 
 #include <wx/menu.h>
@@ -36,6 +39,7 @@ namespace
 
 BEGIN_EVENT_TABLE(OgreTools, cbPlugin)
     EVT_MENU_OPEN(OgreTools::OnOgreMenuOpen)
+    EVT_MENU(idImportAsset, OgreTools::OnImportAsset)
     EVT_MENU(idOpenToolsFolder, OgreTools::OnOpenToolsFolder)
     EVT_MENU(idSampleBrowser, OgreTools::OnOpenSampleBrowser)
     EVT_MENU(idInstallOgre, OgreTools::OnInstallOgre)
@@ -55,7 +59,61 @@ void OgreTools::OnAttach()
 
 void OgreTools::OnRelease(bool appShutDown)
 {
-    (void)appShutDown;
+    if (!appShutDown && m_Log && Manager::Get())
+    {
+        CodeBlocksLogEvent evt(cbEVT_REMOVE_LOG_WINDOW, m_Log);
+        Manager::Get()->ProcessEvent(evt);
+    }
+
+    m_Log = nullptr;
+    m_LogPageIndex = -1;
+}
+
+void OgreTools::EnsureLog()
+{
+    if (m_Log || !Manager::Get())
+        return;
+
+    LogManager* manager = Manager::Get()->GetLogManager();
+
+    if (!manager)
+        return;
+
+    m_Log = new TextCtrlLogger();
+
+    const size_t index = manager->SetLog(m_Log);
+
+    if (index == static_cast<size_t>(LogManager::invalid_log))
+    {
+        m_Log = nullptr;
+        return;
+    }
+
+    m_LogPageIndex = static_cast<int>(index);
+    manager->Slot(m_LogPageIndex).title = _("OGRE Tools");
+
+    CodeBlocksLogEvent add(
+        cbEVT_ADD_LOG_WINDOW,
+        m_Log,
+        manager->Slot(m_LogPageIndex).title);
+
+    Manager::Get()->ProcessEvent(add);
+}
+
+void OgreTools::WriteLog(const wxString& text)
+{
+    EnsureLog();
+
+    if (!m_Log || !Manager::Get())
+        return;
+
+    CodeBlocksLogEvent show(cbEVT_SHOW_LOG_MANAGER);
+    Manager::Get()->ProcessEvent(show);
+
+    CodeBlocksLogEvent switchTo(cbEVT_SWITCH_TO_LOG_WINDOW, m_Log);
+    Manager::Get()->ProcessEvent(switchTo);
+
+    Manager::Get()->GetLogManager()->Log(text, m_LogPageIndex);
 }
 
 
@@ -126,6 +184,40 @@ void OgreTools::BuildMenu(wxMenuBar* menuBar)
     toolsMenu->AppendSubMenu(
         m_OgreMenu,
         _("OGRE"));
+}
+
+void OgreTools::OnImportAsset(wxCommandEvent& event)
+{
+    (void)event;
+
+    wxWindow* parent = Manager::Get()->GetAppWindow();
+    OgreImportRequest request;
+
+    if (!PromptOgreImport(parent, request))
+        return;
+
+    OgreImportResult result =
+        RunOgreAssimpImport(parent, request);
+
+    if (result.ok)
+        result.summary += RegisterOgreImport(parent, request, result);
+
+    wxString log = result.commandSummary;
+
+    if (!result.output.IsEmpty())
+        log += wxT("\n\n") + result.output;
+
+    if (!result.errorOutput.IsEmpty())
+        log += wxT("\n") + result.errorOutput;
+
+    log += wxT("\n") + result.summary;
+    WriteLog(log);
+
+    cbMessageBox(
+        result.summary,
+        _("Import 3D asset"),
+        result.ok ? wxICON_INFORMATION : wxICON_WARNING,
+        parent);
 }
 
 void OgreTools::OnOpenToolsFolder(wxCommandEvent& event)
