@@ -9,9 +9,6 @@ struct OgreToolsAvailability
     wxString toolsDirectory;
 
     wxString assimpConverter;
-    wxString meshUpgrader;
-    wxString xmlConverter;
-    wxString vrmlConverter;
     wxString sampleBrowser;
 };
 

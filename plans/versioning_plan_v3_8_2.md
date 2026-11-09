@@ -1,12 +1,12 @@
 # Code::Blocks v3.8.2 - OGRE tool integration
 
-**Status: IN PROGRESS - the native OgreTools plugin, managed macOS capability discovery, PATH fallback, live `Tools -> OGRE` refresh, SDK-folder action, SampleBrowser action, and the complete setup-only Install / Repair bridge are proven. A clean menu-launched reacquisition, configure, build, install, validation, and immediate in-session capability refresh succeeded without creating a project. Native Git/CMake dialogs now retain the wizard correctly through explicit parent ownership. M4.1, the `Import 3D asset...` dialog, is implemented. M4.2 runs `OgreAssimpConverter` with an explicit argument vector, a `plugins.cfg` working directory, captured stdout, stderr, and exit status. M4.3 records that run in a dedicated `OGRE Tools` log. Generated mesh and material files stay in the chosen destination. `resources.cfg` and the project file stay unchanged unless the user confirms the registration in section 12. M4.5 asks before adding the destination directory to an existing `resources.cfg`, creates a starter `resources.cfg` when that directory has none, and asks before listing the generated files in an open project. M4.4, conversion validation beyond exit status plus written mesh and material files, is next.**
+**Status: IN PROGRESS - the native OgreTools plugin, managed macOS capability discovery, PATH fallback, live `Tools -> OGRE` refresh, SDK-folder action, SampleBrowser action, and the complete setup-only Install / Repair bridge are proven. A clean menu-launched reacquisition, configure, build, install, validation, and immediate in-session capability refresh succeeded without creating a project. Native Git/CMake dialogs now retain the wizard correctly through explicit parent ownership. M4.1, the `Import 3D asset...` dialog, is implemented. M4.2 runs `OgreAssimpConverter` with an explicit argument vector, a `plugins.cfg` working directory, captured stdout, stderr, and exit status. M4.3 records that run in a dedicated `OGRE Tools` log. Generated mesh and material files stay in the chosen destination. `resources.cfg` and the project file stay unchanged unless the user confirms the registration in section 12. M4.5 asks before adding the destination directory to an existing `resources.cfg`, creates a starter `resources.cfg` when that directory has none, and asks before listing the generated files in an open project. The `Tools -> OGRE` menu is Import, Open SDK tools folder, Open SampleBrowser, and Install / Repair. M3.6 removed the direct converter items. M4.4 treats a written material as a fallback when the converter log says a referenced file was not loaded, and it reports a material texture that is still missing from the destination without failing the mesh conversion. Manual regression and the signed release remain.**
 
 v3.8.2 follows the released v3.8.1 OGRE baseline and makes the OGRE tools installed by the Code::Blocks OGRE workflow discoverable and usable directly from the IDE.
 
-**Question this version answers:** how can Code::Blocks expose installed OGRE utilities such as `OgreAssimpConverter` without requiring users to know their filesystem locations or modify their shell `PATH`?
+**Question this version answers:** how can Code::Blocks import a 3D asset, open the installed OGRE tools, and launch SampleBrowser without requiring users to know filesystem locations or modify their shell `PATH`?
 
-The feature does **not** determine whether the active project is an OGRE project. OGRE utilities are IDE-level tools. `OgreTools` exposes them under the global `Tools` menu, while individual actions are enabled only when their required executable or application is currently available.
+The feature does **not** determine whether the active project is an OGRE project. OGRE actions are IDE-level tools under the global `Tools` menu. An action is enabled only when the executable, directory, or application it needs is currently available. The menu does not list each SDK binary.
 
 ```text
 OgreTools plugin
@@ -18,17 +18,19 @@ fresh capability discovery
         +-- PATH fallback for command-line tools
         |
         v
-verify each capability independently
+verify each capability the menu uses
         |
-        +-- OgreAssimpConverter
-        +-- OgreMeshUpgrader
-        +-- OgreXMLConverter
-        +-- VRMLConverter
+        +-- OgreAssimpConverter, for Import
+        +-- managed tools directory, for Open SDK tools folder
         +-- SampleBrowser
         |
         v
 Tools -> OGRE
         |
+        +-- Import 3D asset...
+        +-- Open SDK tools folder
+        +-- Open SampleBrowser
+        +-- Install / Repair OGRE tools...
         +-- refresh whenever submenu opens
         +-- available actions enabled
         +-- unavailable actions disabled
@@ -87,15 +89,15 @@ It does **not**:
 
 Its responsibilities are:
 
-1. expose `Tools -> OGRE`;
-2. locate supported OGRE utilities;
+1. expose `Tools -> OGRE` with the four actions in section 5;
+2. locate the converter used by Import, the managed tools directory, and SampleBrowser;
 3. prefer the Code::Blocks-managed installation;
-4. fall back to `PATH` for missing command-line tools;
+4. fall back to `PATH` when the managed `OgreAssimpConverter` is missing;
 5. verify each capability independently;
 6. refresh current state whenever the OGRE submenu opens;
 7. revalidate a capability immediately before use;
 8. delegate installation/repair to the existing scripted-wizard machinery through a setup-only custom wizard;
-9. execute command-line tools safely and report their output.
+9. run Import through `OgreAssimpConverter` and report its output.
 
 Project context may later be used by a specific operation, such as suggesting a project-local output directory. It is not part of discovery or menu visibility.
 
@@ -156,15 +158,15 @@ install = root/ogre-14.6.3
 tools   = install/bin/macosx
 ```
 
-`LocateOgreTools()` reconstructs that location and verifies independently:
+`LocateOgreTools()` reconstructs that location and checks the three capabilities the menu uses:
 
 ```text
-OgreAssimpConverter
-OgreMeshUpgrader
-OgreXMLConverter
-VRMLConverter
-SampleBrowser.app
+OgreAssimpConverter     Import 3D asset...
+bin/macosx              Open SDK tools folder
+SampleBrowser.app       Open SampleBrowser
 ```
+
+`OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter` remain installed files in that tools directory. The locator no longer verifies them.
 
 ### 4.2 PATH fallback - PROVEN
 
@@ -176,16 +178,7 @@ wxFindFileInPath(...)
 wxFileName::IsFileExecutable(...)
 ```
 
-PATH fallback applies only to command-line tools:
-
-```text
-OgreAssimpConverter
-OgreMeshUpgrader
-OgreXMLConverter
-VRMLConverter
-```
-
-It does not synthesize a managed tools directory and does not search for `SampleBrowser.app` on `PATH`.
+PATH fallback applies to `OgreAssimpConverter`, the only command-line tool the menu runs. The earlier locator also resolved `OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter`, and a controlled runtime test with `/tmp/ogre-path-test/VRMLConverter` proved both fallback and managed-over-PATH precedence. Those three names are no longer looked up. The locator does not synthesize a managed tools directory and does not search for `SampleBrowser.app` on `PATH`.
 
 Verified precedence:
 
@@ -197,8 +190,6 @@ yes        no      managed
 no         yes     PATH
 no         no      unavailable
 ```
-
-A controlled runtime test with `/tmp/ogre-path-test/VRMLConverter` proved both fallback and managed-over-PATH precedence.
 
 ### 4.3 Verification and independence
 
@@ -220,7 +211,7 @@ if (event.GetMenu() == m_OgreMenu)
     RefreshCapabilities();
 ```
 
-A live A/B test proved that hiding and restoring `VRMLConverter` while Code::Blocks remained running immediately changed only the corresponding menu item on the next submenu open.
+A live A/B test proved that hiding and restoring `VRMLConverter` while Code::Blocks remained running immediately changed only the corresponding menu item on the next submenu open. That item is one of the direct tool commands withdrawn in section 5. The refresh mechanism remains.
 
 The clean reinstall test additionally proved that a running Code::Blocks instance can move from no managed OGRE source/install tree to a complete installation and expose the restored capabilities on the next submenu open without restart.
 
@@ -228,7 +219,9 @@ Action handlers call `LocateOgreTools()` again before execution. No timer, watch
 
 ---
 
-## 5. Tools-menu integration - PROVEN
+## 5. Tools-menu integration - DONE
+
+The submenu, live refresh, and action handlers are proven. Direct commands for the low-level SDK binaries are not part of the menu. `OgreAssimpConverter` stays the converter behind Import. `OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter` stay installed files in the SDK tools folder, and `Open SDK tools folder` is how the user reaches them.
 
 ```text
 Tools
@@ -236,29 +229,22 @@ Tools
     OGRE
         Import 3D asset...
         --------------------------
-        OgreAssimpConverter...
-        OgreMeshUpgrader...
-        OgreXMLConverter...
-        VRMLConverter...
-        --------------------------
         Open SDK tools folder
         Open SampleBrowser
         --------------------------
         Install / Repair OGRE tools...
 ```
 
-The menu exists independently of project state. Unavailable capabilities remain visible but disabled.
-
-Working handlers:
+The menu exists independently of project state. A missing capability disables the action that needs it:
 
 ```text
-Import 3D asset...
-Open SDK tools folder
-Open SampleBrowser
-Install / Repair OGRE tools...
+Import 3D asset...                 OgreAssimpConverter
+Open SDK tools folder              managed tools directory
+Open SampleBrowser                 SampleBrowser.app
+Install / Repair OGRE tools...     always available
 ```
 
-The simple launch handlers freshly revalidate their target before use.
+Import, Open SDK tools folder, Open SampleBrowser, and Install / Repair already have working handlers. The simple launch handlers freshly revalidate their target before use.
 
 ---
 
@@ -679,7 +665,7 @@ Import checks the converter again, requires an existing source file and an exist
 
 A confirmed Import runs `OgreAssimpConverter` through `wxExecute` with separate arguments: `-log`, the source file, and the destination directory. The working directory is the directory that contains `plugins.cfg`, which for the managed layout is `bin/` rather than `bin/macosx/`. The converter log is a temporary file, so the SDK directory is not used for output. Stdout, stderr, the converter log, and the exit status are written to a dedicated `OGRE Tools` log.
 
-The run reports a mesh only when that file was created or rewritten, and likewise for the material script. Exit status 0 together with both written files is the successful result. The source asset is left unchanged. `resources.cfg` and the project file are also left unchanged until the user confirms the registration in section 12. Deeper material-content checks remain M4.4.
+The run reports a mesh only when that file was created or rewritten, and likewise for the material script. Exit status 0, both written files, an unchanged source, and a material that is not a fallback are required before section 12 registration. A converter log line that says a referenced file could not be located makes the material a fallback: the mesh file remains on disk, and `resources.cfg` and the project file stay unchanged. A source that defines no material still produces the converter's default material and can be registered. A texture named by the material but missing from the destination is reported and does not by itself reject the conversion. The ordinary ShaderGenerator "falling back to null" line is not a material failure.
 
 ```text
 src/plugins/ogretools/ogreimportdlg.h
@@ -714,11 +700,27 @@ Existing `macgit.cpp` and `maccmake.cpp` code prove the required structured `wxE
 
 ---
 
-## 11. Conversion validation
+## 11. Conversion validation - IMPLEMENTED
 
 Conversion success is **not** defined solely by `.mesh` existence.
 
-The importer should distinguish launch failure, non-zero exit, missing mesh, mesh generation, absent expected material output, fallback/default-material symptoms, referenced-resource warnings, and successful mesh/material conversion.
+The importer distinguishes:
+
+```text
+launch failure                         converter did not start
+non-zero exit                          reported with the exit status
+missing mesh                           no registration
+mesh written                           path reported
+material script missing or empty       no registration
+referenced file not loaded             fallback; no registration
+source defines no material             default material; registration still offered
+texture missing from the destination   warning; registration still offered
+source asset changed                   no registration
+exit 0, mesh, real material, source unchanged
+                                       registration offered
+```
+
+`Unable to locate`, `fallback material file`, and `Cannot locate resource` in the converter output are the referenced-file signals. `DefaultMaterial` or `dummyMat` without one of those lines is the no-authored-material case. ShaderGenerator's null-language fallback and tangent or vcache messages are ignored.
 
 ---
 
@@ -801,14 +803,15 @@ The earlier project-context investigation remains preserved in `project_context_
 | M3.3g | Correct native Git/CMake modal ownership so the OGRE wizard remains frontmost. | **DONE** |
 | M3.4 | Add SDK-folder and SampleBrowser actions. | **DONE** |
 | M3.5 | Correct SampleBrowser Assimp bundle. | **DONE LOCALLY / MERGED UPSTREAM / NOT YET TAGGED** |
+| M3.6 | Remove the direct `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter` menu items. Leave Import, Open SDK tools folder, Open SampleBrowser, and Install / Repair. | **DONE** |
 | M4.1 | Implement Import 3D asset dialog. | **DONE** |
 | M4.2 | Execute converter safely with explicit argv. | **DONE** |
 | M4.3 | Add dedicated OGRE log. | **DONE** |
-| M4.4 | Validate converter outcome beyond `.mesh` existence. | **NEXT** |
+| M4.4 | Validate converter outcome beyond `.mesh` existence. | **DONE** |
 | M4.5 | Confirm destination registration in `resources.cfg` and, when a project is open, in the project tree. | **DONE** |
-| M5.1 | Regression-test complete managed installation. | **PLANNED** |
+| M5.1 | Regression-test complete managed installation. | **MANUAL** |
 | M5.2 | Regression-test partial/no managed installation. | **PARTLY COVERED BY CLEAN REINSTALL / BROADER MATRIX PLANNED** |
-| M5.3 | Broaden PATH fallback regression beyond the proven VRML case. | **PLANNED** |
+| M5.3 | Regression-test PATH fallback for `OgreAssimpConverter`, the command-line tool Import still runs. The VRML case already proved the locator rule. | **PLANNED** |
 | M5.4 | Regression-test no-project and ordinary-project states. | **PARTLY PROVEN / BROADER REGRESSION PLANNED** |
 | M5.5 | Review documentation and release boundary. | **PLANNED** |
 | M5.6 | Release signed v3.8.2 macOS package. | **PLANNED** |
@@ -821,7 +824,7 @@ v3.8.2 is accepted only if:
 
 1. The pinned OGRE v14.6.3 installation remains the managed baseline.
 2. `OgreTools` builds, packages, installs, and loads natively.
-3. `Tools -> OGRE` is independent of project state.
+3. `Tools -> OGRE` is independent of project state and offers only `Import 3D asset...`, `Open SDK tools folder`, `Open SampleBrowser`, and `Install / Repair OGRE tools...`.
 4. Managed command-line tools outrank same-named PATH tools.
 5. PATH is used only for missing command-line capabilities.
 6. No shell profile or global `PATH` is modified.
@@ -880,6 +883,7 @@ v3.8.2 is accepted only if:
 - Marking generated `.mesh`, `.material`, or `resources.cfg` files for compilation.
 - Converter machinery in generated `main.cpp`.
 - Expansion into an asset database, package manager, or scene editor.
+- Direct `Tools -> OGRE` commands for `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, or `VRMLConverter`. Import runs the Assimp converter, and `Open SDK tools folder` exposes the other binaries.
 
 ---
 
@@ -889,6 +893,8 @@ v3.8.2 is accepted only if:
 managed locator + PATH fallback                  DONE
 live submenu refresh                             DONE
 independent Tools -> OGRE actions                DONE
+menu reduced to Import, SDK folder,
+    SampleBrowser, and Install / Repair          DONE
 SampleBrowser bundle correction                  DONE LOCALLY + MERGED UPSTREAM
         |
         v
@@ -911,11 +917,11 @@ Import 3D asset dialog                           DONE
 safe converter process + OGRE log                DONE
         |
         v
-conversion validation                            NEXT
+conversion validation                            DONE
 explicit resources.cfg and project-tree registration   DONE
         |
         v
-regression + signed v3.8.2 release
+manual regression + signed v3.8.2 release        REMAINING (M5)
 ```
 
 ---
@@ -924,4 +930,4 @@ regression + signed v3.8.2 release
 
 **Status: IN PROGRESS.**
 
-v3.8.2 is complete when Code::Blocks exposes installed OGRE utilities through the native `OgreTools` plugin under `Tools -> OGRE`, resolves capabilities using managed-first/PATH-fallback precedence, refreshes availability on demand, launches and visibly maintains setup-only OGRE installation/repair through the existing shared scripted-wizard machinery without creating a project or duplicating installer code, and safely runs `OgreAssimpConverter` through a logged asset-import workflow without requiring project classification or global `PATH` modification. After a successful conversion, the user can confirm adding the destination directory to the `resources.cfg` in that directory and, when a project is open, listing the generated files in the project tree. Declining those choices leaves both files unchanged.
+v3.8.2 is complete when Code::Blocks exposes OGRE through the native `OgreTools` plugin under `Tools -> OGRE` as `Import 3D asset...`, `Open SDK tools folder`, `Open SampleBrowser`, and `Install / Repair OGRE tools...`, with no direct command for `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, or `VRMLConverter`. It resolves the capabilities those actions need using managed-first/PATH-fallback precedence, refreshes availability on demand, launches and visibly maintains setup-only OGRE installation/repair through the existing shared scripted-wizard machinery without creating a project or duplicating installer code, and safely runs `OgreAssimpConverter` through the logged Import workflow without requiring project classification or global `PATH` modification. After a successful conversion, the user can confirm adding the destination directory to the `resources.cfg` in that directory and, when a project is open, listing the generated files in the project tree. Declining those choices leaves both files unchanged.
