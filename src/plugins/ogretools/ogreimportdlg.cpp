@@ -564,6 +564,165 @@ namespace
         return tokens;
     }
 
+    void AddResourceWarning(
+        OgreImportResult& result,
+        wxString& summary,
+        const wxString& text)
+    {
+        summary += text;
+
+        wxString warning = text;
+        warning.Trim(true).Trim(false);
+
+        if (!warning.IsEmpty() &&
+            result.resourceWarnings.Index(warning) == wxNOT_FOUND)
+        {
+            result.resourceWarnings.Add(warning);
+        }
+    }
+
+    bool IsReferencedResourceLine(const wxString& line)
+    {
+        const wxString lower = line.Lower();
+
+        if (lower.Contains(wxT("shadegenerator")))
+            return false;
+
+        if (lower.Contains(wxT("falling back to")))
+            return false;
+
+        return lower.Contains(wxT("unable to locate"))
+            || lower.Contains(wxT("fallback material file"))
+            || lower.Contains(wxT("cannot locate resource"));
+    }
+
+    void CollectReferencedResourceLines(
+        const wxString& text,
+        wxArrayString& lines)
+    {
+        size_t start = 0;
+
+        while (start < text.length())
+        {
+            const size_t end = text.find(wxT('\n'), start);
+            wxString line = text.Mid(
+                start,
+                end == wxString::npos ? wxString::npos : end - start);
+
+            line.Replace(wxT("\r"), wxT(""));
+            line.Trim(true).Trim(false);
+
+            if (IsReferencedResourceLine(line) &&
+                lines.Index(line) == wxNOT_FOUND)
+            {
+                lines.Add(line);
+            }
+
+            if (end == wxString::npos)
+                break;
+
+            start = end + 1;
+        }
+    }
+
+    bool IsDefaultMaterialName(const wxString& name)
+    {
+        const wxString lower = name.Lower();
+
+        return lower.Contains(wxT("defaultmaterial"))
+            || lower.Contains(wxT("dummymat"));
+    }
+
+    void ReadMaterialNames(
+        const wxString& path,
+        wxArrayString& names,
+        bool& opened)
+    {
+        opened = false;
+        names.Clear();
+
+        wxTextFile file(path);
+
+        if (!file.Open())
+            return;
+
+        opened = true;
+
+        for (size_t line = 0; line < file.GetLineCount(); ++line)
+        {
+            const wxArrayString tokens = SplitTokens(file.GetLine(line));
+
+            if (tokens.GetCount() >= 2 && tokens[0] == wxT("material"))
+                names.Add(tokens[1]);
+        }
+
+        file.Close();
+    }
+
+    bool AssessConversion(OgreImportResult& result)
+    {
+        wxArrayString resourceLines;
+        CollectReferencedResourceLines(result.output, resourceLines);
+        CollectReferencedResourceLines(result.errorOutput, resourceLines);
+
+        wxArrayString materialNames;
+        bool materialOpened = false;
+
+        if (result.materialWritten)
+        {
+            ReadMaterialNames(
+                result.materialPath,
+                materialNames,
+                materialOpened);
+        }
+
+        const bool referencedFileMissing = !resourceLines.IsEmpty();
+        bool everyMaterialIsDefault = !materialNames.IsEmpty();
+
+        for (size_t i = 0; i < materialNames.GetCount(); ++i)
+        {
+            if (!IsDefaultMaterialName(materialNames[i]))
+                everyMaterialIsDefault = false;
+        }
+
+        result.materialFallback = referencedFileMissing;
+        result.defaultMaterial =
+            everyMaterialIsDefault && !referencedFileMissing;
+
+        if (result.materialWritten && materialOpened && materialNames.IsEmpty())
+        {
+            result.summary +=
+                _("The material script contains no material definition.\n");
+        }
+
+        if (result.materialFallback)
+        {
+            result.summary +=
+                _("The material is a fallback. A file referenced by the source was not loaded:\n");
+
+            for (size_t i = 0; i < resourceLines.GetCount(); ++i)
+                result.summary += resourceLines[i] + wxT("\n");
+        }
+        else if (result.defaultMaterial)
+        {
+            result.summary +=
+                _("The material script is the converter default. The source did not define its own material.\n");
+        }
+
+        for (size_t i = 0; i < resourceLines.GetCount(); ++i)
+        {
+            if (result.resourceWarnings.Index(resourceLines[i]) == wxNOT_FOUND)
+                result.resourceWarnings.Add(resourceLines[i]);
+        }
+
+        const bool materialScriptEmpty =
+            result.materialWritten
+            && materialOpened
+            && materialNames.IsEmpty();
+
+        return !result.materialFallback && !materialScriptEmpty;
+    }
+
     bool IsTextureDirective(const wxString& key)
     {
         const wxString lower = key.Lower();
@@ -1193,11 +1352,14 @@ OgreImportResult RunOgreAssimpImport(
             _("\nThe source asset changed during conversion.\n");
     }
 
+    const bool materialContentOk = AssessConversion(result);
+
     result.ok =
         result.exitCode == 0
         && result.meshWritten
         && result.materialWritten
-        && result.sourceUnchanged;
+        && result.sourceUnchanged
+        && materialContentOk;
 
     if (!result.ok)
     {
@@ -1258,10 +1420,12 @@ wxString CopyObjTextures(
 
         if (foundLibrary.IsEmpty())
         {
-            summary +=
+            AddResourceWarning(
+                result,
+                summary,
                 _("\nMaterial library not found:\n")
                 + materialLibraries[library]
-                + wxT("\n");
+                + wxT("\n"));
             continue;
         }
 
@@ -1269,10 +1433,12 @@ wxString CopyObjTextures(
 
         if (!materialFile.Open())
         {
-            summary +=
+            AddResourceWarning(
+                result,
+                summary,
                 _("\nMaterial library could not be read:\n")
                 + foundLibrary
-                + wxT("\n");
+                + wxT("\n"));
             continue;
         }
 
@@ -1293,10 +1459,12 @@ wxString CopyObjTextures(
 
             if (foundTexture.IsEmpty())
             {
-                summary +=
+                AddResourceWarning(
+                    result,
+                    summary,
                     _("\nTexture referenced by the OBJ was not found:\n")
                     + reference
-                    + wxT("\n");
+                    + wxT("\n"));
                 continue;
             }
 
@@ -1323,10 +1491,12 @@ wxString CopyObjTextures(
 
             if (!wxCopyFile(foundTexture, destinationPath, true))
             {
-                summary +=
+                AddResourceWarning(
+                    result,
+                    summary,
                     _("\nTexture could not be copied:\n")
                     + foundTexture
-                    + wxT("\n");
+                    + wxT("\n"));
                 continue;
             }
 
@@ -1345,6 +1515,78 @@ wxString CopyObjTextures(
             summary += result.copiedTextures[i] + wxT("\n");
     }
 
+    return summary;
+}
+
+wxString NoteMaterialTextureFiles(
+    const OgreImportRequest& request,
+    OgreImportResult& result)
+{
+    if (!result.materialWritten ||
+        !wxFileName::FileExists(result.materialPath))
+    {
+        return wxString();
+    }
+
+    wxTextFile materialFile(result.materialPath);
+
+    if (!materialFile.Open())
+        return wxString();
+
+    wxString summary;
+    wxArrayString seen;
+
+    for (size_t line = 0; line < materialFile.GetLineCount(); ++line)
+    {
+        const wxArrayString tokens = SplitTokens(materialFile.GetLine(line));
+
+        if (tokens.GetCount() < 2 || tokens[0] != wxT("texture"))
+            continue;
+
+        const wxString reference = tokens[tokens.GetCount() - 1];
+
+        if (reference.IsEmpty() || seen.Index(reference) != wxNOT_FOUND)
+            continue;
+
+        seen.Add(reference);
+
+        wxFileName named(reference);
+
+        if (named.IsAbsolute() && named.FileExists())
+            continue;
+
+        wxFileName inDestination;
+        inDestination.AssignDir(request.destination);
+        inDestination.SetFullName(wxFileName(reference).GetFullName());
+
+        if (inDestination.FileExists())
+            continue;
+
+        bool alreadyWarned = false;
+
+        for (size_t i = 0; i < result.resourceWarnings.GetCount(); ++i)
+        {
+            if (result.resourceWarnings[i].Contains(reference)
+                || result.resourceWarnings[i].Contains(
+                    wxFileName(reference).GetFullName()))
+            {
+                alreadyWarned = true;
+                break;
+            }
+        }
+
+        if (alreadyWarned)
+            continue;
+
+        AddResourceWarning(
+            result,
+            summary,
+            _("\nTexture named by the material is not in the destination:\n")
+            + reference
+            + wxT("\n"));
+    }
+
+    materialFile.Close();
     return summary;
 }
 

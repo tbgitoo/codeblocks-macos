@@ -33,10 +33,6 @@ private:
     wxMenu* m_OgreMenu = nullptr;
 
     wxMenuItem* m_ImportAsset = nullptr;
-    wxMenuItem* m_AssimpConverter = nullptr;
-    wxMenuItem* m_MeshUpgrader = nullptr;
-    wxMenuItem* m_XmlConverter = nullptr;
-    wxMenuItem* m_VrmlConverter = nullptr;
     wxMenuItem* m_OpenToolsFolder = nullptr;
     wxMenuItem* m_SampleBrowser = nullptr;
     wxMenuItem* m_InstallOgre = nullptr;

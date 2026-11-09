@@ -93,21 +93,6 @@ OgreToolsAvailability LocateOgreTools()
                     result.toolsDirectory,
                     wxT("OgreAssimpConverter"));
 
-            result.meshUpgrader =
-                ExistingExecutable(
-                    result.toolsDirectory,
-                    wxT("OgreMeshUpgrader"));
-
-            result.xmlConverter =
-                ExistingExecutable(
-                    result.toolsDirectory,
-                    wxT("OgreXMLConverter"));
-
-            result.vrmlConverter =
-                ExistingExecutable(
-                    result.toolsDirectory,
-                    wxT("VRMLConverter"));
-
             result.sampleBrowser =
                 ExistingDirectory(
                     result.toolsDirectory,
@@ -127,27 +112,6 @@ OgreToolsAvailability LocateOgreTools()
         result.assimpConverter =
             FindExecutableOnPath(
                 wxT("OgreAssimpConverter"));
-    }
-
-    if (result.meshUpgrader.IsEmpty())
-    {
-        result.meshUpgrader =
-            FindExecutableOnPath(
-                wxT("OgreMeshUpgrader"));
-    }
-
-    if (result.xmlConverter.IsEmpty())
-    {
-        result.xmlConverter =
-            FindExecutableOnPath(
-                wxT("OgreXMLConverter"));
-    }
-
-    if (result.vrmlConverter.IsEmpty())
-    {
-        result.vrmlConverter =
-            FindExecutableOnPath(
-                wxT("VRMLConverter"));
     }
 
     return result;

@@ -21,6 +21,10 @@ struct OgreImportResult
     bool meshWritten = false;
     bool materialWritten = false;
     bool sourceUnchanged = true;
+    // A referenced material file was not loaded, so the script is a fallback.
+    bool materialFallback = false;
+    // The source defined no material. The written script is the converter default.
+    bool defaultMaterial = false;
 
     wxString commandSummary;
     wxString output;
@@ -28,6 +32,7 @@ struct OgreImportResult
     wxString meshPath;
     wxString materialPath;
     wxArrayString copiedTextures;
+    wxArrayString resourceWarnings;
     wxString summary;
 };
 
@@ -45,6 +50,12 @@ OgreImportResult RunOgreAssimpImport(
 // For an OBJ source, copies textures named by its material library into
 // the destination and records them on the result. The source files stay put.
 wxString CopyObjTextures(
+    const OgreImportRequest& request,
+    OgreImportResult& result);
+
+// After textures have been copied, reports material texture names that are
+// still not in the destination. This does not change result.ok.
+wxString NoteMaterialTextureFiles(
     const OgreImportRequest& request,
     OgreImportResult& result);
 

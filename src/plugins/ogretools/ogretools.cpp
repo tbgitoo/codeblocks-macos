@@ -23,10 +23,6 @@ namespace
     PluginRegistrant<OgreTools> reg(_T("OgreTools"));
 
     int idImportAsset       = wxNewId();
-    int idAssimpConverter   = wxNewId();
-    int idMeshUpgrader      = wxNewId();
-    int idXmlConverter      = wxNewId();
-    int idVrmlConverter     = wxNewId();
     int idOpenToolsFolder   = wxNewId();
     int idSampleBrowser     = wxNewId();
     int idInstallOgre       = wxNewId();
@@ -140,28 +136,6 @@ void OgreTools::BuildMenu(wxMenuBar* menuBar)
 
     m_OgreMenu->AppendSeparator();
 
-    m_AssimpConverter =
-        m_OgreMenu->Append(
-            idAssimpConverter,
-            _("OgreAssimpConverter..."));
-
-    m_MeshUpgrader =
-        m_OgreMenu->Append(
-            idMeshUpgrader,
-            _("OgreMeshUpgrader..."));
-
-    m_XmlConverter =
-        m_OgreMenu->Append(
-            idXmlConverter,
-            _("OgreXMLConverter..."));
-
-    m_VrmlConverter =
-        m_OgreMenu->Append(
-            idVrmlConverter,
-            _("VRMLConverter..."));
-
-    m_OgreMenu->AppendSeparator();
-
     m_OpenToolsFolder =
         m_OgreMenu->Append(
             idOpenToolsFolder,
@@ -202,6 +176,7 @@ void OgreTools::OnImportAsset(wxCommandEvent& event)
     if (result.ok)
     {
         result.summary += CopyObjTextures(request, result);
+        result.summary += NoteMaterialTextureFiles(request, result);
         result.summary += RegisterOgreImport(parent, request, result);
     }
 
@@ -216,10 +191,13 @@ void OgreTools::OnImportAsset(wxCommandEvent& event)
     log += wxT("\n") + result.summary;
     WriteLog(log);
 
+    const bool clean =
+        result.ok && result.resourceWarnings.IsEmpty();
+
     cbMessageBox(
         result.summary,
         _("Import 3D asset"),
-        result.ok ? wxICON_INFORMATION : wxICON_WARNING,
+        clean ? wxICON_INFORMATION : wxICON_WARNING,
         parent);
 }
 
@@ -258,22 +236,6 @@ void OgreTools::RefreshCapabilities()
     if (m_ImportAsset)
         m_ImportAsset->Enable(
             !tools.assimpConverter.IsEmpty());
-
-    if (m_AssimpConverter)
-        m_AssimpConverter->Enable(
-            !tools.assimpConverter.IsEmpty());
-
-    if (m_MeshUpgrader)
-        m_MeshUpgrader->Enable(
-            !tools.meshUpgrader.IsEmpty());
-
-    if (m_XmlConverter)
-        m_XmlConverter->Enable(
-            !tools.xmlConverter.IsEmpty());
-
-    if (m_VrmlConverter)
-        m_VrmlConverter->Enable(
-            !tools.vrmlConverter.IsEmpty());
 
     if (m_OpenToolsFolder)
         m_OpenToolsFolder->Enable(
