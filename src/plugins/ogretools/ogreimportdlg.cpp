@@ -4,18 +4,21 @@
 #include "ogretoolslocator.h"
 
 #include <cbproject.h>
+#include <configmanager.h>
 #include <editorbase.h>
 #include <editormanager.h>
 #include <manager.h>
 #include <projectfile.h>
 #include <projectmanager.h>
 
+#include <wx/arrstr.h>
 #include <wx/busyinfo.h>
 #include <wx/button.h>
 #include <wx/datetime.h>
 #include <wx/dialog.h>
 #include <wx/dirdlg.h>
 #include <wx/file.h>
+#include <wx/filefn.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/process.h>
@@ -479,6 +482,34 @@ namespace
             && project->GetFileByFilename(path, false, false);
     }
 
+    const wxString kLastSourceKey = wxT("/import/last_source");
+
+    wxString LastSourceAsset()
+    {
+        if (!Manager::Get())
+            return wxString();
+
+        ConfigManager* cfg =
+            Manager::Get()->GetConfigManager(wxT("ogretools"));
+
+        if (!cfg)
+            return wxString();
+
+        return cfg->Read(kLastSourceKey);
+    }
+
+    void RememberSourceAsset(const wxString& path)
+    {
+        if (!Manager::Get() || path.IsEmpty())
+            return;
+
+        ConfigManager* cfg =
+            Manager::Get()->GetConfigManager(wxT("ogretools"));
+
+        if (cfg)
+            cfg->Write(kLastSourceKey, path);
+    }
+
     void AddVisibleProjectFile(
         cbProject* project,
         const wxString& path)
@@ -496,6 +527,97 @@ namespace
             file->compile = false;
             file->link = false;
         }
+    }
+
+    wxArrayString SplitTokens(const wxString& text)
+    {
+        wxArrayString tokens;
+        wxString current;
+        bool quoted = false;
+
+        for (size_t i = 0; i < text.length(); ++i)
+        {
+            const wxUniChar ch = text[i];
+
+            if (ch == wxT('"'))
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (!quoted && wxIsspace(ch))
+            {
+                if (!current.IsEmpty())
+                {
+                    tokens.Add(current);
+                    current.clear();
+                }
+                continue;
+            }
+
+            current += ch;
+        }
+
+        if (!current.IsEmpty())
+            tokens.Add(current);
+
+        return tokens;
+    }
+
+    bool IsTextureDirective(const wxString& key)
+    {
+        const wxString lower = key.Lower();
+
+        return lower.StartsWith(wxT("map_"))
+            || lower == wxT("bump")
+            || lower == wxT("disp")
+            || lower == wxT("decal")
+            || lower == wxT("refl")
+            || lower == wxT("norm");
+    }
+
+    wxString FindTextureFile(
+        const wxString& reference,
+        const wxString& materialDirectory,
+        const wxString& objectDirectory)
+    {
+        if (reference.IsEmpty())
+            return wxString();
+
+        wxFileName absolute(reference);
+
+        if (absolute.IsAbsolute() && absolute.FileExists())
+            return absolute.GetFullPath();
+
+        const wxString directories[2] = {
+            materialDirectory,
+            objectDirectory
+        };
+
+        for (int i = 0; i < 2; ++i)
+        {
+            if (directories[i].IsEmpty())
+                continue;
+
+            wxString combined = directories[i];
+
+            if (!combined.EndsWith(wxFILE_SEP_PATH))
+                combined += wxFILE_SEP_PATH;
+
+            combined += reference;
+
+            wxFileName file(combined);
+            file.Normalize(
+                wxPATH_NORM_ENV_VARS
+                | wxPATH_NORM_DOTS
+                | wxPATH_NORM_ABSOLUTE
+                | wxPATH_NORM_TILDE);
+
+            if (file.FileExists())
+                return file.GetFullPath();
+        }
+
+        return wxString();
     }
 }
 
@@ -562,7 +684,13 @@ public:
 
         wxBoxSizer* sourceRow = new wxBoxSizer(wxHORIZONTAL);
 
-        m_source = new wxTextCtrl(this, wxID_ANY);
+        const wxString lastSource = LastSourceAsset();
+        wxString initialSource;
+
+        if (!lastSource.IsEmpty() && wxFileName::FileExists(lastSource))
+            initialSource = lastSource;
+
+        m_source = new wxTextCtrl(this, wxID_ANY, initialSource);
 
         sourceRow->Add(m_source, 1, wxRIGHT | wxEXPAND, 8);
         sourceRow->Add(
@@ -682,21 +810,27 @@ private:
         (void)event;
 
         wxString initialDir;
+        wxString initialFile;
+        wxString remembered = m_source->GetValue();
 
-        if (!m_source->GetValue().IsEmpty())
+        if (remembered.IsEmpty())
+            remembered = LastSourceAsset();
+
+        if (!remembered.IsEmpty())
         {
-            wxFileName current(m_source->GetValue());
+            wxFileName current(remembered);
             initialDir = current.GetPath();
+            initialFile = current.GetFullName();
         }
 
-        if (initialDir.IsEmpty())
+        if (initialDir.IsEmpty() || !wxFileName::DirExists(initialDir))
             initialDir = m_destination->GetValue();
 
         wxFileDialog dlg(
             this,
             _("Select 3D asset"),
             initialDir,
-            wxEmptyString,
+            initialFile,
             _("3D assets|*.obj;*.dae;*.fbx;*.gltf;*.glb;*.3ds;*.blend;*.stl;*.ply;*.x;*.md5mesh;*.lwo|All files (*.*)|*.*"),
             wxFD_OPEN | wxFD_FILE_MUST_EXIST);
 
@@ -706,6 +840,7 @@ private:
             return;
 
         m_source->SetValue(dlg.GetPath());
+        RememberSourceAsset(dlg.GetPath());
 
         if (!m_destination->GetValue().IsEmpty())
             return;
@@ -858,6 +993,8 @@ private:
         m_acceptedConverter = tools.assimpConverter;
         m_acceptedSource = sourceName.GetFullPath();
         m_acceptedDestination = acceptedDestination;
+
+        RememberSourceAsset(m_acceptedSource);
 
         EndModal(wxID_OK);
     }
@@ -1071,6 +1208,146 @@ OgreImportResult RunOgreAssimpImport(
     return result;
 }
 
+wxString CopyObjTextures(
+    const OgreImportRequest& request,
+    OgreImportResult& result)
+{
+    result.copiedTextures.Clear();
+
+    const wxString extension = wxFileName(request.source).GetExt().Lower();
+
+    if (extension != wxT("obj"))
+        return wxString();
+
+    wxTextFile objectFile(request.source);
+
+    if (!objectFile.Open())
+    {
+        return _("\nThe OBJ file could not be read, so its textures were not copied.\n");
+    }
+
+    const wxString objectDirectory = wxFileName(request.source).GetPath();
+    wxArrayString materialLibraries;
+
+    for (size_t i = 0; i < objectFile.GetLineCount(); ++i)
+    {
+        const wxArrayString tokens = SplitTokens(objectFile.GetLine(i));
+
+        if (tokens.IsEmpty() || tokens[0].Lower() != wxT("mtllib"))
+            continue;
+
+        for (size_t token = 1; token < tokens.GetCount(); ++token)
+            materialLibraries.Add(tokens[token]);
+    }
+
+    objectFile.Close();
+
+    if (materialLibraries.IsEmpty())
+        return _("\nThe OBJ file names no material library, so no textures were copied.\n");
+
+    wxArrayString seenDestinations;
+    wxString summary;
+    bool copiedAny = false;
+
+    for (size_t library = 0; library < materialLibraries.GetCount(); ++library)
+    {
+        const wxString foundLibrary = FindTextureFile(
+            materialLibraries[library],
+            objectDirectory,
+            objectDirectory);
+
+        if (foundLibrary.IsEmpty())
+        {
+            summary +=
+                _("\nMaterial library not found:\n")
+                + materialLibraries[library]
+                + wxT("\n");
+            continue;
+        }
+
+        wxTextFile materialFile(foundLibrary);
+
+        if (!materialFile.Open())
+        {
+            summary +=
+                _("\nMaterial library could not be read:\n")
+                + foundLibrary
+                + wxT("\n");
+            continue;
+        }
+
+        const wxString materialDirectory = wxFileName(foundLibrary).GetPath();
+
+        for (size_t line = 0; line < materialFile.GetLineCount(); ++line)
+        {
+            const wxArrayString tokens = SplitTokens(materialFile.GetLine(line));
+
+            if (tokens.GetCount() < 2 || !IsTextureDirective(tokens[0]))
+                continue;
+
+            const wxString reference = tokens[tokens.GetCount() - 1];
+            const wxString foundTexture = FindTextureFile(
+                reference,
+                materialDirectory,
+                objectDirectory);
+
+            if (foundTexture.IsEmpty())
+            {
+                summary +=
+                    _("\nTexture referenced by the OBJ was not found:\n")
+                    + reference
+                    + wxT("\n");
+                continue;
+            }
+
+            wxFileName destinationFile;
+            destinationFile.AssignDir(request.destination);
+            destinationFile.SetFullName(wxFileName(foundTexture).GetFullName());
+
+            const wxString destinationPath = destinationFile.GetFullPath();
+
+            if (seenDestinations.Index(destinationPath) != wxNOT_FOUND)
+                continue;
+
+            seenDestinations.Add(destinationPath);
+
+            if (CanonicalDirectory(wxFileName(foundTexture).GetPath())
+                == CanonicalDirectory(request.destination)
+                && wxFileName(foundTexture).GetFullName()
+                    == destinationFile.GetFullName())
+            {
+                result.copiedTextures.Add(destinationPath);
+                copiedAny = true;
+                continue;
+            }
+
+            if (!wxCopyFile(foundTexture, destinationPath, true))
+            {
+                summary +=
+                    _("\nTexture could not be copied:\n")
+                    + foundTexture
+                    + wxT("\n");
+                continue;
+            }
+
+            result.copiedTextures.Add(destinationPath);
+            copiedAny = true;
+        }
+
+        materialFile.Close();
+    }
+
+    if (copiedAny)
+    {
+        summary += _("\nCopied OBJ textures next to the mesh:\n");
+
+        for (size_t i = 0; i < result.copiedTextures.GetCount(); ++i)
+            summary += result.copiedTextures[i] + wxT("\n");
+    }
+
+    return summary;
+}
+
 wxString RegisterOgreImport(
     wxWindow* parent,
     const OgreImportRequest& request,
@@ -1169,6 +1446,12 @@ wxString RegisterOgreImport(
 
     if (createdConfig && wxFileName::FileExists(configPath))
         files.Add(configPath);
+
+    for (size_t i = 0; i < result.copiedTextures.GetCount(); ++i)
+    {
+        if (wxFileName::FileExists(result.copiedTextures[i]))
+            files.Add(result.copiedTextures[i]);
+    }
 
     wxArrayString newFiles;
 
