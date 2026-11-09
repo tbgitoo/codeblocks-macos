@@ -736,7 +736,9 @@ The file to consider is `resources.cfg` in the destination directory. An open ed
 
 When that file exists, the import asks before adding the destination directory. When it does not exist, the import creates one beside the mesh and tells the user that the new file is a starter. OGRE loads it automatically only when it sits in a directory the program already searches.
 
-When a project is open, the import asks before adding the generated `.mesh` and `.material` to the project tree. A `resources.cfg` created by this same import is included in that confirmation. The added files are visible in the tree and are not compiled. When no project is open, there is no project-tree question.
+When the source is an OBJ file, the import reads each `mtllib` entry and copies the texture files named by that material library into the destination. The source files are not modified. A texture that is already in the destination is left in place. A referenced texture that cannot be found is reported and does not fail the mesh conversion. Those copied textures are included in the project-tree confirmation below.
+
+When a project is open, the import asks before adding the generated `.mesh`, `.material`, and copied textures to the project tree. A `resources.cfg` created by this same import is included in that confirmation. The added files are visible in the tree and are not compiled. When no project is open, there is no project-tree question.
 
 ---
 

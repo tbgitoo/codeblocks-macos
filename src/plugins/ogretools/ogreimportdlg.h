@@ -1,6 +1,7 @@
 #ifndef OGREIMPORTDLG_H
 #define OGREIMPORTDLG_H
 
+#include <wx/arrstr.h>
 #include <wx/string.h>
 
 class wxWindow;
@@ -26,6 +27,7 @@ struct OgreImportResult
     wxString errorOutput;
     wxString meshPath;
     wxString materialPath;
+    wxArrayString copiedTextures;
     wxString summary;
 };
 
@@ -39,6 +41,12 @@ bool PromptOgreImport(wxWindow* parent, OgreImportRequest& request);
 OgreImportResult RunOgreAssimpImport(
     wxWindow* parent,
     const OgreImportRequest& request);
+
+// For an OBJ source, copies textures named by its material library into
+// the destination and records them on the result. The source files stay put.
+wxString CopyObjTextures(
+    const OgreImportRequest& request,
+    OgreImportResult& result);
 
 // After a successful conversion, asks before editing an existing
 // resources.cfg and before adding generated files to the active project.

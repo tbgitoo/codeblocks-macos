@@ -200,7 +200,10 @@ void OgreTools::OnImportAsset(wxCommandEvent& event)
         RunOgreAssimpImport(parent, request);
 
     if (result.ok)
+    {
+        result.summary += CopyObjTextures(request, result);
         result.summary += RegisterOgreImport(parent, request, result);
+    }
 
     wxString log = result.commandSummary;
 
