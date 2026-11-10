@@ -349,3 +349,79 @@ git status
 8. If the maintainer prefers a different implementation, follow upstream style rather than defending the local patch shape.
 
 The objective is not to upstream the local compatibility patch verbatim. The objective is to turn the validated findings into the smallest independently useful fixes the maintainers are comfortable accepting.
+
+
+
+
+
+
+## Notes for PR1
+
+Pristine ogre-next-deps (commit f7e23191f4fd89ed41134996bc47f9ee23d009df9)
+
+Configuration for using the codeblocks mingw toolchain (codeblocks version 25.03, installed from the setup.exe)
+
+set "CB_MINGW=D:\Program Files\CodeBlocks\MinGW"
+set "PATH=%CB_MINGW%\bin;%PATH%"
+set "CC=%CB_MINGW%\bin\gcc.exe"
+set "CXX=%CB_MINGW%\bin\g++.exe"
+
+cmake -S . -B build ^
+  -G "MinGW Makefiles" ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER="%CB_MINGW%\bin\gcc.exe" ^
+  -DCMAKE_CXX_COMPILER="%CB_MINGW%\bin\g++.exe" ^
+  -DCMAKE_RC_COMPILER=windres.exe
+
+Configuration runs successfully, but then
+
+cmake --build build --target SDL2
+
+fails as follows:
+
+... 
+
+-- Installing: ogre-next-deps-pr1/build/ogredeps/share/aclocal/sdl2.m4
+[100%] Move SDL2 install files into the Release and Debug folders.
+CMake Error at ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-Release.cmake:49 (message):
+  Command failed: 1
+
+   'D:/Program Files/CodeBlocks/MinGW/bin/cmake.exe' '-Dmake=' '-Dconfig=' '-P' 'ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-Release-impl.cmake'
+
+  See also
+
+    ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-*.log
+
+
+mingw32-make[3]: *** [src\CMakeFiles\SDL2.dir\build.make:95: src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles] Error 1
+mingw32-make[2]: *** [CMakeFiles\Makefile2:406: src/CMakeFiles/SDL2.dir/all] Error 2
+mingw32-make[1]: *** [CMakeFiles\Makefile2:413: src/CMakeFiles/SDL2.dir/rule] Error 2
+mingw32-make: *** [Makefile:175: SDL2] Error 2
+
+Inspection of ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-err.log gives:
+
+Error renaming from "bin/libSDL2.dll" to "bin/Debug/libSDL2.dll": No such file or directory
+CMake Error at ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-Release-impl.cmake:39 (message):
+  Command failed (1):
+
+   'D:/Program Files/CodeBlocks/MinGW/bin/cmake.exe' '-E' 'rename' 'bin/libSDL2.dll' 'bin/Debug/libSDL2.dll'
+
+Inspection of ogre-next-deps-pr1\build\ogredeps\bin indicates the DLL is SDL2.dll, not libSDL2.dll
+
+
+After patching `src/CMakeLists.txt`:
+
+same configuration and build command.
+
+sdl2 target builds successfully:
+
+…
+-- Installing: ogre-next-deps-pr1/build/ogredeps/share/aclocal/sdl2.m4
+[100%] Move SDL2 install files into the Release and Debug folders.
+-- SDL2 MoveInstallFiles command succeeded.  See also ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-*.log
+[100%] Completed 'SDL2'
+[100%] Built target SDL2
+
+
+
