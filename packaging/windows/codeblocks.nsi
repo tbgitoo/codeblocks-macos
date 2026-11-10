@@ -181,12 +181,11 @@ findps_done:
 FunctionEnd
 
 Function CleanupCompilerTemps
-  Delete "$PLUGINSDIR\7zr.exe"
-  Delete "$PLUGINSDIR\7zr.sha256"
-  Delete "$PLUGINSDIR\winlibs.7z"
-  Delete "$PLUGINSDIR\winlibs.sha256"
   ${If} $OwnUnpack == "1"
   ${AndIf} $UnpackDir != ""
+    Delete "$UnpackDir\7zr.exe"
+    Delete "$UnpackDir\winlibs.7z"
+    Delete "$UnpackDir\hash.sha256"
     RMDir /r "$UnpackDir"
     StrCpy $OwnUnpack "0"
   ${EndIf}
@@ -196,9 +195,9 @@ FunctionEnd
 Function HashFile
   ; Input: $R8 path, $R7 expected uppercase digest. Output: $R9 1 on match.
   StrCpy $R9 "0"
-  Delete "$PLUGINSDIR\hash.sha256"
+  Delete "$UnpackDir\hash.sha256"
   System::Call 'kernel32::SetEnvironmentVariable(t "CB_V34_ARCHIVE", t "$R8") i .r0'
-  System::Call 'kernel32::SetEnvironmentVariable(t "CB_V34_HASHOUT", t "$PLUGINSDIR\hash.sha256") i .r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "CB_V34_HASHOUT", t "$UnpackDir\hash.sha256") i .r0'
   ${If} $0 == 0
     StrCpy $CompilerError "Could not pass the file path to PowerShell."
     Return
@@ -207,17 +206,17 @@ Function HashFile
   Pop $0
   ${If} $0 != 0
     StrCpy $CompilerError "SHA-256 could not be calculated."
-    Delete "$PLUGINSDIR\hash.sha256"
+    Delete "$UnpackDir\hash.sha256"
     Return
   ${EndIf}
-  FileOpen $1 "$PLUGINSDIR\hash.sha256" r
+  FileOpen $1 "$UnpackDir\hash.sha256" r
   ${If} $1 == ""
     StrCpy $CompilerError "SHA-256 output was not written."
     Return
   ${EndIf}
   FileRead $1 $2
   FileClose $1
-  Delete "$PLUGINSDIR\hash.sha256"
+  Delete "$UnpackDir\hash.sha256"
   ${StrTrimNewLines} $2 $2
   ${StrCase} $2 $2 "U"
   ${If} $2 != $R7
@@ -232,8 +231,9 @@ Function InstallCompilerIfRequested
     DetailPrint "Compiler download was not selected."
     Return
   ${EndIf}
+  ; NSIS 3 DirState: -1 missing, 0 empty, 1 not empty.
   ${DirState} "$INSTDIR\MinGW" $0
-  ${If} $0 != 0
+  ${If} $0 != -1
     DetailPrint "Left the existing MinGW folder unchanged."
     Return
   ${EndIf}
@@ -242,7 +242,7 @@ Function InstallCompilerIfRequested
   System::Call 'kernel32::GetTickCount() i .r0'
   StrCpy $UnpackDir "$INSTDIR\cb-v34-$0"
   ${DirState} "$UnpackDir" $1
-  ${If} $1 != 0
+  ${If} $1 != -1
     StrCpy $CompilerError "Could not install the compiler because $UnpackDir already exists."
     Goto compiler_fail
   ${EndIf}
@@ -254,21 +254,12 @@ Function InstallCompilerIfRequested
   StrCpy $OwnUnpack "1"
   StrCpy $CompilerRunning "1"
 
+  ; /S=K: NSIS compares this as a signed 32-bit integer, so a byte count past 2 GiB looks negative.
   StrCpy $2 $INSTDIR 3
-  StrCpy $3 $PLUGINSDIR 3
-  ${DriveSpace} "$2" "/D=F" $4
+  ${DriveSpace} "$2" "/D=F /S=K" $4
   ${If} $4 < 1153434
     StrCpy $CompilerError "Not enough free space on $2 for the compiler."
     Goto compiler_fail
-  ${EndIf}
-  ${StrCase} $5 $2 "U"
-  ${StrCase} $6 $3 "U"
-  ${If} $5 != $6
-    ${DriveSpace} "$3" "/D=F" $4
-    ${If} $4 < 112640
-      StrCpy $CompilerError "Not enough free space on $3 for the compiler download."
-      Goto compiler_fail
-    ${EndIf}
   ${EndIf}
 
   Call FindCurl
@@ -283,13 +274,13 @@ Function InstallCompilerIfRequested
   ${EndIf}
 
   DetailPrint "Downloading 7-Zip 26.05 7zr.exe"
-  nsExec::ExecToLog '"$CurlExe" -fL --retry 2 -o "$PLUGINSDIR\7zr.exe" "${SEVENZIP_URL}"'
+  nsExec::ExecToLog '"$CurlExe" -fL --retry 2 -o "$UnpackDir\7zr.exe" "${SEVENZIP_URL}"'
   Pop $0
   ${If} $0 != 0
     StrCpy $CompilerError "The 7zr.exe download failed."
     Goto compiler_fail
   ${EndIf}
-  StrCpy $R8 "$PLUGINSDIR\7zr.exe"
+  StrCpy $R8 "$UnpackDir\7zr.exe"
   StrCpy $R7 "${SEVENZIP_SHA}"
   Call HashFile
   ${If} $R9 != "1"
@@ -297,13 +288,13 @@ Function InstallCompilerIfRequested
   ${EndIf}
 
   DetailPrint "Downloading the pinned WinLibs archive"
-  nsExec::ExecToLog '"$CurlExe" -fL --retry 2 -o "$PLUGINSDIR\winlibs.7z" "${WINLIBS_URL}"'
+  nsExec::ExecToLog '"$CurlExe" -fL --retry 2 -o "$UnpackDir\winlibs.7z" "${WINLIBS_URL}"'
   Pop $0
   ${If} $0 != 0
     StrCpy $CompilerError "The MinGW archive download failed."
     Goto compiler_fail
   ${EndIf}
-  StrCpy $R8 "$PLUGINSDIR\winlibs.7z"
+  StrCpy $R8 "$UnpackDir\winlibs.7z"
   StrCpy $R7 "${WINLIBS_SHA}"
   Call HashFile
   ${If} $R9 != "1"
@@ -311,7 +302,7 @@ Function InstallCompilerIfRequested
   ${EndIf}
 
   DetailPrint "Extracting the MinGW archive"
-  nsExec::ExecToLog '"$PLUGINSDIR\7zr.exe" x -y -o"$UnpackDir" "$PLUGINSDIR\winlibs.7z"'
+  nsExec::ExecToLog '"$UnpackDir\7zr.exe" x -y -o"$UnpackDir" "$UnpackDir\winlibs.7z"'
   Pop $0
   ${If} $0 != 0
     StrCpy $CompilerError "Extracting the MinGW archive failed."
@@ -337,7 +328,7 @@ Function InstallCompilerIfRequested
   ${EndIf}
 
   ${DirState} "$INSTDIR\MinGW" $0
-  ${If} $0 != 0
+  ${If} $0 != -1
     StrCpy $CompilerError "Could not install the compiler because $INSTDIR\MinGW now exists."
     Goto compiler_fail
   ${EndIf}

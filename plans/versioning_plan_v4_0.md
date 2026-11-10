@@ -1,6 +1,6 @@
 # Code::Blocks Windows v4.0 — installable Windows distribution
 
-**Status: M4 done. `codeblocks-v4.0-win64.exe` has been built and has not been installed.** v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`.
+**Status: M6 done. M7 is not done.** The built installer on disk is `packaging\windows\codeblocks-v3.4-win64.exe`. M6 used the IDE-only install at `D:\cb-v34-m5` and the external WinLibs at `D:\Program Files\CodeBlocks\MinGW`. A second install at `D:\cb-v40-m9` has no `MinGW` yet: with the compiler checkbox on, NSIS 3.11 `DirState` returns `-1` for a missing folder and the script treated every non-zero result as an existing folder, so it printed `Left the existing MinGW folder unchanged` and skipped the download. Those three comparisons now test for `-1`. A later run then stopped with "not enough free space" for the compiler download. `7zr.exe` and the archive were stored in `$PLUGINSDIR` on C:, and `DriveSpace` was read in bytes, so a volume with more than 2 GiB free failed the signed 32-bit comparison. Downloads, the digest, and extraction now stay in the run-owned directory on the install volume. The space check is kilobytes on that volume only. The installer was rebuilt in place. v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`.
 
 **Question this version answers:** what is the smallest packaging step that lets a Windows user install this already-working build, launch it, and uninstall it, without the source tree, and optionally obtain the known-good MinGW from its upstream publisher during that install?
 
@@ -121,7 +121,7 @@ Before `makensis`:
 3. `objdump -p` on the executable and plugins must not name a missing non-OS DLL.
 4. The staged IDE must open with `PATH` restricted to System32 plus the stage directory and with a disposable `--user-data-dir`.
 
-M2 refreshed `output33_64`; M3 staged it; M4 produced `codeblocks-v4.0-win64.exe` with stock NSIS 3.11. The installer has not yet been run.
+M2 refreshed `output33_64`; M3 staged it; M4 produced the installer with stock NSIS 3.11. The built file is `codeblocks-v3.4-win64.exe`. M5 installed it at `D:\cb-v34-m5` with the compiler left out.
 
 ---
 
@@ -176,7 +176,7 @@ Silent upgrade applies only to B. The installer never runs an uninstaller whose 
 
 These steps happen only after IDE installation, with the checkbox set and no existing `$INSTDIR\MinGW`. They never touch `%APPDATA%\CodeBlocks`.
 
-Downloads and digest files live in `$PLUGINSDIR`. Extraction is done on the `$INSTDIR` volume in a unique directory created by this run:
+Downloads, digest files, and extraction all stay on the `$INSTDIR` volume, in a unique directory created by this run. `$PLUGINSDIR` is only the small NSIS plug-in scratch area and is not a space check for the compiler:
 
 ```text
 $INSTDIR\cb-v40-<id>
@@ -184,7 +184,7 @@ $INSTDIR\cb-v40-<id>
 
 If the chosen temporary name already exists, stop without deleting it. Never delete a `cb-v40-*` directory this run did not create.
 
-1. Require about 1.1 GiB free on the `$INSTDIR` volume and about 110 MB on `$PLUGINSDIR`'s volume when different.
+1. Require about 1.1 GiB free on the `$INSTDIR` volume, measured in kilobytes (`DriveSpace /D=F /S=K`, threshold `1153434`). A byte count does not fit NSIS's signed 32-bit comparison once the volume has more than 2 GiB free. That budget covers the archive and the extracted tree together. Do not require free space on the system temp volume.
 2. Download the pinned `7zr.exe` using `curl.exe -fL --retry 2`.
 3. Verify its SHA-256 exactly. Do not execute it on failure.
 4. Download the pinned WinLibs archive.
@@ -272,9 +272,9 @@ Generated and not committed: `packaging\windows\stage\`, `7zr.exe`, and the WinL
 | M1 | **DONE.** Plan the runtime split, installer rules, and one pinned compiler archive. | Source observations and pinned identities match the recorded evidence. |
 | M2 | **DONE.** Refresh `output33_64` from the tested tree. | Current stripped plugins and debugger link successfully; no edit to `update.bat`. |
 | M3 | **DONE.** Produce application-only stage. | Required IDE/runtime files present; no import libraries, GCC, or GDB; dependency and sanitised-PATH launch checks pass. |
-| M4 | **DONE.** Produce IDE installer with stock NSIS. | `codeblocks-v4.0-win64.exe` is built without embedding compiler/archive/extractor. Installer not yet executed. |
-| M5 | Install and launch without repository/wx/MSYS2; include a non-default drive; compiler unchecked or offline. | IDE starts from Start Menu; resources and wizards load; MinGW is absent; disposable profile used for test launch. |
-| M6 | Verify stripped Build/Run/Debug with external WinLibs and shared-profile compatibility. | Normal and standalone debugging, Stop, scalar and `std::string` watches work; passive profile differences are absent or fully identified. Stop on unexplained passive setting loss/reset. |
+| M4 | **DONE.** Produce IDE installer with stock NSIS. The file on disk is `codeblocks-v3.4-win64.exe`. | `codeblocks-v4.0-win64.exe` is built without embedding compiler/archive/extractor. |
+| M5 | **DONE.** Installed at `D:\cb-v34-m5`. The Start Menu shortcut has no arguments. A disposable-profile launch showed the Start page and registered Compiler, Debugger, and ScriptedWizard. No `MinGW` directory was created. | IDE starts from Start Menu; resources and wizards load; MinGW is absent; disposable profile used for test launch. |
+| M6 | **DONE.** Build and run passed (`7 hello`) with the external WinLibs at `D:\Program Files\CodeBlocks\MinGW` (GCC 14.2.0, GDB 16.2). Project debug showed scalar `value` = 7 and `std::string` summary `"hello"`; Stop ended the session. Standalone debug of `standalone.cpp` (not a project file) showed the same watches, Stop worked, and the IDE was closed from the window. On a copy of the shared profile, the only non-layout change was the stored version stamp, `25.03-r13644` to `svn-r0`. | Normal and standalone debugging, Stop, scalar and `std::string` watches work; passive profile differences are absent or fully identified. Stop on unexplained passive setting loss/reset. |
 | M7 | Verify uninstall ownership. | IDE and shortcut removed; user profile/projects/other installs/external or unmarked MinGW untouched. |
 | M8 | Exercise optional compiler success and every failure path. | Both hashes checked before use; successful tree and marker correct; failures leave IDE but no partial MinGW/downloads/run-owned temp. Stop if pinned `7zr.exe` cannot extract the pinned archive. |
 | M9 | Clean-machine Build/Run/Debug using only downloaded toolchain from non-default drive; repeat shared-profile sequence. | Selected compiler/debugger are `$INSTDIR\MinGW\bin`; C++ build/run/debug/standalone debug pass; download itself does not modify profile. |
