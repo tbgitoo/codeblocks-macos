@@ -19,7 +19,7 @@ Start from the upstream branch expected by the repository, make only the intende
 
 ---
 
-## PR 1 - ogre-next-deps: SDL2 DLL name on MinGW
+## PR 1 - ogre-next-deps: SDL2 DLL name on MinGW. Status: Submitted online
 
 **Repository:** `OGRECave/ogre-next-deps`
 
@@ -422,6 +422,47 @@ sdl2 target builds successfully:
 -- SDL2 MoveInstallFiles command succeeded.  See also ogre-next-deps-pr1/build/src/SDL2-prefix/src/SDL2-stamp/SDL2-MoveInstallFiles-*.log
 [100%] Completed 'SDL2'
 [100%] Built target SDL2
+
+
+
+# Control msys64
+set "MSYS_MINGW=D:\msys64\mingw64"
+set "PATH=%MSYS_MINGW%\bin;%PATH%"
+
+gcc --version
+g++ --version
+where gcc
+where g++
+where mingw32-make
+
+cmake -S . -B build-msys2 ^
+  -G "MinGW Makefiles" ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER=gcc.exe ^
+  -DCMAKE_CXX_COMPILER=g++.exe ^
+  -DCMAKE_RC_COMPILER=windres.exe
+
+# Notes for PR2
+msys64
+set "MSYS_MINGW=D:\msys64\mingw64"
+set "PATH=%MSYS_MINGW%\bin;%PATH%"
+
+gcc --version
+g++ --version
+where gcc
+where g++
+where mingw32-make
+
+cmake -S . -B build-freeimage-baseline ^
+  -G "MinGW Makefiles" ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+  -DCMAKE_C_COMPILER=gcc.exe ^
+  -DCMAKE_CXX_COMPILER=g++.exe ^
+  -DCMAKE_RC_COMPILER=windres.exe
+
+cmake --build build-freeimage-baseline --target FreeImage
 
 
 
