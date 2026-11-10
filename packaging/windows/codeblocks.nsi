@@ -13,6 +13,8 @@ ManifestDPIAware true
 !include StrFunc.nsh
 ${StrCase}
 ${StrTrimNewLines}
+${UnStrCase}
+${UnStrTrimNewLines}
 !insertmacro DriveSpace
 !insertmacro DirState
 
@@ -51,10 +53,13 @@ Var UnpackDir
 Var OwnUnpack
 Var CompilerRunning
 Var CompilerError
+Var CreateShortcut
+Var ShortcutCheckbox
 
 Page license
 Page directory "" "" DirectoryLeave
 Page custom CompilerPage CompilerPageLeave
+Page custom ShortcutPage ShortcutPageLeave
 Page instfiles
 
 UninstPage uninstConfirm
@@ -68,6 +73,7 @@ Function .onInit
     SetRegView 64
   ${EndIf}
   StrCpy $InstallCompiler "1"
+  StrCpy $CreateShortcut "1"
   StrCpy $ReplaceAnswer ""
   StrCpy $OwnUnpack "0"
   StrCpy $CompilerRunning "0"
@@ -363,12 +369,116 @@ compiler_fail:
   MessageBox MB_ICONEXCLAMATION "Code::Blocks was installed. The MinGW compiler was not.$\r$\n$\r$\n$CompilerError"
 FunctionEnd
 
+Function ShortcutPage
+  IfSilent shortcut_page_silent
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0 0 100% 48u "A Start Menu shortcut can be created for this installation. It opens this installation only, and it has no extra arguments.$\r$\n$\r$\nA shortcut that already opens a different Code::Blocks installation is left unchanged."
+  Pop $0
+  ${NSD_CreateCheckbox} 0 56u 100% 12u "Create a Start Menu shortcut"
+  Pop $ShortcutCheckbox
+  ${If} $CreateShortcut == "1"
+    ${NSD_Check} $ShortcutCheckbox
+  ${EndIf}
+  nsDialogs::Show
+  Return
+shortcut_page_silent:
+  Abort
+FunctionEnd
+
+Function ShortcutPageLeave
+  ${NSD_GetState} $ShortcutCheckbox $CreateShortcut
+FunctionEnd
+
+!macro DefineReadShortcutTarget un
+Function ${un}ReadShortcutTarget
+  ; $R8 receives the Start Menu shortcut target, or empty when there is none.
+  StrCpy $R8 ""
+  IfFileExists "$SMPROGRAMS\CodeBlocks.lnk" 0 rst_done_${un}
+  InitPluginsDir
+  StrCpy $R7 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+  IfFileExists "$R7" 0 rst_ps32_${un}
+  Goto rst_run_${un}
+rst_ps32_${un}:
+  StrCpy $R7 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
+  IfFileExists "$R7" 0 rst_done_${un}
+rst_run_${un}:
+  StrCpy $R9 "$PLUGINSDIR\shortcut-target.txt"
+  Delete "$R9"
+  System::Call 'kernel32::SetEnvironmentVariable(t "CB_V34_LNK", t "$SMPROGRAMS\CodeBlocks.lnk") i .r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "CB_V34_TARGETOUT", t "$R9") i .r0'
+  ${If} $0 == 0
+    Goto rst_done_${un}
+  ${EndIf}
+  nsExec::ExecToLog '"$R7" -NoProfile -NonInteractive -Command "Set-Content -LiteralPath $$env:CB_V34_TARGETOUT -Value ((New-Object -ComObject WScript.Shell).CreateShortcut($$env:CB_V34_LNK).TargetPath) -Encoding ascii"'
+  Pop $0
+  IfFileExists "$R9" 0 rst_done_${un}
+  FileOpen $1 "$R9" r
+  ${If} $1 != ""
+    FileRead $1 $R8
+    FileClose $1
+  ${EndIf}
+  Delete "$R9"
+rst_done_${un}:
+FunctionEnd
+!macroend
+!insertmacro DefineReadShortcutTarget ""
+!insertmacro DefineReadShortcutTarget "un."
+
+Function MaybeCreateShortcut
+  ${If} $CreateShortcut != "1"
+    DetailPrint "Start Menu shortcut was not requested."
+    Return
+  ${EndIf}
+  IfFileExists "$SMPROGRAMS\CodeBlocks.lnk" 0 shortcut_create
+  Call ReadShortcutTarget
+  ${StrTrimNewLines} $R8 $R8
+  ${If} $R8 == ""
+    DetailPrint "Left the existing Start Menu shortcut unchanged because its target could not be read."
+    Return
+  ${EndIf}
+  ${StrCase} $R8 $R8 "U"
+  StrCpy $0 "$INSTDIR\codeblocks.exe"
+  ${StrCase} $0 $0 "U"
+  ${If} $R8 != $0
+    DetailPrint "Left the existing Start Menu shortcut unchanged because it opens a different installation."
+    MessageBox MB_ICONINFORMATION "A Start Menu shortcut already opens a different Code::Blocks installation.$\r$\n$\r$\nThat shortcut was left unchanged."
+    Return
+  ${EndIf}
+shortcut_create:
+  CreateShortcut "$SMPROGRAMS\CodeBlocks.lnk" "$INSTDIR\codeblocks.exe"
+  DetailPrint "Created the Start Menu shortcut."
+FunctionEnd
+
+Function un.RemoveOwnedShortcut
+  IfFileExists "$SMPROGRAMS\CodeBlocks.lnk" 0 un_shortcut_done
+  Call un.ReadShortcutTarget
+  ${UnStrTrimNewLines} $R8 $R8
+  ${If} $R8 == ""
+    DetailPrint "Left the Start Menu shortcut unchanged because its target could not be read."
+    Goto un_shortcut_done
+  ${EndIf}
+  ${UnStrCase} $R8 $R8 "U"
+  StrCpy $0 "$INSTDIR\codeblocks.exe"
+  ${UnStrCase} $0 $0 "U"
+  ${If} $R8 == $0
+    Delete "$SMPROGRAMS\CodeBlocks.lnk"
+    DetailPrint "Removed the Start Menu shortcut for this installation."
+  ${Else}
+    DetailPrint "Left the Start Menu shortcut unchanged because it opens a different installation."
+  ${EndIf}
+un_shortcut_done:
+FunctionEnd
+
 Section
   Call EnsureReplaceAllowed
   SetOutPath "$INSTDIR"
   File /r "${STAGE}\*.*"
   WriteUninstaller "$INSTDIR\uninstall.exe"
-  CreateShortcut "$SMPROGRAMS\CodeBlocks.lnk" "$INSTDIR\codeblocks.exe"
+  Call MaybeCreateShortcut
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${PRODUCT}"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "${PRODUCT}"
@@ -400,7 +510,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\MinGW"
   un_nomin:
   Delete "$INSTDIR\uninstall.exe"
-  Delete "$SMPROGRAMS\CodeBlocks.lnk"
+  Call un.RemoveOwnedShortcut
   DeleteRegKey HKLM "${UNINSTKEY}"
   RMDir "$INSTDIR"
 SectionEnd
