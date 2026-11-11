@@ -1,5 +1,5 @@
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index b26b116..c014cad 100644
+index 20bb54c..9a2c719 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -197,7 +197,7 @@ if (OGREDEPS_BUILD_SDL2)
@@ -12,10 +12,38 @@ index b26b116..c014cad 100644
    elseif (APPLE AND NOT OGRE_BUILD_PLATFORM_APPLE_IOS)
      set(SDL2_BIN_NAME "SDL2.dylib")
 diff --git a/src/FreeImage/CMakeLists.txt b/src/FreeImage/CMakeLists.txt
-index 8ee0c99..7202d04 100644
+index 8ee0c99..2becce2 100644
 --- a/src/FreeImage/CMakeLists.txt
 +++ b/src/FreeImage/CMakeLists.txt
-@@ -948,9 +948,18 @@ endif()
+@@ -904,7 +904,6 @@ include_directories(Source/LibJPEG)
+ include_directories(Source/LibJXR)
+ include_directories(Source/LibJXR/jxrgluelib)
+ include_directories(Source/LibJXR/image/sys)
+-include_directories(Source/LibJXR/common/include)
+ include_directories(Source/LibJXR/image)
+ include_directories(Source/LibJXR/image/decode)
+ include_directories(Source/LibJXR/image/encode)
+@@ -924,6 +923,19 @@ include_directories(Source/OpenEXR/OpenEXRCore)
+ include_directories(Source/openjp2)
+ include_directories(../zlib)
+ 
++# common/include is private to the JXR glue. It holds LibJXR's guiddef.h
++# and the SAL stubs (wmspecstring.h). A target-wide -I makes MinGW-w64
++# #include <guiddef.h> open that copy, which never declares __mingw_uuidof.
++set_property(SOURCE
++	Source/LibJXR/jxrgluelib/JXRGlue.c
++	Source/LibJXR/jxrgluelib/JXRGlueJxr.c
++	Source/LibJXR/jxrgluelib/JXRGluePFC.c
++	Source/LibJXR/jxrgluelib/JXRMeta.c
++	Source/FreeImage/PluginJXR.cpp
++	APPEND PROPERTY INCLUDE_DIRECTORIES
++	"${CMAKE_CURRENT_SOURCE_DIR}/Source/LibJXR/common/include"
++)
++
+ add_definitions(-DOPJ_STATIC -DLIBRAW_NODLL -DLIBRAW_LIBRARY_BUILD -DFREEIMAGE_LIB -DNO_LCMS -DPNG_INTEL_SSE_OPT=1)
+ add_definitions("-DFREEIMAGERE_MAJOR_VERSION=${FREEIMAGERE_MAJOR_VERSION}")
+ add_definitions("-DFREEIMAGERE_MINOR_VERSION=${FREEIMAGERE_MINOR_VERSION}")
+@@ -948,9 +960,18 @@ endif()
  
  # LibJXR
  add_definitions( "-DDISABLE_PERF_MEASUREMENT" )
@@ -35,242 +63,6 @@ index 8ee0c99..7202d04 100644
  
  # ======== BEGIN OpenEXR definitions ========
  check_include_files(ucontext.h IEX_HAVE_UCONTEXT_H)
-diff --git a/src/FreeImage/Source/LibJXR/common/include/guiddef.h b/src/FreeImage/Source/LibJXR/common/include/guiddef.h
-deleted file mode 100644
-index 17e0ed3..0000000
---- a/src/FreeImage/Source/LibJXR/common/include/guiddef.h
-+++ /dev/null
-@@ -1,230 +0,0 @@
--//+---------------------------------------------------------------------------
--//
--// Copyright © Microsoft Corp.
--// All rights reserved.
--// 
--// Redistribution and use in source and binary forms, with or without
--// modification, are permitted provided that the following conditions are met:
--// 
--// • Redistributions of source code must retain the above copyright notice,
--//   this list of conditions and the following disclaimer.
--// • Redistributions in binary form must reproduce the above copyright notice,
--//   this list of conditions and the following disclaimer in the documentation
--//   and/or other materials provided with the distribution.
--// 
--// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
--// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
--// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
--// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
--// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
--// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
--// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
--// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
--// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
--// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
--// POSSIBILITY OF SUCH DAMAGE.
--//
--//  File:       guiddef.h
--//
--//  Contents:   GUID definition
--//
--//----------------------------------------------------------------------------
--
--#ifndef GUID_DEFINED
--#define GUID_DEFINED
--#if defined(__midl)
--typedef struct {
--    unsigned long  Data1;
--    unsigned short Data2;
--    unsigned short Data3;
--    byte           Data4[ 8 ];
--} GUID;
--#else
--typedef struct _GUID {
--#if defined(_WINDOWS_) || !__LP64__
--    unsigned long  Data1;
--#else
--    unsigned int   Data1;
--#endif
--    unsigned short Data2;
--    unsigned short Data3;
--    unsigned char  Data4[ 8 ];
--} GUID;
--#endif
--#endif
--
--#ifndef FAR
--#if defined(_WIN32) || defined(__ANSI__)
--#define FAR
--#else
--#define FAR _far
--#endif
--#endif
--
--#ifndef DECLSPEC_SELECTANY
--#if (_MSC_VER >= 1100)
--#define DECLSPEC_SELECTANY  __declspec(selectany)
--#else
--#define DECLSPEC_SELECTANY
--#endif
--#endif
--
--#ifndef EXTERN_C
--#ifdef __cplusplus
--#define EXTERN_C    extern "C"
--#else
--#define EXTERN_C    extern
--#endif
--#endif
--
--#ifdef DEFINE_GUID
--#undef DEFINE_GUID
--#endif
--
--#ifdef INITGUID
--#define DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
--        const GUID DECLSPEC_SELECTANY name \
--                = { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }
--#else
--#define DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
--    EXTERN_C const GUID FAR name
--#endif // INITGUID
--
--#define DEFINE_OLEGUID(name, l, w1, w2) DEFINE_GUID(name, l, w1, w2, 0xC0,0,0,0,0,0,0,0x46)
--
--#ifndef _GUIDDEF_H_
--#define _GUIDDEF_H_
--
--#ifndef __LPGUID_DEFINED__
--#define __LPGUID_DEFINED__
--typedef GUID *LPGUID;
--#endif
--
--#ifndef __LPCGUID_DEFINED__
--#define __LPCGUID_DEFINED__
--typedef const GUID *LPCGUID;
--#endif
--
--#ifndef __IID_DEFINED__
--#define __IID_DEFINED__
--
--typedef GUID IID;
--typedef IID *LPIID;
--#define IID_NULL            GUID_NULL
--#define IsEqualIID(riid1, riid2) IsEqualGUID(riid1, riid2)
--typedef GUID CLSID;
--typedef CLSID *LPCLSID;
--#define CLSID_NULL          GUID_NULL
--#define IsEqualCLSID(rclsid1, rclsid2) IsEqualGUID(rclsid1, rclsid2)
--typedef GUID FMTID;
--typedef FMTID *LPFMTID;
--#define FMTID_NULL          GUID_NULL
--#define IsEqualFMTID(rfmtid1, rfmtid2) IsEqualGUID(rfmtid1, rfmtid2)
--
--#ifdef __midl_proxy
--#define __MIDL_CONST
--#else
--#define __MIDL_CONST const
--#endif
--
--#ifndef _REFGUID_DEFINED
--#define _REFGUID_DEFINED
--#ifdef __cplusplus
--#define REFGUID const GUID &
--#else
--#define REFGUID const GUID * __MIDL_CONST
--#endif
--#endif
--
--#ifndef _REFIID_DEFINED
--#define _REFIID_DEFINED
--#ifdef __cplusplus
--#define REFIID const IID &
--#else
--#define REFIID const IID * __MIDL_CONST
--#endif
--#endif
--
--#ifndef _REFCLSID_DEFINED
--#define _REFCLSID_DEFINED
--#ifdef __cplusplus
--#define REFCLSID const IID &
--#else
--#define REFCLSID const IID * __MIDL_CONST
--#endif
--#endif
--
--#ifndef _REFFMTID_DEFINED
--#define _REFFMTID_DEFINED
--#ifdef __cplusplus
--#define REFFMTID const IID &
--#else
--#define REFFMTID const IID * __MIDL_CONST
--#endif
--#endif
--
--#endif // !__IID_DEFINED__
--
--#if !defined (__midl)
--#if !defined (_SYS_GUID_OPERATORS_)
--#define _SYS_GUID_OPERATORS_
--#include <string.h>
--
--// Faster (but makes code fatter) inline version...use sparingly
--#ifdef __cplusplus
--__inline int InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
--{
--   return (
--      ((unsigned long *) &rguid1)[0] == ((unsigned long *) &rguid2)[0] &&
--      ((unsigned long *) &rguid1)[1] == ((unsigned long *) &rguid2)[1] &&
--      ((unsigned long *) &rguid1)[2] == ((unsigned long *) &rguid2)[2] &&
--      ((unsigned long *) &rguid1)[3] == ((unsigned long *) &rguid2)[3]);
--}
--
--__inline int IsEqualGUID(REFGUID rguid1, REFGUID rguid2)
--{
--    return !memcmp(&rguid1, &rguid2, sizeof(GUID));
--}
--
--#else   // ! __cplusplus
--
--#define InlineIsEqualGUID(rguid1, rguid2)  \
--        (((unsigned long *) rguid1)[0] == ((unsigned long *) rguid2)[0] &&   \
--        ((unsigned long *) rguid1)[1] == ((unsigned long *) rguid2)[1] &&    \
--        ((unsigned long *) rguid1)[2] == ((unsigned long *) rguid2)[2] &&    \
--        ((unsigned long *) rguid1)[3] == ((unsigned long *) rguid2)[3])
--
--#define IsEqualGUID(rguid1, rguid2) (!memcmp(rguid1, rguid2, sizeof(GUID)))
--
--#endif  // __cplusplus
--
--#ifdef __INLINE_ISEQUAL_GUID
--#undef IsEqualGUID
--#define IsEqualGUID(rguid1, rguid2) InlineIsEqualGUID(rguid1, rguid2)
--#endif
--
--// Same type, different name
--
--#define IsEqualIID(riid1, riid2) IsEqualGUID(riid1, riid2)
--#define IsEqualCLSID(rclsid1, rclsid2) IsEqualGUID(rclsid1, rclsid2)
--
--
--#if !defined _SYS_GUID_OPERATOR_EQ_ && !defined _NO_SYS_GUID_OPERATOR_EQ_
--#define _SYS_GUID_OPERATOR_EQ_
--// A couple of C++ helpers
--
--#ifdef __cplusplus
--__inline int operator==(REFGUID guidOne, REFGUID guidOther)
--{
--    return IsEqualGUID(guidOne,guidOther);
--}
--
--__inline int operator!=(REFGUID guidOne, REFGUID guidOther)
--{
--    return !(guidOne == guidOther);
--}
--#endif
--#endif  // _SYS_GUID_OPERATOR_EQ_
--#endif  // _SYS_GUID_OPERATORS_
--#endif  // __midl
--#endif  // _GUIDDEF_H_
 diff --git a/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h b/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
 index 12862bd..d19d4e1 100644
 --- a/src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
@@ -315,52 +107,103 @@ index 24e6af0..0bd818d 100644
  #endif
  
 diff --git a/src/zziplib/zzip/plugin.c b/src/zziplib/zzip/plugin.c
-index ee578f4..0daa56a 100644
+index ee578f4..9269a79 100644
 --- a/src/zziplib/zzip/plugin.c
 +++ b/src/zziplib/zzip/plugin.c
-@@ -26,6 +26,25 @@
+@@ -1,6 +1,6 @@
+ 
+ /*
+- * Author: 
++ * Author:
+  *	Guido Draheim <guidod@gmx.de>
+  *      Mike Nordell <tamlin-@-algonet-se>
+  *
+@@ -8,7 +8,7 @@
+  * 	    All rights reserved,
+  *	    use under the restrictions of the
+  *	    Lesser GNU General Public License
+- *          or alternatively the restrictions 
++ *          or alternatively the restrictions
+  *          of the Mozilla Public License 1.1
+  */
+ 
+@@ -26,6 +26,37 @@
  #include <zzip/file.h>
  #include <zzip/format.h>
  
-+#if defined(__MINGW32__)
-+/* The MSVC CRT _read/_write take an unsigned int count. zziplib's plugin
-+ * calls use zzip_size_t, which is 64-bit on Win64. GCC 14 rejects the
-+ * incompatible function-pointer types. Adapt at the boundary. */
-+static zzip_ssize_t zzip_mingw_read(int fd, void *buf, zzip_size_t len)
++#if defined(__MINGW32__) && defined(_WIN64)
++#include <limits.h>
++
++/* Limit each transfer to INT_MAX:
++ * zzip_size_t specifies the requested number of bytes and is 64-bit on Win64
++ * (maximum about 16 EiB). zzip_ssize_t reports the number of bytes actually
++ * transferred and is a 32-bit int (maximum about 2 GiB).
++ * Therefore, limit each read/write operation to INT_MAX bytes
++ * (i.e. 2 GiB - 1 byte).
++ */
++static zzip_ssize_t
++zzip_mingw64_read(int fd, void *buf, zzip_size_t len)
 +{
-+    if (len > 0xffffffffu)
-+        len = 0xffffffffu;
-+    return (zzip_ssize_t) _read(fd, buf, (unsigned int) len);
++    unsigned int count = len > (zzip_size_t)INT_MAX
++        ? (unsigned int)INT_MAX
++        : (unsigned int)len;
++
++    return _read(fd, buf, count);
 +}
 +
-+static zzip_ssize_t zzip_mingw_write(int fd, const void *buf, zzip_size_t len)
++static zzip_ssize_t
++zzip_mingw64_write(int fd, const void *buf, zzip_size_t len)
 +{
-+    if (len > 0xffffffffu)
-+        len = 0xffffffffu;
-+    return (zzip_ssize_t) _write(fd, buf, (unsigned int) len);
++    unsigned int count = len > (zzip_size_t)INT_MAX
++        ? (unsigned int)INT_MAX
++        : (unsigned int)len;
++
++    return _write(fd, buf, count);
 +}
 +#endif
 +
  zzip_off_t
  zzip_filesize(int fd)
  {
-@@ -46,11 +65,19 @@ zzip_filesize(int fd)
+@@ -46,11 +77,19 @@ zzip_filesize(int fd)
  static const struct zzip_plugin_io default_io = {
      &open,
      &close,
-+#if defined(__MINGW32__)
-+    &zzip_mingw_read,
++#if defined(__MINGW32__) && defined(_WIN64)
++    &zzip_mingw64_read,
 +#else
      &_zzip_read,
 +#endif
      &_zzip_lseek,
      &zzip_filesize,
      1, 1,
-+#if defined(__MINGW32__)
-+    &zzip_mingw_write
++#if defined(__MINGW32__) && defined(_WIN64)
++    &zzip_mingw64_write
 +#else
      &_zzip_write
 +#endif
  };
  
  /** => zzip_init_io
+@@ -65,10 +104,10 @@ zzip_get_default_io(void)
+ }
+ 
+ /**
+- * This function initializes the users handler struct to default values 
++ * This function initializes the users handler struct to default values
+  * being the posix io functions in default configured environments.
+  *
+- * Note that the target io_handlers_t structure should be static or 
++ * Note that the target io_handlers_t structure should be static or
+  * atleast it should be kept during the lifetime of zzip operations.
+  */
+ int
+@@ -83,7 +122,7 @@ zzip_init_io(zzip_plugin_io_handlers_t io, int flags)
+     return 0;
+ }
+ 
+-/* 
++/*
+  * Local variables:
+  * c-file-style: "stroustrup"
+  * End:
