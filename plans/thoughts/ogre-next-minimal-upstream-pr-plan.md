@@ -59,87 +59,179 @@ Clean configure/build of `ogre-next-deps` with x86_64 MinGW-w64 proceeds through
 
 ---
 
-## PR 2 - ogre-next-deps: do not force LibJXR ANSI mode on Windows
+## PR 2 - ogre-next-deps: fix FreeImage build with current MinGW-w64. Status: Submitted online
 
-**Repository:** `OGRECave/ogre-next-deps`
+Repository: OGRECave/ogre-next-deps
 
-**Scope:** `src/FreeImage/CMakeLists.txt` only.
+Scope:
+- src/FreeImage/CMakeLists.txt
+- src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
 
-Prefer separating the two conceptual fixes if maintainers accept very small PRs.
+Implemented as one PR with three commits.
 
-### PR 2a - Do not define `__ANSI__` for WIN32
+### Commit 1 - Configure LibJXR correctly for MinGW-w64
+
+Commit:
+7a5a0b6
+
+File:
+src/FreeImage/CMakeLists.txt
+
+Two related LibJXR platform-selection changes are made in this commit.
+
+1. Do not define __ANSI__ on Windows
 
 Change:
 
-```cmake
-if( NOT MSVC )
-```
+    if( NOT MSVC )
 
 to:
 
-```cmake
-if( NOT MSVC AND NOT WIN32 )
-```
+    if( NOT MSVC AND NOT WIN32 )
 
-Suggested title:
+Reason:
 
-```text
-Do not select LibJXR ANSI path on Windows
-```
+LibJXR's __ANSI__ switch selects its non-Windows platform header. MinGW is
+a WIN32 target, and defining both WIN32 and __ANSI__ activates incompatible
+platform definitions. In particular, ansi.h redefines UINTPTR_T/INTPTR_T as
+32-bit int on 64-bit Windows.
 
-Reason: `WIN32` already selects the Windows/x86 path. Defining `__ANSI__` as well selects `ansi.h`, which supplies incompatible pointer-size definitions on 64-bit Windows.
-
-### PR 2b - Define LibJXR's existing MinGW-w64 switch
+2. Select LibJXR's existing MinGW-w64 code path
 
 Add:
 
-```cmake
-if( MINGW )
-    add_definitions( "-D__MINGW64_TOOLCHAIN__" )
-endif()
-```
+    if( MINGW )
+        add_definitions( "-D__MINGW64_TOOLCHAIN__" )
+    endif()
 
-Suggested title:
+Reason:
 
-```text
-Select LibJXR MinGW-w64 code path in CMake build
-```
+LibJXR already contains a __MINGW64_TOOLCHAIN__ code path. FreeImage's
+existing MinGW-w64 makefiles define this switch, but the CMake build did not.
+Without it, LibJXR selects code that conflicts with declarations provided by
+the MinGW-w64 CRT.
 
-Reason: LibJXR already contains this platform switch, and FreeImage's MinGW makefile uses it. The CMake build should select the same path.
+Result:
 
-**Upstream priority:** high, but provide the exact compiler error or existing makefile precedent in each PR description.
+The initial failure in FreeImage.cpp is resolved and the build proceeds to
+the next MinGW-w64-specific failure.
 
----
+### Commit 2 - Keep LibJXR's private guiddef.h scoped to LibJXR sources
 
-## PR 3 - ogre-next-deps: Imath includes the type declarations it uses
+Commit:
+2186a10
 
-**Repository:** `OGRECave/ogre-next-deps`
+File:
+src/FreeImage/CMakeLists.txt
 
-**Scope:** one line in `src/FreeImage/Source/OpenEXR/Imath/ImathVec.h`.
+Remove LibJXR's private common/include directory from the target-wide include
+path and apply it only to the LibJXR source files that require it.
+
+Reason:
+
+LibJXR contains its own private guiddef.h under common/include. MinGW-w64 also
+provides the Windows system guiddef.h.
+
+Making common/include a target-wide include directory allows LibJXR's private
+guiddef.h to shadow the MinGW-w64 Windows header outside LibJXR. This breaks
+code that expects the MinGW-w64 definitions, in particular __mingw_uuidof.
+
+The include directory is therefore scoped with a source-file
+INCLUDE_DIRECTORIES property to:
+
+    Source/LibJXR/jxrgluelib/JXRGlue.c
+    Source/LibJXR/jxrgluelib/JXRGlueJxr.c
+    Source/LibJXR/jxrgluelib/JXRGluePFC.c
+    Source/LibJXR/jxrgluelib/JXRMeta.c
+    Source/FreeImage/PluginJXR.cpp
+
+This preserves LibJXR's private header for the sources that need it without
+allowing it to shadow the Windows system header elsewhere in FreeImage.
+
+Result:
+
+Compilation proceeds through most of FreeImage and its dependencies and
+reaches the bundled OpenEXR/Imath code.
+
+### Commit 3 - Include fixed-width integer declarations in bundled Imath
+
+Commit:
+e2d12b1
+
+File:
+src/FreeImage/Source/OpenEXR/Imath/ImathVec.h
 
 Add:
 
-```cpp
-#include <cstdint>
-```
+    #include <cstdint>
 
-### Suggested title
+Reason:
 
-```text
-Include cstdint in bundled ImathVec.h
-```
+ImathVec.h uses fixed-width integer types but relied on those declarations
+being provided transitively by other headers. This happens to work with MSVC
+but fails with current MinGW-w64/GCC.
 
-### Suggested description
+Including <cstdint> directly makes the dependency explicit and portable.
 
-```text
-ImathVec.h uses fixed-width integer types but relies on a transitive include
-for their declarations. Include <cstdint> directly so the bundled Imath code
-builds with current GCC.
-```
+Result:
 
-**Upstream priority:** very high. Classic one-line header hygiene fix.
+The FreeImage target builds successfully with the tested MinGW-w64
+toolchains.
 
----
+### PR title
+
+Fix FreeImage build on mingw64 (minor LibJXR configuration and OpenEXR header inclusion changes)
+
+### Validation
+
+The failure sequence was reproduced from the unmodified baseline using the
+MSYS2 MinGW-w64 toolchain.
+
+Toolchain:
+
+    set "MSYS_MINGW=D:\msys64\mingw64"
+    set "PATH=%MSYS_MINGW%\bin;%PATH%"
+
+Configuration:
+
+    cmake -S . -B build-freeimage-baseline ^
+      -G "MinGW Makefiles" ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
+      -DCMAKE_C_COMPILER=gcc.exe ^
+      -DCMAKE_CXX_COMPILER=g++.exe ^
+      -DCMAKE_RC_COMPILER=windres.exe
+
+Build:
+
+    cmake --build build-freeimage-baseline --target FreeImage
+
+Observed progression:
+
+1. Baseline:
+   FreeImage.cpp fails while processing the MinGW-w64 Windows headers, with
+   __mingw_uuidof-related errors. This is consistent with LibJXR's ANSI
+   configuration being selected alongside the Windows configuration.
+
+2. After 7a5a0b6:
+   FreeImage.cpp compiles. The next failure occurs around UUID definitions in
+   PluginRAW.cpp and can be traced to LibJXR's private guiddef.h escaping its
+   intended scope.
+
+3. After 2186a10:
+   Compilation proceeds through most of FreeImage and its dependencies to
+   ImathColorAlgo.cpp/ImathVec.h, where int64_t is not defined and GCC notes
+   that <cstdint> is required.
+
+4. After e2d12b1:
+   The FreeImage target builds successfully.
+
+The same failure/success progression was also tested with the MinGW toolchain
+distributed with Code::Blocks 25.03.
+
+Upstream priority: high.
+
+Status: Submitted online.
 
 ## PR 4 - ogre-next-deps: Remotery Winsock linkage
 
@@ -463,6 +555,9 @@ cmake -S . -B build-freeimage-baseline ^
   -DCMAKE_RC_COMPILER=windres.exe
 
 cmake --build build-freeimage-baseline --target FreeImage
+
+
+Without PR2 commits, fails at ogre-next-deps-pr1\src\FreeImage\Source\FreeImage\FreeImage.cpp with '__mingw_uuidof' not declared errors
 
 
 
