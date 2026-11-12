@@ -120,6 +120,19 @@ Here we get our source from internet. We want an exactly identical starting poin
 
 5. Correct the dependency source code ======================================================s
 
+Apply patch
+
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
+
+copy /Y D:\Users\thoma\Documents\git\codeblocks-macos\src\plugins\scriptedwizard\resources\patches\ogre-next-deps-mingw.patch ogre-next-deps
+
+cd /d D:\Users\thoma\Documents\git\ogre-next-test\ogre-next-deps
+
+git apply ogre-next-deps-mingw.patch
+
+
+======================== If you want to apply the patch by hand, here's the instructions ======================================
+
 In this section we have to do little updates to the code. These are related to Windows 64 bits and the specific mingw environment from Code::Blocks that we are using. It won't run without these changes.
 
 Use a text editor. Make only the edits in this section, then save each file.
@@ -325,6 +338,9 @@ This one goes the other way around: Windows has increased integer size, but we u
 
 More precisely: The old zziplib interface uses a 64-bit length on this platform, while the Windows _read and _write functions accept a 32-bit count. Small wrapper functions make that conversion explicitly. A single _read or _write call is therefore limited to 0xffffffff bytes, which is already far larger than the files used by this example.
 
+
+
+
 5.8 Check the dependency edits
 
 This is to check again that all the edits have been made.
@@ -345,6 +361,9 @@ src/Remotery/src/Remotery.c
 src/zziplib/zzip/plugin.c
 
 It should be exactly those files and nothing else.
+
+
+=========================== end of instructions for manual patching ===============================================
 
 6. Configure, build, and install the dependencies =========================================
 
