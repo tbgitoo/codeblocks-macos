@@ -1,4 +1,9 @@
 #!/usr/bin/make -f
+
+# CDBS writes debian/compat from this value when the file is missing.
+# Level 7 is what that default used to be, and current debhelper rejects it.
+DH_COMPAT := 10
+
 include /usr/share/cdbs/1/class/autotools.mk
 include /usr/share/cdbs/1/rules/debhelper.mk
 

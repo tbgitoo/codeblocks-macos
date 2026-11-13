@@ -62,7 +62,7 @@ Run the commands below from the root of the source tree.
    while:
 
     DEB_BUILD_OPTIONS=parallel=$(nproc) dpkg-buildpackage -us -uc -b
-
+   
    The .deb files are written in the parent directory. Their version comes
    from the first entry in debian/changelog. With the changelog entry
    "20.03svn12027" the files are named like:
