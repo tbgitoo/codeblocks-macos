@@ -548,7 +548,7 @@ The example must use the installed SDK. Do not add ogre-next or ogre-next\build 
 11. Run the test program ========================================================
 
 Run:
-
+cd /d D:\Users\thoma\Documents\git\ogre-next-test
 copy /Y window-test\build\window-test.exe install\bin\Release\window-test.exe
 copy /Y window-test\ogrehead.mesh install\bin\Release\ogrehead.mesh
 cd /d D:\Users\thoma\Documents\git\ogre-next-test\install\bin\Release

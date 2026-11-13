@@ -29,7 +29,9 @@
 
 #include "OgreHlmsManager.h"
 #include "OgreHlmsPbs.h"
+#include "OgreHlmsPbsDatablock.h"
 #include "OgreHlmsUnlit.h"
+#include "OgreHlmsUnlitDatablock.h"
 
 #include "Compositor/OgreCompositorManager2.h"
 #include "OgreWindowEventUtilities.h"
@@ -155,6 +157,43 @@ static Ogre::RenderSystem *selectRenderSystem( Ogre::Root *root )
     return 0;
 }
 
+static Ogre::HlmsPbsDatablock *createPbsDatablock( const char *name )
+{
+    using namespace Ogre;
+
+    HlmsPbs *hlmsPbs = static_cast<HlmsPbs *>(
+        Root::getSingleton().getHlmsManager()->getHlms( HLMS_PBS ) );
+    return static_cast<HlmsPbsDatablock *>( hlmsPbs->createDatablock(
+        name, name, HlmsMacroblock(), HlmsBlendblock(), HlmsParamVec() ) );
+}
+
+// ogrehead.mesh names v1 materials. Items resolve those names as HLMS
+// datablocks, so define them before the mesh is instantiated.
+static void registerOgreHeadMaterials()
+{
+    using namespace Ogre;
+
+    HlmsPbsDatablock *skin = createPbsDatablock( "Ogre/Skin" );
+    skin->setTexture( PBSM_DIFFUSE, "GreenSkin.jpg" );
+    skin->setRoughness( 0.8f );
+    skin->setFresnel( Vector3( 0.03f ), false );
+
+    HlmsPbsDatablock *eyes = createPbsDatablock( "Ogre/Eyes" );
+    eyes->setDiffuse( Vector3( 0.9f, 0.95f, 0.85f ) );
+    eyes->setRoughness( 0.12f );
+    eyes->setFresnel( Vector3( 0.05f ), false );
+
+    HlmsPbsDatablock *earring = createPbsDatablock( "Ogre/Earring" );
+    earring->setDiffuse( Vector3( 1.0f, 0.72f, 0.18f ) );
+    earring->setMetalness( 1.0f );
+    earring->setRoughness( 0.22f );
+
+    HlmsPbsDatablock *tusks = createPbsDatablock( "Ogre/Tusks" );
+    tusks->setTexture( PBSM_DIFFUSE, "tusk.jpg" );
+    tusks->setRoughness( 0.45f );
+    tusks->setFresnel( Vector3( 0.04f ), false );
+}
+
 static Ogre::Item *createOgreHead( Ogre::SceneManager *sceneManager )
 {
     using namespace Ogre;
@@ -173,6 +212,43 @@ static Ogre::Item *createOgreHead( Ogre::SceneManager *sceneManager )
         true, true, true );
 
     return sceneManager->createItem( meshV2, SCENE_DYNAMIC );
+}
+
+// Prefab_Sphere has radius 50. This scale makes an orb about 0.4 units across.
+static const Ogre::Real kLightBallScale = 0.008f;
+
+static Ogre::MeshPtr loadLightSphere()
+{
+    using namespace Ogre;
+
+    v1::MeshPtr sphereV1 = v1::MeshManager::getSingleton().getByName(
+        "Prefab_Sphere", ResourceGroupManager::INTERNAL_RESOURCE_GROUP_NAME );
+
+    return MeshManager::getSingleton().createByImportingV1(
+        "light-sphere.mesh", ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
+        sphereV1.get(), true, true, false );
+}
+
+static void attachLightBall( Ogre::SceneManager *sceneManager, Ogre::SceneNode *lightNode,
+                             const Ogre::MeshPtr &sphereMesh, const char *datablockName,
+                             const Ogre::ColourValue &colour )
+{
+    using namespace Ogre;
+
+    HlmsUnlit *hlmsUnlit = static_cast<HlmsUnlit *>(
+        Root::getSingleton().getHlmsManager()->getHlms( HLMS_UNLIT ) );
+    HlmsUnlitDatablock *datablock = static_cast<HlmsUnlitDatablock *>(
+        hlmsUnlit->createDatablock( datablockName, datablockName, HlmsMacroblock(),
+                                    HlmsBlendblock(), HlmsParamVec() ) );
+    datablock->setUseColour( true );
+    datablock->setColour( colour );
+
+    Item *ball = sceneManager->createItem( sphereMesh, SCENE_DYNAMIC );
+    ball->setDatablock( datablock );
+
+    SceneNode *ballNode = lightNode->createChildSceneNode( SCENE_DYNAMIC );
+    ballNode->setScale( kLightBallScale, kLightBallScale, kLightBallScale );
+    ballNode->attachObject( ball );
 }
 
 int main( int argc, const char *argv[] )
@@ -210,14 +286,22 @@ int main( int argc, const char *argv[] )
         registerHlms();
 
         ResourceGroupManager &resourceManager = ResourceGroupManager::getSingleton();
+        const String group = ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME;
+        resourceManager.addResourceLocation( ".", "FileSystem", group, false );
+        // Textures shipped with the installed SDK. This path is relative to
+        // install/bin/Release, which is the working directory this sample expects.
         resourceManager.addResourceLocation(
-            ".", "FileSystem",
-            ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, false );
-        resourceManager.initialiseAllResourceGroups();
+            "../../Media/materials/textures", "FileSystem", group, false );
+        resourceManager.initialiseAllResourceGroups( true );
+        registerOgreHeadMaterials();
 
         const size_t numThreads = 1u;
         SceneManager *sceneManager =
             root->createSceneManager( ST_GENERIC, numThreads, "LightShowScene" );
+
+        // Directional lights are baked into the PBS shader. Point lights are
+        // only applied when clustered forward lighting is enabled.
+        sceneManager->setForwardClustered( true, 16, 8, 24, 96, 0, 0, 1.0f, 200.0f );
 
         sceneManager->setAmbientLight(
             ColourValue( 0.03f, 0.03f, 0.05f ),
@@ -232,56 +316,71 @@ int main( int argc, const char *argv[] )
         ogreHeadNode->setPosition( 0.0f, 0.0f, 0.0f );
         ogreHeadNode->setScale( 0.12f, 0.12f, 0.12f );
 
+        // setDirection writes the parent SceneNode. Attach first.
         Light *fillLight = sceneManager->createLight();
-        fillLight->setType( Light::LT_DIRECTIONAL );
-        fillLight->setDirection( Vector3( -1.0f, -1.0f, -1.0f ).normalisedCopy() );
-        fillLight->setDiffuseColour( 0.20f, 0.22f, 0.28f );
-        fillLight->setSpecularColour( 0.20f, 0.22f, 0.28f );
-
         SceneNode *fillLightNode =
             sceneManager->getRootSceneNode( SCENE_DYNAMIC )
                 ->createChildSceneNode( SCENE_DYNAMIC );
         fillLightNode->attachObject( fillLight );
+        fillLight->setType( Light::LT_DIRECTIONAL );
+        fillLight->setDirection( Vector3( -1.0f, -1.0f, -1.0f ).normalisedCopy() );
+        fillLight->setDiffuseColour( 0.14f, 0.15f, 0.18f );
+        fillLight->setSpecularColour( 0.08f, 0.09f, 0.11f );
+        fillLight->setPowerScale( 1.0f );
+
+        const MeshPtr lightSphere = loadLightSphere();
+        const ColourValue redColour( 1.0f, 0.05f, 0.02f );
+        const ColourValue blueColour( 0.05f, 0.25f, 1.0f );
+        const ColourValue goldColour( 1.0f, 0.62f, 0.12f );
+
+        // Linear brightness of each point light. The shader multiplies this
+        // into the colour, then divides by (0.5 + quadratic * distance^2).
+        // This window does not tonemap, so values much above 1 clip to the
+        // same saturated colour. The radius only changes that distance falloff.
+        const Real pointLightPower = 0.5f;
 
         Light *redLight = sceneManager->createLight();
         redLight->setType( Light::LT_POINT );
-        redLight->setDiffuseColour( 1.0f, 0.02f, 0.01f );
-        redLight->setSpecularColour( 1.0f, 0.02f, 0.01f );
-        redLight->setPowerScale( 8.0f );
-        redLight->setAttenuationBasedOnRadius( 10.0f, 0.01f );
+        redLight->setDiffuseColour( redColour );
+        redLight->setSpecularColour( redColour );
+        redLight->setPowerScale( pointLightPower );
+        redLight->setAttenuationBasedOnRadius( 8.0f, 0.05f );
 
         SceneNode *redLightNode =
             sceneManager->getRootSceneNode( SCENE_DYNAMIC )
                 ->createChildSceneNode( SCENE_DYNAMIC );
         redLightNode->attachObject( redLight );
+        attachLightBall( sceneManager, redLightNode, lightSphere, "LightBall/Red", redColour );
 
         Light *blueLight = sceneManager->createLight();
         blueLight->setType( Light::LT_POINT );
-        blueLight->setDiffuseColour( 0.01f, 0.08f, 1.0f );
-        blueLight->setSpecularColour( 0.01f, 0.08f, 1.0f );
-        blueLight->setPowerScale( 9.0f );
-        blueLight->setAttenuationBasedOnRadius( 10.0f, 0.01f );
+        blueLight->setDiffuseColour( blueColour );
+        blueLight->setSpecularColour( blueColour );
+        blueLight->setPowerScale( pointLightPower );
+        blueLight->setAttenuationBasedOnRadius( 8.0f, 0.05f );
 
         SceneNode *blueLightNode =
             sceneManager->getRootSceneNode( SCENE_DYNAMIC )
                 ->createChildSceneNode( SCENE_DYNAMIC );
         blueLightNode->attachObject( blueLight );
+        attachLightBall( sceneManager, blueLightNode, lightSphere, "LightBall/Blue", blueColour );
 
         Light *goldLight = sceneManager->createLight();
         goldLight->setType( Light::LT_POINT );
-        goldLight->setDiffuseColour( 1.0f, 0.55f, 0.12f );
-        goldLight->setSpecularColour( 1.0f, 0.55f, 0.12f );
-        goldLight->setPowerScale( 7.0f );
-        goldLight->setAttenuationBasedOnRadius( 10.0f, 0.01f );
+        goldLight->setDiffuseColour( goldColour );
+        goldLight->setSpecularColour( goldColour );
+        goldLight->setPowerScale( pointLightPower );
+        goldLight->setAttenuationBasedOnRadius( 8.0f, 0.05f );
 
         SceneNode *goldLightNode =
             sceneManager->getRootSceneNode( SCENE_DYNAMIC )
                 ->createChildSceneNode( SCENE_DYNAMIC );
         goldLightNode->attachObject( goldLight );
+        attachLightBall( sceneManager, goldLightNode, lightSphere, "LightBall/Gold", goldColour );
 
         Camera *camera = sceneManager->createCamera( "Main Camera" );
-        camera->setPosition( Vector3( 0.0f, 1.5f, 8.0f ) );
-        camera->lookAt( Vector3( 0.0f, 0.5f, 0.0f ) );
+        camera->setPosition( Vector3( 0.0f, 2.4f, 16.0f ) );
+        camera->lookAt( Vector3( 0.0f, 1.0f, 0.0f ) );
         camera->setNearClipDistance( 0.2f );
         camera->setFarClipDistance( 1000.0f );
         camera->setAutoAspectRatio( true );
@@ -324,19 +423,19 @@ int main( int argc, const char *argv[] )
             const float goldAngle = elapsedTime * 0.37f;
 
             redLightNode->setPosition(
-                std::cos( redAngle ) * 4.0f,
-                1.3f + std::sin( redAngle * 1.7f ) * 1.4f,
-                std::sin( redAngle ) * 4.0f );
+                std::cos( redAngle ) * 6.5f,
+                1.6f + std::sin( redAngle * 1.7f ) * 1.6f,
+                std::sin( redAngle ) * 6.5f );
 
             blueLightNode->setPosition(
-                std::cos( blueAngle ) * 5.0f,
-                0.5f + std::sin( blueAngle * 1.3f ) * 2.2f,
-                std::sin( blueAngle ) * 5.0f );
+                std::cos( blueAngle ) * 8.0f,
+                1.2f + std::sin( blueAngle * 1.3f ) * 2.4f,
+                std::sin( blueAngle ) * 8.0f );
 
             goldLightNode->setPosition(
-                std::cos( goldAngle ) * 3.2f,
-                3.2f + std::sin( goldAngle * 2.1f ) * 0.9f,
-                std::sin( goldAngle ) * 3.2f );
+                std::cos( goldAngle ) * 5.2f,
+                3.4f + std::sin( goldAngle * 2.1f ) * 1.0f,
+                std::sin( goldAngle ) * 5.2f );
 
             if( !quit )
                 quit |= !root->renderOneFrame();
