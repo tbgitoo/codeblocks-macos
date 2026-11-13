@@ -7,3 +7,98 @@ during the build), you can comment out the call
 to "./updateDocs.sh" in the rules-script, and remove the entries
 for the doc-packages and the build-dependency for "pngnq" and "wget" in
 "debian/control".
+
+
+Building the Debian packages on Debian or Ubuntu
+-------------------------------------------------
+
+The installable distribution is a set of .deb packages. They are built
+from this tree with dpkg-buildpackage. debian/rules configures the
+autotools build with --prefix=/usr and --with-contrib-plugins=all.
+Run the commands below from the root of the source tree.
+
+1. Install the packaging tools and the wxWidgets development package.
+   ./bootstrap needs wxwin.m4 from that package before the later
+   "apt build-dep" step installs the rest of the dependencies.
+
+    sudo apt update
+    sudo apt install build-essential fakeroot devscripts debhelper cdbs \
+        automake autoconf libtool pkg-config
+
+   Also install the wxWidgets package for this release. GTK is pulled in
+   with it:
+
+    Debian stretch, buster (9, 10)      sudo apt install libwxgtk3.0-dev
+    Debian bullseye (11),
+    Ubuntu focal (20.04), jammy (22.04) sudo apt install libwxgtk3.0-gtk3-dev
+    Newer Debian and Ubuntu releases    sudo apt install libwxgtk3.2-dev
+
+2. Generate the autotools files, then debian/control. ./bootstrap deletes
+   debian/control, so the setup script must run after it:
+
+    ./bootstrap
+    ./debian/setup_control.sh detect
+
+   The setup script reads /etc/os-release and fills debian/control from
+   debian/control.in. It selects the wxWidgets and GTK build dependencies
+   for the running release:
+
+    Debian stretch, buster (9, 10)     libwxgtk3.0-dev, libgtk2.0-dev
+    Debian bullseye (11),
+    Ubuntu focal (20.04), jammy (22.04) libwxgtk3.0-gtk3-dev, libgtk-3-dev
+    Newer Debian and Ubuntu releases   libwxgtk3.2-dev, libgtk-3-dev
+
+   To force a codename instead of detecting one, pass it as the argument,
+   for example: ./debian/setup_control.sh jammy
+
+3. Install the build dependencies listed in the generated debian/control
+   (wxGTK, GTK, Boost, hunspell, bzip2, zlib, fontconfig, glib, and the
+   rest of Build-Depends):
+
+    sudo apt build-dep .
+
+4. Build the binary packages only. -b skips the source tarball. -us -uc
+   skips signing. The compile includes every contrib plugin and takes a
+   while:
+
+    DEB_BUILD_OPTIONS=parallel=$(nproc) dpkg-buildpackage -us -uc -b
+
+   The .deb files are written in the parent directory. Their version comes
+   from the first entry in debian/changelog. With the changelog entry
+   "20.03svn12027" the files are named like:
+
+    ../codeblocks_20.03svn12027_amd64.deb
+    ../codeblocks-common_20.03svn12027_all.deb
+    ../libcodeblocks0_20.03svn12027_amd64.deb
+    ../codeblocks-contrib_20.03svn12027_amd64.deb
+    ../codeblocks-contrib-common_20.03svn12027_all.deb
+    ../codeblocks-libwxcontrib0_20.03svn12027_amd64.deb
+    ../libwxsmithlib0_20.03svn12027_amd64.deb
+
+   Architecture-independent packages use _all. The architecture suffix
+   follows the machine (amd64, arm64, and so on). Debug-symbol, -dev, and
+   -headers packages are produced as well.
+
+5. Install the IDE and the contrib plugins with apt, so dependencies
+   between the packages are resolved. From the parent directory, and
+   substituting the version and architecture from the files just built:
+
+    sudo apt install \
+        ./codeblocks_20.03svn12027_amd64.deb \
+        ./codeblocks-common_20.03svn12027_all.deb \
+        ./libcodeblocks0_20.03svn12027_amd64.deb \
+        ./codeblocks-contrib_20.03svn12027_amd64.deb \
+        ./codeblocks-contrib-common_20.03svn12027_all.deb \
+        ./codeblocks-libwxcontrib0_20.03svn12027_amd64.deb \
+        ./libwxsmithlib0_20.03svn12027_amd64.deb
+
+   Omit the codeblocks-contrib, codeblocks-contrib-common,
+   codeblocks-libwxcontrib0, and libwxsmithlib0 packages to install the
+   core IDE only. The *-dev, *-headers, and *-dbg packages are for
+   writing plugins and for debugging.
+
+If the build stops because debian/compat is missing, create that file
+with a single line containing 10 and run dpkg-buildpackage again. Compat
+level 13 rejects installed files that no debian/*.install list claims.
+The codeblocks-headers binary package has no .install file, so that one
+package can be empty. The IDE packages do not need it.

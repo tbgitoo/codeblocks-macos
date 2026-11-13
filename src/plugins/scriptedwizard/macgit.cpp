@@ -109,9 +109,10 @@ bool RunVersion(const wxString& executable,
 {
     wxProcess process(wxPROCESS_REDIRECT);
 
-    const wxChar* argv[3];
-    argv[0] = executable.wx_str();
-    argv[1] = wxT("--version");
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[3];
+    argv[0] = const_cast<wxChar*>(executable.wx_str());
+    argv[1] = const_cast<wxChar*>(wxT("--version"));
     argv[2] = nullptr;
 
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
@@ -428,15 +429,16 @@ public:
         // Do not allow Git to ask for credentials interactively.
         env.env[wxT("GIT_TERMINAL_PROMPT")] = wxT("0");
 
-        const wxChar* argv[9];
-        argv[0] = m_executable.wx_str();
-        argv[1] = wxT("clone");
-        argv[2] = wxT("--branch");
-        argv[3] = m_tag.wx_str();
-        argv[4] = wxT("--depth");
-        argv[5] = wxT("1");
-        argv[6] = m_url.wx_str();
-        argv[7] = m_destination.wx_str();
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[9];
+        argv[0] = const_cast<wxChar*>(m_executable.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("clone"));
+        argv[2] = const_cast<wxChar*>(wxT("--branch"));
+        argv[3] = const_cast<wxChar*>(m_tag.wx_str());
+        argv[4] = const_cast<wxChar*>(wxT("--depth"));
+        argv[5] = const_cast<wxChar*>(wxT("1"));
+        argv[6] = const_cast<wxChar*>(m_url.wx_str());
+        argv[7] = const_cast<wxChar*>(m_destination.wx_str());
         argv[8] = nullptr;
 
         m_pid = wxExecute(

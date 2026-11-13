@@ -43,6 +43,15 @@ else
 	LCD=""
 fi
 
+# A plain Git clone has no git-svn-id line, so REV is empty. The numeric
+# comparison below is run by dash on Debian/Ubuntu and rejects an empty value.
+case "$REV" in
+	''|*[!0-9]*)
+		echo "No numeric Subversion revision found; using 0"
+		REV=0
+		;;
+esac
+
 echo "Found revision: '${REV}' '${LCD}'"
 
 if [ "x$REV" != "x$OLD_REV" -o ! -r $REV_FILE ]; then
@@ -55,11 +64,14 @@ if [ "x$REV" != "x$OLD_REV" -o ! -r $REV_FILE ]; then
 	if [ "x$DCH" != "x" ]; then
 		if [ -x "$DCH" ]; then
 			AKT_REV=`sed -e 's/.*svn\([0-9]*\).*/\1/' -e 'q' < debian/changelog`
-			if [ $REV -gt $AKT_REV ]; then
+			case "$AKT_REV" in
+				''|*[!0-9]*) AKT_REV=0 ;;
+			esac
+			if [ "$REV" -gt "$AKT_REV" ]; then
 				dch -v 25.03svn$REV "New svn revision"
 			fi
 		fi
-	else
+	elif [ "$REV" -gt 0 ]; then
 		mv debian/changelog debian/changelog.tmp
 		sed "1 s/(25.03svn[^-)]*/(25.03svn$REV/" < debian/changelog.tmp > debian/changelog
 		rm debian/changelog.tmp

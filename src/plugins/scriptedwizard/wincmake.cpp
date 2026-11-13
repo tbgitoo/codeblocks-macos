@@ -160,9 +160,10 @@ bool RunVersion(const wxString& executable,
 {
     wxProcess process(wxPROCESS_REDIRECT);
 
-    const wxChar* argv[3];
-    argv[0] = executable.wx_str();
-    argv[1] = wxT("--version");
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[3];
+    argv[0] = const_cast<wxChar*>(executable.wx_str());
+    argv[1] = const_cast<wxChar*>(wxT("--version"));
     argv[2] = nullptr;
 
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
@@ -489,11 +490,12 @@ public:
         if (!compilerBin.empty())
             PrependCompilerBin(env, compilerBin);
 
-        // wxExecute needs a null-terminated argv. The strings stay in m_args.
-        const wxChar** argv = new const wxChar*[m_args.GetCount() + 1];
+        // wxExecute needs a null-terminated argv. wxWidgets 3.0 takes wchar_t**.
+        // The strings stay in m_args and are not modified.
+        wxChar** argv = new wxChar*[m_args.GetCount() + 1];
 
         for (size_t i = 0; i < m_args.GetCount(); ++i)
-            argv[i] = m_args[i].wx_str();
+            argv[i] = const_cast<wxChar*>(m_args[i].wx_str());
 
         argv[m_args.GetCount()] = nullptr;
 

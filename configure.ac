@@ -1,4 +1,4 @@
-AC_PREREQ([2.73])
+AC_PREREQ([2.71])
 
 m4_include([revision.m4])
 

@@ -1271,13 +1271,14 @@ OgreImportResult RunOgreAssimpImport(
     const wxString destination = request.destination;
     const wxString logArgument = logFile;
 
-    const wxChar* argv[6];
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[6];
 
-    argv[0] = converter.wx_str();
-    argv[1] = wxT("-log");
-    argv[2] = logArgument.wx_str();
-    argv[3] = source.wx_str();
-    argv[4] = destination.wx_str();
+    argv[0] = const_cast<wxChar*>(converter.wx_str());
+    argv[1] = const_cast<wxChar*>(wxT("-log"));
+    argv[2] = const_cast<wxChar*>(logArgument.wx_str());
+    argv[3] = const_cast<wxChar*>(source.wx_str());
+    argv[4] = const_cast<wxChar*>(destination.wx_str());
     argv[5] = nullptr;
 
     const FileStamp meshBefore = StampFile(result.meshPath);

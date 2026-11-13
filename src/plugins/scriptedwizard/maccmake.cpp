@@ -122,10 +122,11 @@ bool RunVersion(
 {
     wxProcess process(wxPROCESS_REDIRECT);
 
-    const wxChar* argv[3];
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[3];
 
-    argv[0] = executable.wx_str();
-    argv[1] = wxT("--version");
+    argv[0] = const_cast<wxChar*>(executable.wx_str());
+    argv[1] = const_cast<wxChar*>(wxT("--version"));
     argv[2] = nullptr;
 
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
@@ -570,17 +571,18 @@ public:
         const wxString pluginsPathArgument =
             wxT("-DOGRE_PLUGINS_PATH=lib/macosx/Release");
 
-        const wxChar* argv[10];
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[10];
 
-        argv[0] = executable.wx_str();
-        argv[1] = wxT("-S");
-        argv[2] = source.wx_str();
-        argv[3] = wxT("-B");
-        argv[4] = build.wx_str();
-        argv[5] = buildTypeArgument.wx_str();
-        argv[6] = installArgument.wx_str();
-        argv[7] = installRpathArgument.wx_str();
-        argv[8] = pluginsPathArgument.wx_str();
+        argv[0] = const_cast<wxChar*>(executable.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("-S"));
+        argv[2] = const_cast<wxChar*>(source.wx_str());
+        argv[3] = const_cast<wxChar*>(wxT("-B"));
+        argv[4] = const_cast<wxChar*>(build.wx_str());
+        argv[5] = const_cast<wxChar*>(buildTypeArgument.wx_str());
+        argv[6] = const_cast<wxChar*>(installArgument.wx_str());
+        argv[7] = const_cast<wxChar*>(installRpathArgument.wx_str());
+        argv[8] = const_cast<wxChar*>(pluginsPathArgument.wx_str());
         argv[9] = nullptr;
 
         m_pid = wxExecute(
@@ -912,13 +914,14 @@ public:
                 wxT("%d"),
                 jobs);
 
-        const wxChar* argv[6];
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[6];
 
-        argv[0] = executable.wx_str();
-        argv[1] = wxT("--build");
-        argv[2] = build.wx_str();
-        argv[3] = wxT("--parallel");
-        argv[4] = jobsArgument.wx_str();
+        argv[0] = const_cast<wxChar*>(executable.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("--build"));
+        argv[2] = const_cast<wxChar*>(build.wx_str());
+        argv[3] = const_cast<wxChar*>(wxT("--parallel"));
+        argv[4] = const_cast<wxChar*>(jobsArgument.wx_str());
         argv[5] = nullptr;
 
         m_pid =
@@ -1376,11 +1379,12 @@ public:
             return false;
         }
 
-        const wxChar* argv[4];
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[4];
 
-        argv[0] = executable.wx_str();
-        argv[1] = wxT("--install");
-        argv[2] = build.wx_str();
+        argv[0] = const_cast<wxChar*>(executable.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("--install"));
+        argv[2] = const_cast<wxChar*>(build.wx_str());
         argv[3] = nullptr;
 
         m_pid =
