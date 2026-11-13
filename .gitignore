@@ -88,4 +88,18 @@ debian/codeblocks-contrib-common/
 debian/codeblocks-headers/
 debian/codeblocks-wxcontrib-headers/
 debian/wxsmith-headers/
+debian/codeblocks-contrib-dbg/
+debian/codeblocks-contrib/
+debian/codeblocks-dbg/
+debian/codeblocks-dev/
+debian/codeblocks-libwxcontrib0/
+debian/codeblocks-wxcontrib-dev/
+debian/codeblocks.postinst.debhelper
+debian/codeblocks.postrm.debhelper
+debian/codeblocks/
+debian/libcodeblocks0/
+debian/libwxsmithlib0-dev/
+debian/libwxsmithlib0/
+debian/wxsmith-dev/
+
 
