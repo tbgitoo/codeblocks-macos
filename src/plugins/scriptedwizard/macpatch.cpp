@@ -226,11 +226,12 @@ bool RunGit(const wxString& executable,
     for (size_t i = 0; i < arguments.GetCount(); ++i)
         argvStrings.Add(arguments[i]);
 
-    std::vector<const wxChar*> argv;
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    std::vector<wxChar*> argv;
     argv.reserve(argvStrings.GetCount() + 1);
 
     for (size_t i = 0; i < argvStrings.GetCount(); ++i)
-        argv.push_back(argvStrings[i].wx_str());
+        argv.push_back(const_cast<wxChar*>(argvStrings[i].wx_str()));
 
     argv.push_back(nullptr);
 

@@ -92,9 +92,10 @@ wxString FirstLine(const wxString& text)
 bool RunGcc(const wxString& exe, const wxChar* flag, wxString& output, long& exitCode)
 {
     wxProcess process(wxPROCESS_REDIRECT);
-    const wxChar* argv[3];
-    argv[0] = exe.wx_str();
-    argv[1] = flag;
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[3];
+    argv[0] = const_cast<wxChar*>(exe.wx_str());
+    argv[1] = const_cast<wxChar*>(flag);
     argv[2] = nullptr;
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
     wxString err;
@@ -807,12 +808,13 @@ private:
         m_job->SetStatus("Unpacking.");
         m_process = new wxProcess(this);
         m_process->Redirect();
-        const wxChar* argv[6];
-        argv[0] = m_tar.wx_str();
-        argv[1] = wxT("-xf");
-        argv[2] = m_job->zipPath.wx_str();
-        argv[3] = wxT("-C");
-        argv[4] = m_job->destDir.wx_str();
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[6];
+        argv[0] = const_cast<wxChar*>(m_tar.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("-xf"));
+        argv[2] = const_cast<wxChar*>(m_job->zipPath.wx_str());
+        argv[3] = const_cast<wxChar*>(wxT("-C"));
+        argv[4] = const_cast<wxChar*>(m_job->destDir.wx_str());
         argv[5] = nullptr;
         m_pid = wxExecute(argv, wxEXEC_ASYNC, m_process);
         if (m_pid <= 0)

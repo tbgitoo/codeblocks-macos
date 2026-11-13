@@ -59,15 +59,16 @@ bool RunArgv(const wxString& executable, const wxChar* arg1, const wxChar* arg2,
              long& exitCode, wxString& output, wxString& error, const wxChar* arg3 = nullptr)
 {
     wxProcess process(wxPROCESS_REDIRECT);
-    const wxChar* argv[5];
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[5];
     int n = 0;
-    argv[n++] = executable.wx_str();
+    argv[n++] = const_cast<wxChar*>(executable.wx_str());
     if (arg1)
-        argv[n++] = arg1;
+        argv[n++] = const_cast<wxChar*>(arg1);
     if (arg2)
-        argv[n++] = arg2;
+        argv[n++] = const_cast<wxChar*>(arg2);
     if (arg3)
-        argv[n++] = arg3;
+        argv[n++] = const_cast<wxChar*>(arg3);
     argv[n] = nullptr;
 
     exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
@@ -418,10 +419,11 @@ public:
         env.env[wxT("NONINTERACTIVE")] = wxT("1");
         env.env[wxT("HOMEBREW_NO_AUTO_UPDATE")] = wxT("1");
 
-        const wxChar* argv[4];
-        argv[0] = m_executable.wx_str();
-        argv[1] = wxT("install");
-        argv[2] = m_formula.wx_str();
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[4];
+        argv[0] = const_cast<wxChar*>(m_executable.wx_str());
+        argv[1] = const_cast<wxChar*>(wxT("install"));
+        argv[2] = const_cast<wxChar*>(m_formula.wx_str());
         argv[3] = nullptr;
 
         m_pid = wxExecute(argv, wxEXEC_ASYNC, m_process, &env);

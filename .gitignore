@@ -74,3 +74,18 @@ packaging/windows/*
 !packaging/windows/build-installer.bat
 
 configure.ac~
+debian/control
+debian/files
+debian/*.substvars
+debian/*.debhelper.log
+debian/debhelper-build-stamp
+debian/stamp-*
+debian/tmp/
+debian/.debhelper/
+*.cdbs-orig
+debian/codeblocks-common/
+debian/codeblocks-contrib-common/
+debian/codeblocks-headers/
+debian/codeblocks-wxcontrib-headers/
+debian/wxsmith-headers/
+
