@@ -1,6 +1,6 @@
 # Code::Blocks v3.9 - OGRE-Next wizard, macOS first
 
-**Status: PLANNING.** The Windows manual install in `plans/thoughts/ogre-next-windows-codeblocks-mingw-student-guide.md` has been run from start to finish. It produced an installed OGRE-Next SDK and a window titled `OGRE-Next Light Show` with a rotating, illuminated Ogre head. No wizard work has started. The Windows machine is not available, so v3.9 implements the wizard on macOS first. The existing OGRE 1.x wizard is left unchanged.
+**Status: M1 done.** The Windows manual install in `plans/thoughts/ogre-next-windows-codeblocks-mingw-student-guide.md` has been run from start to finish. The same pins now also build and install on Apple Silicon, and an external program linked only to that install opened a Metal window. No wizard code has been written. The existing OGRE 1.x wizard is left unchanged. The two packaged MinGW patches are unchanged.
 
 **Question this version answers:** can Code::Blocks offer a separate OGRE-Next application wizard, on the same pattern as the v3.8 OGRE wizard, that acquires the pinned dependency and engine sources, applies the proven compatibility patches through the same constrained patch helper, installs a clean SDK, and generates an ordinary Code::Blocks project against that SDK?
 
@@ -175,13 +175,13 @@ Wizard.MacPatchProbe / MacPatchApply
 
 Paths are resolved in native code with `wxGetHomeDir()`, as in v3.8. No username and no `D:\` literal in the macOS workflow.
 
-Proposed layout, confirmed or adjusted by M1:
+Layout confirmed by M1:
 
 ```text
 ~/Library/CodeBlocks/
     ogre-next-deps-source-3.0.0/
         build-codeblocks/
-            ogredeps/                  dependency SDK, if install matches Windows
+            ogredeps/                  dependency SDK, same place as Windows
     ogre-next-source-3.0.0/
         build-codeblocks/
     ogre-next-3.0.0/                   CMAKE_INSTALL_PREFIX for the engine
@@ -189,11 +189,52 @@ Proposed layout, confirmed or adjusted by M1:
 
 `CMAKE_INSTALL_PREFIX` for OGRE-Next is passed at configure time. A later `cmake --install --prefix` is not the contract. v3.8 showed that swapping the prefix at install time leaves metadata pointed at the build tree.
 
-The dependency project installed into `<build>/ogredeps` on Windows. M1 checks whether the Mac install does the same. The engine configure receives that directory as `OGRE_DEPENDENCIES_DIR`. The generated project never receives it. The generated project receives only `~/Library/CodeBlocks/ogre-next-3.0.0`.
+The dependency project installs into `<build>/ogredeps` on Mac as it did on Windows. The engine configure receives that directory as `OGRE_DEPENDENCIES_DIR`. The generated project never receives it. The generated project receives only `~/Library/CodeBlocks/ogre-next-3.0.0`.
 
-Homebrew is limited to tools the Mac configure actually requires. The starting set is `cmake` and `pkgconf`. SDL2, FreeImage, and the other libraries built by `ogre-next-deps` are not Homebrew formulas unless M1 shows the pinned build looking for a system copy. Git is validated and never installed. Xcode's compiler is assumed, not installed by the wizard.
+Homebrew stays limited to `cmake` and `pkgconf`. M1 did not need another formula. The Apple dependency defaults leave SDL2 and shaderc unbuilt, and the engine build with samples off did not link the Homebrew SDL2 that CMake noticed. Git is validated and never installed. Xcode's compiler is assumed, not installed by the wizard.
 
 A second wizard run skips a stage whose checkout hash, patch state, build tree, or installed SDK already matches this pin.
+
+### 3.1 What M1 actually installed
+
+Checked out and left in place, outside this repository:
+
+```text
+ogre-next-deps   f7e23191f4fd89ed41134996bc47f9ee23d009df
+SDL2 submodule   5d249570393f7a37e037abf22cd6012a4cc56a71
+OGRE-Next        4859016ad2cc956a653dfc4e4a859505696c6509
+reported version 3.0.0 (Eris)
+```
+
+Toolchain: Apple clang 21, CMake 4.4.5, Xcode 26.5, arm64, 12 cores. Samples and tests were left off. The dependency SDK is `ogre-next-deps-source-3.0.0/build-codeblocks/ogredeps`. It contains `include/FreeImage.h`, `include/ft2build.h`, `include/Remotery.h`, `include/rapidjson/`, `lib/Release/libFreeImage.a`, `libfreetype.a`, `libzziplib.a`, `libzlib.a`, and `libRemotery.dylib`. It does not contain SDL2 or shaderc.
+
+The engine prefix `~/Library/CodeBlocks/ogre-next-3.0.0` contains:
+
+```text
+include/OGRE/OgreRoot.h
+include/OGRE/Hlms/Common/
+include/OGRE/Hlms/Unlit/OgreHlmsUnlit.h
+include/OGRE/Hlms/Pbs/OgreHlmsPbs.h
+include/OGRE/Compositor/
+lib/Release/Ogre.framework/Versions/3.0/Ogre
+lib/Release/OgreHlmsPbs.framework/Versions/3.0/OgreHlmsPbs
+lib/Release/OgreHlmsUnlit.framework/Versions/3.0/OgreHlmsUnlit
+lib/Release/RenderSystem_Metal.framework/Versions/3.0/RenderSystem_Metal
+lib/Release/RenderSystem_GL3Plus.framework/Versions/3.0/RenderSystem_GL3Plus
+lib/Release/RenderSystem_NULL.framework/Versions/3.0/RenderSystem_NULL
+lib/Release/Plugin_ParticleFX.framework/Versions/3.0/Plugin_ParticleFX
+bin/plugins.cfg
+bin/resources2.cfg
+Media/Hlms/Pbs/Metal
+Media/Hlms/Unlit/Metal
+Media/models/ogrehead.mesh
+Media/materials/textures/GreenSkin.jpg
+Media/materials/textures/tusk.jpg
+```
+
+There is no `libOgreMain`. The engine library is the `Ogre` framework. Install names are `@executable_path/../Frameworks/<Name>.framework/Versions/3.0/<Name>`. `bin/plugins.cfg` and `bin/resources2.cfg` are the sample-browser copies. A generated project does not use them as-is. `resources2.cfg` still points at `Samples/Media` and `Contents/Resources`.
+
+M3 validates this file list, not a Windows `lib/Release/libOgreMain.dll.a` path.
 
 ---
 
@@ -239,38 +280,82 @@ The dependency patch is probed against the deps checkout. The engine patch is pr
 
 ### 4.1 macOS decision, made in M1
 
-The patch text was proven on MinGW. It is not yet proven on Apple Silicon. M1 runs `git apply --check` for each packaged file on its pinned checkout and then builds.
+`git apply --check` succeeded for both packaged files on the pinned checkouts, and both were applied. No unguarded hunk broke the Mac build. The Mac wizard applies both patches, so the trees match the Windows pin. The Windows wizard, when it is implemented later, does the same.
+
+The packaged patches were not sufficient to compile. Three further edits were made in the checkouts only. They are not part of either MinGW patch, and they are not a third packaged patch. M3 does not start until those edits are reviewed as their own Mac change:
 
 ```text
---check fails
-    Mac wizard does not offer that patch.
-    Do not hand-edit the source to compensate.
+ogre-next-deps src/Remotery/CMakeLists.txt
+    Inside the existing APPLE block, link
+    -framework Foundation -framework Metal -framework QuartzCore.
+    RemoteryMetal.mm otherwise fails with undefined NSThread and objc_msgSend.
+    The packaged ws2_32 hunk stays; it is unused on Mac.
 
---check succeeds and the Mac build of the patched tree succeeds
-    Mac wizard applies that patch, so the tree matches the Windows pin.
+ogre-next RenderSystems/Metal/src/OgreMetalWindow.mm
+    This pin is missing the brace that closes if( !externalWindowHandle )
+    before else { mIsExternal = true; }. Clang reports "expected expression"
+    at that else. One added closing brace. Not caused by the engine patch.
 
---check succeeds but an unguarded hunk breaks the Mac build
-    Stop. Do not publish a third patch in this plan until that failure
-    is observed and a minimal replacement is reviewed.
+ogre-next RenderSystems/GL3Plus/CMakeLists.txt
+    include/GL is currently inside if(NOT APPLE). The bundled
+    glcorearb.h includes <KHR/khrplatform.h>, and that header is
+    include/GL/KHR/khrplatform.h. Move the include/GL directory
+    out of the Apple guard. Leave OPENGL_INCLUDE_DIR non-Apple.
 ```
 
-The Windows wizard, when it is implemented later, always offers both patches. That path is already proven.
+Configure also needs two arguments the Windows recipe does not pass. Both are fixed values, not script-supplied free text:
+
+```text
+-DCMAKE_OSX_ARCHITECTURES=arm64
+-DCMAKE_OSX_SYSROOT=<output of xcrun --show-sdk-path>
+```
+
+Without the architecture, this CMake writes `$(ARCHS_STANDARD_32_64_BIT)` and clang is invoked as `-arch -mmacosx-version-min=10.11`. Without the SDK path, CMake 4.4 on Xcode 26.5 stores the `xcodebuild` version banner as the sysroot, because `xcodebuild -n` is no longer accepted, and every compile rule then has an unmatched quote. `CMAKE_INSTALL_PREFIX` is still set at configure time, to `~/Library/CodeBlocks/ogre-next-3.0.0`. `OGRE_DEPENDENCIES_DIR` is the `ogredeps` directory above.
 
 ---
 
 ## 5. Generated project
 
-The starter is the proven light-show program, adapted only where M1 shows the macOS install differs from `install/bin/Release` and the Windows DLL layout. Likely differences, to be recorded rather than guessed:
+The starter is the proven light-show program. M1 kept that scene and changed only the Mac install contract. The copy used for the proof is `~/Library/CodeBlocks/ogre-next-m1-proof`. The file under `plans/thoughts/ogre_next_example/` was not edited.
 
 ```text
-render system     Metal or GL3Plus, not Direct3D11
-library directory lib/macosx/Release or the path M1 actually installs
-plugins.cfg       project-local, pointed at the installed renderer
-resources         project-local, pointed at <SDK>/Media
-working directory the directory that contains plugins.cfg and resources2.cfg
+render system     "Metal Rendering Subsystem" first, then
+                  "OpenGL 3+ Rendering Subsystem"
+                  Metal ignores unknown "Video Mode" and "Full Screen".
+                  "sRGB Gamma Conversion" = Yes is valid.
+link              -F<SDK>/lib/Release
+                  -framework Ogre
+                  -framework OgreHlmsPbs
+                  -framework OgreHlmsUnlit
+                  There is no -lOgreMain and no lib/Release import library.
+plugins.cfg       project-local. PluginFolder is empty.
+                  PluginOptional=RenderSystem_Metal
+                  PluginOptional=RenderSystem_GL3Plus
+                  Plugin=Plugin_ParticleFX
+                  On Mac, a bare name is loaded from
+                  <app bundle>/Contents/Frameworks/<Name>.framework/<Name>.
+                  PluginFolder is not prepended for that lookup.
+resources2.cfg    project-local, one setting:
+                  [Hlms]
+                  DoNotUseAsResource=<SDK>/Media
+                  The installed bin/resources2.cfg is not usable.
+working directory the directory that contains plugins.cfg,
+                  resources2.cfg, and ogrehead.mesh
+app bundle        Contents/MacOS/<program>
+                  Contents/Frameworks -> <SDK>/lib/Release
+                  This matches the frameworks' @executable_path/../Frameworks
+                  install names. A loose executable does not.
+textures          <SDK>/Media/materials/textures
+                  The Windows relative path ../../Media/materials/textures
+                  only works when the working directory is two levels
+                  below a Media directory. The generated project should
+                  point at the SDK Media tree directly.
+mesh              <SDK>/Media/models/ogrehead.mesh is present.
+                  The proof used the copy shipped with the Windows example.
+                  It loads as MeshSerializer_v1.100 and imports to a v2 mesh.
 ```
 
-`plans/thoughts/ogre_next_example/ogrehead.mesh` is the mesh the Windows program displayed. The generated project consumes that asset, or the same mesh from the installed Media tree if M1 shows it there. Beginner-facing `main.cpp` does not convert models and does not build OGRE-Next.
+The proof linked only `~/Library/CodeBlocks/ogre-next-3.0.0`. It selected `Metal Rendering Subsystem` on Apple M2 Max, loaded `ogrehead.mesh`, compiled the light-show shaders, rendered 240 frames, printed `Light show rendered and closed cleanly.`, and exited 0. The frame count came from `OGRE_NEXT_M1_FRAMES` so the process could exit; the starter the wizard generates does not need that cap. Beginner-facing `main.cpp` does not convert models and does not build OGRE-Next.
 
 The project is an ordinary Code::Blocks C++ project with Debug and Release targets. It is not a CMake project and not an OGRE-Next source build.
 
@@ -280,8 +365,8 @@ The project is an ordinary Code::Blocks C++ project with Debug and Release targe
 
 | | Objective | Check | Status |
 |---|---|---|---|
-| M1 | Prove the pinned sources on Apple Silicon and freeze the installed-SDK contract. | Exact deps commit, SDL2 submodule hash, and engine commit build and install under `~/Library/CodeBlocks`. Each packaged patch is checked with `git apply --check`. An external program, based on `Tutorial00_Basic`, links only the engine install prefix and opens a rendered OGRE-Next window. The actual include, library, plugin, media, and working-directory layout is written down. | **NEXT** |
-| M2 | Acquire those checkouts from the wizard and apply the patches the M1 decision allows. | `macgit` clones the two pinned revisions and the recorded SDL2 submodule without installing Git. `macpatch` probes and applies `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` under the Assimp-patch contract. A declined patch leaves the checkout pristine. | **PLANNED** |
+| M1 | Prove the pinned sources on Apple Silicon and freeze the installed-SDK contract. | Exact deps commit, SDL2 submodule hash, and engine commit build and install under `~/Library/CodeBlocks`. Each packaged patch is checked with `git apply --check`. An external program, based on `Tutorial00_Basic`, links only the engine install prefix and opens a rendered OGRE-Next window. The actual include, library, plugin, media, and working-directory layout is written down. | **DONE** |
+| M2 | Acquire those checkouts from the wizard and apply the patches the M1 decision allows. | `macgit` clones the two pinned revisions and the recorded SDL2 submodule without installing Git. `macpatch` probes and applies `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` under the Assimp-patch contract. A declined patch leaves the checkout pristine. | **NEXT** |
 | M3 | Configure, build, and install both trees. | Deps install to the M1 dependency SDK. Engine configure passes that directory and the final `CMAKE_INSTALL_PREFIX` before the build. Install validation checks the M1 file list, not exit status alone. | **PLANNED** |
 | M4 | Add the OGRE-Next wizard and starter project. | New Project shows an OGRE-Next entry distinct from OGRE. The existing OGRE wizard still builds. The generated ordinary C++ project builds and runs against the installed SDK and shows the light-show scene. | **PLANNED** |
 | M5 | Reuse a machine that already has these stages. | A second run skips a matching checkout, an already-applied patch, a finished build, and a validated SDK. It still generates a new project. No stage is cloned or rebuilt merely because the wizard was opened. | **PLANNED** |
@@ -358,6 +443,6 @@ Stop if `maccmake` would have to accept arbitrary CMake arguments from the scrip
 
 ## 11. Done when
 
-**PLANNING.** v3.9 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply exactly the patches M1 showed are valid on macOS, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
+**M1 done.** v3.9 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply the two packaged patches plus the reviewed Mac edits from section 4.1, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
 
 The Windows manual path is already done. It remains the pin, the patch set, and the picture of success for a later Windows wizard.
