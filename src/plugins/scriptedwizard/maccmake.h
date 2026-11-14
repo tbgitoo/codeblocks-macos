@@ -6,6 +6,10 @@
  * v3.8 M3: resolve Code::Blocks-owned source/build/install paths
  * and locate/revalidate CMake on macOS.
  *
+ * v3.9 M3 adds RunMacCMakeOgreNext. It accepts only the project
+ * ids ogre-next-deps and ogre-next, and only configure, build,
+ * or install. Paths and CMake arguments are compiled in.
+ *
  * This is deliberately not a general CMake command API.
  */
 
@@ -108,6 +112,16 @@ MacCMakeRunResult InstallMacCMake(
     wxWindow* parent,
     const wxString& build,
     const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+// projectId is ogre-next-deps or ogre-next.
+// operation is configure, build, or install.
+// The script cannot supply a path, a prefix, or a -D flag.
+MacCMakeRunResult RunMacCMakeOgreNext(
+    wxWindow* parent,
+    const wxString& projectId,
+    const wxString& operation,
     const wxString& explanation,
     const wxString& confirmLabel);
 

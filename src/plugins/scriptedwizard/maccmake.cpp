@@ -7,6 +7,10 @@
  * locate/revalidate CMake, and perform an explicitly approved
  * CMake configure operation on macOS.
  *
+ * v3.9 M3 configures, builds, and installs the pinned OGRE-Next
+ * dependency tree and engine. The script names the project and
+ * the operation. It does not supply CMake arguments.
+ *
  * This is deliberately not a general CMake command API.
  */
 
@@ -24,6 +28,7 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/textfile.h>
 #include <wx/thread.h>
 #include <wx/timer.h>
 #include <wx/utils.h>
@@ -463,8 +468,6 @@ public:
           m_closed(false),
           m_timer(this)
     {
-        wxBoxSizer* outer = new wxBoxSizer(wxVERTICAL);
-
         const wxString description =
             _("CMake is configuring the OGRE source.\n\n")
             + _("Source:\n")
@@ -477,54 +480,29 @@ public:
             + buildType
             + _("\n\nThere is no progress percentage.");
 
-        wxStaticText* label =
-            new wxStaticText(this, wxID_ANY, description);
+        BuildUi(description);
+    }
 
-        label->Wrap(620);
-
-        outer->Add(label, 0, wxALL | wxEXPAND, 12);
-
-        m_text = new wxTextCtrl(
-            this,
-            wxID_ANY,
-            wxEmptyString,
-            wxDefaultPosition,
-            wxSize(680, 320),
-            wxTE_MULTILINE | wxTE_READONLY);
-
-        outer->Add(
-            m_text,
-            1,
-            wxLEFT | wxRIGHT | wxEXPAND,
-            12);
-
-        outer->Add(
-            new wxButton(this, wxID_CANCEL, _("Cancel")),
-            0,
-            wxALL | wxALIGN_RIGHT,
-            12);
-
-        SetSizer(outer);
-        SetInitialSize(wxSize(720, 560));
-        CentreOnParent();
-
-        Bind(
-            wxEVT_TIMER,
-            &MacCMakeConfigureDialog::OnTimer,
-            this);
-        Bind(
-            wxEVT_END_PROCESS,
-            &MacCMakeConfigureDialog::OnProcessEnd,
-            this);
-        Bind(
-            wxEVT_BUTTON,
-            &MacCMakeConfigureDialog::OnCancel,
-            this,
-            wxID_CANCEL);
-        Bind(
-            wxEVT_CLOSE_WINDOW,
-            &MacCMakeConfigureDialog::OnCloseWindow,
-            this);
+    MacCMakeConfigureDialog(
+        wxWindow* parent,
+        const wxString& description)
+        : wxDialog(
+              parent,
+              wxID_ANY,
+              _("CMake"),
+              wxDefaultPosition,
+              wxDefaultSize,
+              wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
+          m_text(nullptr),
+          m_process(nullptr),
+          m_pid(0),
+          m_exit(-1),
+          m_cancelled(false),
+          m_finished(false),
+          m_closed(false),
+          m_timer(this)
+    {
+        BuildUi(description);
     }
 
     ~MacCMakeConfigureDialog() override
@@ -605,6 +583,70 @@ public:
         return true;
     }
 
+    bool StartWithArguments(
+        const wxString& executable,
+        const wxArrayString& arguments)
+    {
+        m_process = new wxProcess(this);
+        m_process->Redirect();
+
+        wxExecuteEnv env;
+
+        if (!wxGetEnvMap(&env.env) || env.env.empty())
+        {
+            delete m_process;
+            m_process = nullptr;
+
+            Append(
+                wxT("Could not copy the environment, "
+                    "so CMake was not started.\n"));
+
+            return false;
+        }
+
+        if (arguments.GetCount() > 14)
+        {
+            delete m_process;
+            m_process = nullptr;
+
+            Append(wxT("CMake did not start.\n"));
+            return false;
+        }
+
+        m_arguments.Clear();
+        m_arguments.Add(executable);
+
+        for (size_t i = 0; i < arguments.GetCount(); ++i)
+            m_arguments.Add(arguments[i]);
+
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        wxChar* argv[16];
+
+        for (size_t i = 0; i < m_arguments.GetCount(); ++i)
+            argv[i] = const_cast<wxChar*>(m_arguments[i].wx_str());
+
+        argv[m_arguments.GetCount()] = nullptr;
+
+        m_pid = wxExecute(
+            argv,
+            wxEXEC_ASYNC,
+            m_process,
+            &env);
+
+        if (m_pid <= 0)
+        {
+            delete m_process;
+            m_process = nullptr;
+            m_pid = 0;
+
+            Append(wxT("CMake did not start.\n"));
+            return false;
+        }
+
+        m_timer.Start(200);
+        return true;
+    }
+
     bool Cancelled() const
     {
         return m_cancelled;
@@ -621,6 +663,60 @@ public:
     }
 
 private:
+    void BuildUi(const wxString& description)
+    {
+        wxBoxSizer* outer = new wxBoxSizer(wxVERTICAL);
+
+        wxStaticText* label =
+            new wxStaticText(this, wxID_ANY, description);
+
+        label->Wrap(620);
+
+        outer->Add(label, 0, wxALL | wxEXPAND, 12);
+
+        m_text = new wxTextCtrl(
+            this,
+            wxID_ANY,
+            wxEmptyString,
+            wxDefaultPosition,
+            wxSize(680, 320),
+            wxTE_MULTILINE | wxTE_READONLY);
+
+        outer->Add(
+            m_text,
+            1,
+            wxLEFT | wxRIGHT | wxEXPAND,
+            12);
+
+        outer->Add(
+            new wxButton(this, wxID_CANCEL, _("Cancel")),
+            0,
+            wxALL | wxALIGN_RIGHT,
+            12);
+
+        SetSizer(outer);
+        SetInitialSize(wxSize(720, 560));
+        CentreOnParent();
+
+        Bind(
+            wxEVT_TIMER,
+            &MacCMakeConfigureDialog::OnTimer,
+            this);
+        Bind(
+            wxEVT_END_PROCESS,
+            &MacCMakeConfigureDialog::OnProcessEnd,
+            this);
+        Bind(
+            wxEVT_BUTTON,
+            &MacCMakeConfigureDialog::OnCancel,
+            this,
+            wxID_CANCEL);
+        Bind(
+            wxEVT_CLOSE_WINDOW,
+            &MacCMakeConfigureDialog::OnCloseWindow,
+            this);
+    }
+
     void Append(const wxString& chunk)
     {
         m_all += chunk;
@@ -761,6 +857,7 @@ private:
     wxTextCtrl* m_text;
     wxProcess* m_process;
     wxString m_all;
+    wxArrayString m_arguments;
 
     long m_pid;
     long m_exit;
@@ -1599,6 +1696,441 @@ private:
     wxTimer m_timer;
 };
 
+struct ExpectedEntry
+{
+    const wxChar* relative;
+    bool directory;
+};
+
+const ExpectedEntry kOgreNextDepsFiles[] =
+{
+    { wxT("include/FreeImage.h"), false },
+    { wxT("include/ft2build.h"), false },
+    { wxT("include/Remotery.h"), false },
+    { wxT("include/rapidjson"), true },
+    { wxT("lib/Release/libFreeImage.a"), false },
+    { wxT("lib/Release/libfreetype.a"), false },
+    { wxT("lib/Release/libzziplib.a"), false },
+    { wxT("lib/Release/libzlib.a"), false },
+    { wxT("lib/Release/libRemotery.dylib"), false }
+};
+
+const ExpectedEntry kOgreNextEngineFiles[] =
+{
+    { wxT("include/OGRE/OgreRoot.h"), false },
+    { wxT("include/OGRE/Hlms/Common"), true },
+    { wxT("include/OGRE/Hlms/Unlit/OgreHlmsUnlit.h"), false },
+    { wxT("include/OGRE/Hlms/Pbs/OgreHlmsPbs.h"), false },
+    { wxT("include/OGRE/Compositor"), true },
+    { wxT("lib/Release/Ogre.framework/Versions/3.0/Ogre"), false },
+    { wxT("lib/Release/OgreHlmsPbs.framework/Versions/3.0/OgreHlmsPbs"), false },
+    { wxT("lib/Release/OgreHlmsUnlit.framework/Versions/3.0/OgreHlmsUnlit"), false },
+    { wxT("lib/Release/RenderSystem_Metal.framework/Versions/3.0/RenderSystem_Metal"), false },
+    { wxT("lib/Release/RenderSystem_GL3Plus.framework/Versions/3.0/RenderSystem_GL3Plus"), false },
+    { wxT("lib/Release/RenderSystem_NULL.framework/Versions/3.0/RenderSystem_NULL"), false },
+    { wxT("lib/Release/Plugin_ParticleFX.framework/Versions/3.0/Plugin_ParticleFX"), false },
+    { wxT("bin/plugins.cfg"), false },
+    { wxT("bin/resources2.cfg"), false },
+    { wxT("Media/Hlms/Pbs/Metal"), true },
+    { wxT("Media/Hlms/Unlit/Metal"), true },
+    { wxT("Media/models/ogrehead.mesh"), false },
+    { wxT("Media/materials/textures/GreenSkin.jpg"), false },
+    { wxT("Media/materials/textures/tusk.jpg"), false }
+};
+
+enum OgreNextCacheState
+{
+    OgreNextCacheMissing = 0,
+    OgreNextCacheMatches = 1,
+    OgreNextCachePrefixWrong = 2,
+    OgreNextCacheDiffers = 3
+};
+
+struct OgreNextTree
+{
+    bool engine;
+    wxString source;
+    wxString build;
+    wxString install;
+    wxString dependencies;
+
+    OgreNextTree()
+        : engine(false)
+    {}
+};
+
+wxString StripTrailingSeparator(wxString path)
+{
+    while (path.Length() > 1
+           && (path.Last() == wxT('/') || path.Last() == wxT('\\')))
+    {
+        path.RemoveLast();
+    }
+
+    return path;
+}
+
+bool SameDirectory(const wxString& left, const wxString& right)
+{
+    wxString a;
+    wxString b;
+
+    if (!NormaliseAbsoluteDirectory(left, a))
+        return false;
+
+    if (!NormaliseAbsoluteDirectory(right, b))
+        return false;
+
+    return StripTrailingSeparator(a) == StripTrailingSeparator(b);
+}
+
+bool CacheValue(
+    const wxString& cachePath,
+    const wxString& name,
+    wxString& value)
+{
+    wxTextFile file;
+
+    if (!file.Open(cachePath))
+        return false;
+
+    const wxString prefix = name + wxT(":");
+
+    for (size_t i = 0; i < file.GetLineCount(); ++i)
+    {
+        const wxString line = file.GetLine(i);
+
+        if (!line.StartsWith(prefix))
+            continue;
+
+        const int eq = line.Find(wxT('='));
+
+        if (eq == wxNOT_FOUND)
+            return false;
+
+        value = line.Mid(eq + 1);
+        value.Trim(true).Trim(false);
+        return true;
+    }
+
+    return false;
+}
+
+bool ReadMacSdkPath(wxString& sdk, wxString& error)
+{
+    const wxString executable = wxT("/usr/bin/xcrun");
+
+    if (!wxFileExists(executable))
+    {
+        error = wxT("macOS SDK path was not found");
+        return false;
+    }
+
+    wxProcess process(wxPROCESS_REDIRECT);
+
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    wxChar* argv[3];
+
+    argv[0] = const_cast<wxChar*>(executable.wx_str());
+    argv[1] = const_cast<wxChar*>(wxT("--show-sdk-path"));
+    argv[2] = nullptr;
+
+    const long exitCode = wxExecute(argv, wxEXEC_SYNC, &process);
+    const wxString output = FirstLine(ReadAll(process.GetInputStream()));
+
+    if (exitCode != 0 || output.empty() || !wxDirExists(output))
+    {
+        error = wxT("macOS SDK path was not found");
+        return false;
+    }
+
+    sdk = output;
+    return true;
+}
+
+wxString CodeBlocksRoot(wxString& error)
+{
+    const wxString home = wxGetHomeDir();
+
+    if (home.empty())
+    {
+        error = wxT("user home directory is empty");
+        return wxString();
+    }
+
+    wxFileName root = wxFileName::DirName(home);
+
+    root.AppendDir(wxT("Library"));
+    root.AppendDir(wxT("CodeBlocks"));
+
+    if (!root.IsAbsolute())
+    {
+        error = wxT("Code::Blocks SDK root is not absolute");
+        return wxString();
+    }
+
+    return StripTrailingSeparator(root.GetFullPath());
+}
+
+bool ResolveOgreNextTree(
+    const wxString& projectId,
+    OgreNextTree& tree,
+    wxString& error)
+{
+    if (projectId == wxT("ogre-next-deps"))
+        tree.engine = false;
+    else if (projectId == wxT("ogre-next"))
+        tree.engine = true;
+    else
+    {
+        error = wxT("unknown project");
+        return false;
+    }
+
+    const wxString root = CodeBlocksRoot(error);
+
+    if (root.empty())
+        return false;
+
+    const wxString depsSource =
+        root + wxFILE_SEP_PATH + wxT("ogre-next-deps-source-3.0.0");
+
+    const wxString depsBuild =
+        depsSource + wxFILE_SEP_PATH + wxT("build-codeblocks");
+
+    const wxString depsInstall =
+        depsBuild + wxFILE_SEP_PATH + wxT("ogredeps");
+
+    if (tree.engine)
+    {
+        tree.source =
+            root + wxFILE_SEP_PATH + wxT("ogre-next-source-3.0.0");
+
+        tree.build =
+            tree.source + wxFILE_SEP_PATH + wxT("build-codeblocks");
+
+        tree.install =
+            root + wxFILE_SEP_PATH + wxT("ogre-next-3.0.0");
+
+        tree.dependencies = depsInstall;
+    }
+    else
+    {
+        tree.source = depsSource;
+        tree.build = depsBuild;
+        tree.install = depsInstall;
+    }
+
+    return true;
+}
+
+bool FilesPresent(
+    const wxString& root,
+    const ExpectedEntry* entries,
+    size_t count,
+    wxString& error)
+{
+    for (size_t i = 0; i < count; ++i)
+    {
+        const wxString path =
+            root + wxFILE_SEP_PATH + entries[i].relative;
+
+        const bool present =
+            entries[i].directory
+                ? wxDirExists(path)
+                : wxFileExists(path);
+
+        if (!present)
+        {
+            error =
+                wxString(wxT("installed file was not found: "))
+                + entries[i].relative;
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool OgreNextFilesPresent(
+    const OgreNextTree& tree,
+    wxString& error)
+{
+    if (tree.engine)
+    {
+        return FilesPresent(
+            tree.install,
+            kOgreNextEngineFiles,
+            sizeof(kOgreNextEngineFiles) / sizeof(kOgreNextEngineFiles[0]),
+            error);
+    }
+
+    return FilesPresent(
+        tree.install,
+        kOgreNextDepsFiles,
+        sizeof(kOgreNextDepsFiles) / sizeof(kOgreNextDepsFiles[0]),
+        error);
+}
+
+OgreNextCacheState ReadOgreNextCache(
+    const OgreNextTree& tree,
+    const wxString& sdk,
+    wxString& error)
+{
+    const wxString cachePath =
+        tree.build
+        + wxFILE_SEP_PATH
+        + wxT("CMakeCache.txt");
+
+    if (!wxFileExists(cachePath))
+    {
+        error = wxT("CMakeCache.txt was not found");
+        return OgreNextCacheMissing;
+    }
+
+    wxString prefix;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_INSTALL_PREFIX"), prefix)
+        || !SameDirectory(prefix, tree.install))
+    {
+        error =
+            tree.engine
+                ? wxT("CMAKE_INSTALL_PREFIX does not match the pinned install directory")
+                : wxT("CMAKE_INSTALL_PREFIX is not the dependency SDK");
+
+        return OgreNextCachePrefixWrong;
+    }
+
+    wxString buildType;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_BUILD_TYPE"), buildType)
+        || buildType != wxT("Release"))
+    {
+        error = wxT("CMAKE_BUILD_TYPE is not Release");
+        return OgreNextCacheDiffers;
+    }
+
+    wxString arch;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_OSX_ARCHITECTURES"), arch)
+        || arch != wxT("arm64"))
+    {
+        error = wxT("CMAKE_OSX_ARCHITECTURES is not arm64");
+        return OgreNextCacheDiffers;
+    }
+
+    wxString sysroot;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_OSX_SYSROOT"), sysroot))
+        sysroot.clear();
+
+    if (tree.engine)
+    {
+        if (!SameDirectory(sysroot, sdk))
+        {
+            error = wxT("CMAKE_OSX_SYSROOT does not match the macOS SDK");
+            return OgreNextCacheDiffers;
+        }
+
+        wxString dependencies;
+
+        if (!CacheValue(cachePath, wxT("OGRE_DEPENDENCIES_DIR"), dependencies)
+            || !SameDirectory(dependencies, tree.dependencies))
+        {
+            error = wxT("OGRE_DEPENDENCIES_DIR does not match the dependency SDK");
+            return OgreNextCacheDiffers;
+        }
+
+        wxString samples;
+        wxString tests;
+
+        if (!CacheValue(cachePath, wxT("OGRE_BUILD_SAMPLES2"), samples)
+            || samples != wxT("OFF")
+            || !CacheValue(cachePath, wxT("OGRE_BUILD_TESTS"), tests)
+            || tests != wxT("OFF"))
+        {
+            error = wxT("samples or tests are not off");
+            return OgreNextCacheDiffers;
+        }
+    }
+    else if (!sysroot.empty() && !SameDirectory(sysroot, sdk))
+    {
+        error = wxT("CMAKE_OSX_SYSROOT does not match the macOS SDK");
+        return OgreNextCacheDiffers;
+    }
+
+    return OgreNextCacheMatches;
+}
+
+wxArrayString OgreNextConfigureArguments(
+    const OgreNextTree& tree,
+    const wxString& sdk)
+{
+    wxArrayString args;
+
+    args.Add(wxT("-S"));
+    args.Add(tree.source);
+    args.Add(wxT("-B"));
+    args.Add(tree.build);
+    args.Add(wxT("-DCMAKE_BUILD_TYPE=Release"));
+    args.Add(wxT("-DCMAKE_OSX_ARCHITECTURES=arm64"));
+    args.Add(wxT("-DCMAKE_OSX_SYSROOT=") + sdk);
+
+    // The dependency project writes <build>/ogredeps only while the
+    // prefix is still CMake's default. Do not pass CMAKE_INSTALL_PREFIX.
+    if (tree.engine)
+    {
+        args.Add(wxT("-DCMAKE_INSTALL_PREFIX=") + tree.install);
+        args.Add(wxT("-DOGRE_DEPENDENCIES_DIR=") + tree.dependencies);
+        args.Add(wxT("-DOGRE_BUILD_SAMPLES2=OFF"));
+        args.Add(wxT("-DOGRE_BUILD_TESTS=OFF"));
+    }
+
+    return args;
+}
+
+wxString OgreNextConfigureDescription(
+    const OgreNextTree& tree,
+    const wxString& sdk)
+{
+    wxString text =
+        tree.engine
+            ? _("CMake is configuring OGRE-Next.\n\n")
+            : _("CMake is configuring the OGRE-Next dependencies.\n\n");
+
+    text +=
+        _("Source:\n")
+        + tree.source
+        + _("\n\nBuild:\n")
+        + tree.build
+        + _("\n\nInstall:\n")
+        + tree.install;
+
+    if (tree.engine)
+    {
+        text +=
+            _("\n\nDependencies:\n")
+            + tree.dependencies
+            + _("\n\nSamples and tests are off. "
+                "The install prefix is fixed now.");
+    }
+    else
+    {
+        text +=
+            _("\n\nThe dependency project selects this install "
+              "directory itself. Code::Blocks does not pass "
+              "CMAKE_INSTALL_PREFIX.");
+    }
+
+    text +=
+        _("\n\nArchitecture:\narm64\n\nSDK:\n")
+        + sdk
+        + _("\n\nThere is no progress percentage.");
+
+    return text;
+}
+
 } // namespace
 
 MacCMakeProbe ProbeMacCMake()
@@ -2061,6 +2593,229 @@ MacCMakeRunResult ConfigureMacCMake(
                 "but CMakeCache.txt was not created");
     }
 
+    return result;
+}
+
+MacCMakeRunResult RunMacCMakeOgreNext(
+    wxWindow* parent,
+    const wxString& projectId,
+    const wxString& operation,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    MacCMakeRunResult result;
+
+    const bool configure = operation == wxT("configure");
+    const bool build = operation == wxT("build");
+    const bool install = operation == wxT("install");
+
+    if (!configure && !build && !install)
+    {
+        result.output = wxT("unknown operation");
+        return result;
+    }
+
+    result.operation = operation;
+
+    OgreNextTree tree;
+    wxString error;
+
+    if (!ResolveOgreNextTree(projectId, tree, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    if (!wxDirExists(tree.source))
+    {
+        result.output = wxT("source checkout is not present");
+        return result;
+    }
+
+    wxString sdk;
+
+    if (!ReadMacSdkPath(sdk, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    const OgreNextCacheState cache =
+        ReadOgreNextCache(tree, sdk, error);
+
+    // Reconfiguring cannot repair a dependency prefix. The project
+    // keeps a prefix that is already in the cache, and passing a new
+    // one would skip the project's own ogredeps default.
+    if (!tree.engine && cache == OgreNextCachePrefixWrong)
+    {
+        result.output =
+            wxT("CMAKE_INSTALL_PREFIX is not the dependency SDK; "
+                "the build directory was left unchanged");
+
+        return result;
+    }
+
+    wxString filesError;
+    const bool filesOk = OgreNextFilesPresent(tree, filesError);
+
+    if (configure && cache == OgreNextCacheMatches)
+    {
+        result.success = true;
+        result.output = wxT("configure already matches");
+        return result;
+    }
+
+    if ((build || install)
+        && cache == OgreNextCacheMatches
+        && filesOk)
+    {
+        result.success = true;
+        result.output =
+            install
+                ? wxT("install already valid")
+                : wxT("build already installed");
+
+        return result;
+    }
+
+    if ((build || install) && cache != OgreNextCacheMatches)
+    {
+        result.output =
+            error.empty()
+                ? wxString(wxT("configure does not match the pinned options"))
+                : error;
+
+        return result;
+    }
+
+    if (tree.engine && (configure || build))
+    {
+        OgreNextTree dependencies;
+
+        dependencies.engine = false;
+        dependencies.install = tree.dependencies;
+
+        wxString dependencyError;
+
+        if (!OgreNextFilesPresent(dependencies, dependencyError))
+        {
+            result.output = wxT("dependency SDK is not installed");
+            return result;
+        }
+    }
+
+    const MacCMakeProbe probe = ProbeMacCMake();
+
+    if (probe.access != MacCMakeWorks)
+    {
+        result.output = wxT("cmake unavailable");
+
+        if (!probe.errorOutput.empty())
+        {
+            result.output +=
+                wxT(": ")
+                + FirstLine(probe.errorOutput);
+        }
+
+        return result;
+    }
+
+    // Cancel here occurs before wxExecute.
+    if (!ConfirmConfigure(parent, explanation, confirmLabel))
+    {
+        result.cancelled = true;
+        result.output = wxT("cancelled before launch");
+        return result;
+    }
+
+    if (configure)
+    {
+        MacCMakeConfigureDialog dlg(
+            parent,
+            OgreNextConfigureDescription(tree, sdk));
+
+        if (!dlg.StartWithArguments(
+                probe.executable,
+                OgreNextConfigureArguments(tree, sdk)))
+        {
+            result.output = dlg.OutputTail();
+            return result;
+        }
+
+        dlg.ShowModal();
+
+        result.launched = true;
+        result.cancelled = dlg.Cancelled();
+        result.exitCode = dlg.ExitCode();
+        result.output = dlg.OutputTail();
+
+        if (result.cancelled || result.exitCode != 0)
+            return result;
+
+        wxString cacheError;
+
+        if (ReadOgreNextCache(tree, sdk, cacheError) != OgreNextCacheMatches)
+        {
+            result.output = cacheError;
+            return result;
+        }
+
+        result.success = true;
+        return result;
+    }
+
+    if (build)
+    {
+        const int jobs = BoundedJobCount();
+
+        MacCMakeBuildDialog dlg(parent, tree.build, jobs);
+
+        if (!dlg.Start(probe.executable, tree.build, jobs))
+        {
+            result.output = dlg.OutputTail();
+            return result;
+        }
+
+        dlg.ShowModal();
+
+        result.launched = true;
+        result.cancelled = dlg.Cancelled();
+        result.exitCode = dlg.ExitCode();
+        result.output = dlg.OutputTail();
+
+        result.success =
+               !result.cancelled
+            && result.exitCode == 0;
+
+        return result;
+    }
+
+    MacCMakeInstallDialog dlg(parent, tree.build, tree.install);
+
+    // cmake --install uses the prefix stored at configure time.
+    if (!dlg.Start(probe.executable, tree.build))
+    {
+        result.output = dlg.OutputTail();
+        return result;
+    }
+
+    dlg.ShowModal();
+
+    result.launched = true;
+    result.cancelled = dlg.Cancelled();
+    result.exitCode = dlg.ExitCode();
+    result.output = dlg.OutputTail();
+
+    if (result.cancelled || result.exitCode != 0)
+        return result;
+
+    if (!OgreNextFilesPresent(tree, filesError))
+    {
+        result.output = filesError;
+        return result;
+    }
+
+    result.success = true;
     return result;
 }
 

@@ -1,0 +1,23 @@
+diff --git a/src/Remotery/CMakeLists.txt b/src/Remotery/CMakeLists.txt
+index e877b4d..522f5c8 100644
+--- a/src/Remotery/CMakeLists.txt
++++ b/src/Remotery/CMakeLists.txt
+@@ -23,12 +23,18 @@ if( WIN32 )
+ endif()
+ if( APPLE )
+ 	set( RMT_USE_METAL 1 )
+ endif()
+ if( WIN32 )
+ 	# Remotery's viewer socket uses the Windows Sockets API. MinGW does not
+ 	# link ws2_32 automatically the way MSVC's default libraries can.
+ 	target_link_libraries( Remotery ws2_32 )
+ endif()
+ configure_file( RemoteryConfig.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/RemoteryConfig.h )
+ 
+ install_dep( Remotery include src/Remotery.h src/RemoteryConfig.h )
++
++if( APPLE )
++	# RemoteryMetal.mm calls Foundation and Metal. Apple clang does not
++	# link those frameworks unless the target asks for them.
++	target_link_libraries( Remotery "-framework Foundation" "-framework Metal" "-framework QuartzCore" )
++endif()

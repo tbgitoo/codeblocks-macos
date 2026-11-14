@@ -5,8 +5,12 @@
  * v3.8 M2: locate Git, revalidate one executable, and perform one
  * explicitly approved shallow tagged clone.
  *
+ * v3.9 M2 adds one further operation: check out a compiled-in source
+ * id. The only ids are ogre-next-deps and ogre-next. Their URLs,
+ * commits, destinations, and the SDL2 submodule pin are not arguments.
+ *
  * This is deliberately not a general Git command API.
- * The helper does not install Git and does not know anything about OGRE or other git repos.
+ * The helper does not install Git.
  */
 
 #ifndef MACGIT_H
@@ -107,6 +111,55 @@ MacGitCloneResult CloneMacGitRepository(
 
 // Report string returned to wizard.script.
 wxString FormatMacGitClone(const MacGitCloneResult& result);
+
+
+// Result of checking out one compiled-in source id.
+// This is not a general clone result: the script cannot supply a URL,
+// a commit, a destination, or a Git command.
+struct MacGitAcquireResult
+{
+    bool launched;
+    bool cancelled;
+    bool alreadyPresent;
+    long exitCode;
+    bool success;
+
+    wxString executable;
+    wxString sourceId;
+    wxString url;
+    wxString commit;
+    wxString destination;
+    wxString submoduleCommit;
+    wxString output;
+
+    MacGitAcquireResult()
+        : launched(false),
+          cancelled(false),
+          alreadyPresent(false),
+          exitCode(-1),
+          success(false)
+    {}
+};
+
+// Consent first, unless the destination already is that exact checkout.
+//
+// ogre-next-deps checks out f7e23191f4fd89ed41134996bc47f9ee23d009df
+// and then initialises submodules. Success requires src/SDL2 to be
+// 5d249570393f7a37e037abf22cd6012a4cc56a71.
+//
+// ogre-next checks out 4859016ad2cc956a653dfc4e4a859505696c6509.
+//
+// Both destinations are under the user's Library/CodeBlocks directory.
+// An existing directory that is not that checkout is left untouched.
+// Cancel before launch does not start Git.
+MacGitAcquireResult AcquireMacGitSource(
+    wxWindow* parent,
+    const wxString& sourceId,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+// Report string returned to wizard.script.
+wxString FormatMacGitAcquire(const MacGitAcquireResult& result);
 
 #endif // __WXMAC__
 

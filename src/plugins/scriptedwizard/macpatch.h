@@ -2,8 +2,14 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v3.8.1 M5: probe and apply one known compatibility patch to an
- * explicitly supported source checkout using Git.
+ * v3.8.1 M5 and v3.9 M2: probe and apply one known compatibility
+ * patch to an explicitly supported source checkout using Git.
+ *
+ * Known ids are ogre-14.6.3-assimp-sidecar, ogre-next-deps-mingw,
+ * ogre-next-deps-apple, and ogre-next-v3-0-mingw. Each id carries its
+ * packaged file and the revision it may touch. ogre-next-deps-apple
+ * applies only after ogre-next-deps-mingw. The script cannot name a
+ * different file.
  *
  * This is deliberately not a general patch or Git command API.
  * The helper accepts only known patch identifiers and never accepts
