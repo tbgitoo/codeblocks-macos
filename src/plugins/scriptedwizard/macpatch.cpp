@@ -2,8 +2,8 @@
  * This file is part of the Code::Blocks IDE and licensed under the GNU General Public License, version 3
  * http://www.gnu.org/licenses/gpl-3.0.html
  *
- * v3.8.1 M5: probe and apply one known compatibility patch to an
- * explicitly supported source checkout using Git.
+ * v3.8.1 M5 and v3.9 M2: probe and apply one known compatibility
+ * patch to an explicitly supported source checkout using Git.
  *
  * This is deliberately not a general patch or Git command API.
  * The helper accepts only known patch identifiers and never accepts
@@ -35,17 +35,63 @@
 namespace
 {
 
-const wxString kOgreAssimpPatchId =
-    wxT("ogre-14.6.3-assimp-sidecar");
+enum MacPatchRevisionKind
+{
+    MacPatchRevisionExactTag = 0,
+    MacPatchRevisionExactCommit = 1
+};
 
-const wxString kOgreAssimpPatchFile =
-    wxT("ogre-14.6.3-assimp-sidecar-path.patch");
+struct KnownPatch
+{
+    const wxChar* id;
+    const wxChar* file;
+    const wxChar* sentinel;
+    int revisionKind;
+    const wxChar* revision;
+};
 
-const wxString kOgreAssimpTargetFile =
-    wxT("PlugIns/Assimp/src/AssimpLoader.cpp");
+const KnownPatch kKnownPatches[] =
+{
+    {
+        wxT("ogre-14.6.3-assimp-sidecar"),
+        wxT("ogre-14.6.3-assimp-sidecar-path.patch"),
+        wxT("PlugIns/Assimp/src/AssimpLoader.cpp"),
+        MacPatchRevisionExactTag,
+        wxT("v14.6.3")
+    },
+    {
+        wxT("ogre-next-deps-mingw"),
+        wxT("ogre-next-deps-mingw.patch"),
+        wxT("src/zziplib/zzip/plugin.c"),
+        MacPatchRevisionExactCommit,
+        wxT("f7e23191f4fd89ed41134996bc47f9ee23d009df")
+    },
+    {
+        wxT("ogre-next-deps-apple"),
+        wxT("ogre-next-deps-apple.patch"),
+        wxT("src/Remotery/CMakeLists.txt"),
+        MacPatchRevisionExactCommit,
+        wxT("f7e23191f4fd89ed41134996bc47f9ee23d009df")
+    },
+    {
+        wxT("ogre-next-v3-0-mingw"),
+        wxT("ogre-next-v3-0-mingw.patch"),
+        wxT("RenderSystems/Direct3D11/src/OgreD3D11Device.cpp"),
+        MacPatchRevisionExactCommit,
+        wxT("4859016ad2cc956a653dfc4e4a859505696c6509")
+    }
+};
 
-const wxString kOgreTag =
-    wxT("v14.6.3");
+const KnownPatch* FindKnownPatch(const wxString& patchId)
+{
+    for (size_t i = 0; i < WXSIZEOF(kKnownPatches); ++i)
+    {
+        if (patchId == kKnownPatches[i].id)
+            return &kKnownPatches[i];
+    }
+
+    return nullptr;
+}
 
 wxString ReadAll(wxInputStream* in)
 {
@@ -99,7 +145,10 @@ bool HasControlCharacters(const wxString& text)
     return false;
 }
 
-bool SourceRootOk(const wxString& sourceRoot, wxString& normalised, wxString& error)
+bool SourceRootOk(const wxString& sourceRoot,
+                 const wxString& sentinel,
+                 wxString& normalised,
+                 wxString& error)
 {
     if (sourceRoot.empty())
     {
@@ -146,7 +195,7 @@ bool SourceRootOk(const wxString& sourceRoot, wxString& normalised, wxString& er
     }
 
     wxFileName target(
-        normalised + wxFILE_SEP_PATH + kOgreAssimpTargetFile);
+        normalised + wxFILE_SEP_PATH + sentinel);
 
     target.Normalize(
         wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE);
@@ -164,11 +213,13 @@ bool SourceRootOk(const wxString& sourceRoot, wxString& normalised, wxString& er
 }
 
 bool ResolveKnownPatch(const wxString& patchId,
+                       const KnownPatch*& patch,
                        wxString& patchFile,
-                       wxString& targetFile,
                        wxString& error)
 {
-    if (patchId != kOgreAssimpPatchId)
+    patch = FindKnownPatch(patchId);
+
+    if (!patch)
     {
         error = wxT("unknown patch identifier");
         return false;
@@ -181,10 +232,9 @@ bool ResolveKnownPatch(const wxString& patchId,
     patchName.AppendDir(wxT("templates"));
     patchName.AppendDir(wxT("wizard"));
     patchName.AppendDir(wxT("patches"));
-    patchName.SetFullName(kOgreAssimpPatchFile);
+    patchName.SetFullName(patch->file);
 
     patchFile = patchName.GetFullPath();
-    targetFile = kOgreAssimpTargetFile;
 
     if (!wxFileExists(patchFile))
     {
@@ -248,16 +298,26 @@ bool RunGit(const wxString& executable,
     return exitCode != -1;
 }
 
-bool ValidateExactTag(const wxString& executable,
-                      const wxString& sourceRoot,
-                      wxString& versionOutput,
-                      wxString& errorOutput)
+bool ValidateRevision(const wxString& executable,
+                     const wxString& sourceRoot,
+                     const KnownPatch& patch,
+                     wxString& versionOutput,
+                     wxString& errorOutput)
 {
     wxArrayString args;
-    args.Add(wxT("describe"));
-    args.Add(wxT("--tags"));
-    args.Add(wxT("--exact-match"));
-    args.Add(wxT("HEAD"));
+
+    if (patch.revisionKind == MacPatchRevisionExactTag)
+    {
+        args.Add(wxT("describe"));
+        args.Add(wxT("--tags"));
+        args.Add(wxT("--exact-match"));
+        args.Add(wxT("HEAD"));
+    }
+    else
+    {
+        args.Add(wxT("rev-parse"));
+        args.Add(wxT("HEAD"));
+    }
 
     long exitCode = -1;
     wxString output;
@@ -279,7 +339,7 @@ bool ValidateExactTag(const wxString& executable,
     errorOutput = error;
 
     return exitCode == 0
-        && versionOutput == kOgreTag;
+        && versionOutput == patch.revision;
 }
 
 bool RunPatchCheck(const wxString& executable,
@@ -440,11 +500,12 @@ MacPatchProbe ProbeMacPatch(
 
     wxString patchFile;
     wxString sourceError;
+    const KnownPatch* patch = nullptr;
 
     if (!ResolveKnownPatch(
             patchId,
+            patch,
             patchFile,
-            result.targetFile,
             sourceError))
     {
         result.state = MacPatchUnknown;
@@ -452,10 +513,13 @@ MacPatchProbe ProbeMacPatch(
         return result;
     }
 
+    result.targetFile = patch->sentinel;
+
     wxString normalisedSource;
 
     if (!SourceRootOk(
             sourceRoot,
+            patch->sentinel,
             normalisedSource,
             sourceError))
     {
@@ -483,16 +547,21 @@ MacPatchProbe ProbeMacPatch(
 
     wxString versionError;
 
-    if (!ValidateExactTag(
+    if (!ValidateRevision(
             gitProbe.executable,
             normalisedSource,
+            *patch,
             result.versionOutput,
             versionError))
     {
         result.state = MacPatchUnsupportedVersion;
         result.errorOutput =
             versionError.empty()
-                ? wxT("source checkout is not exact tag v14.6.3")
+                ? wxString::Format(
+                      patch->revisionKind == MacPatchRevisionExactTag
+                          ? wxT("source checkout is not exact tag %s")
+                          : wxT("source checkout is not commit %s"),
+                      patch->revision)
                 : versionError;
 
         return result;
@@ -638,16 +707,19 @@ MacPatchApplyResult ApplyMacPatch(
 
     wxString patchFile;
     wxString patchError;
+    const KnownPatch* patch = nullptr;
 
     if (!ResolveKnownPatch(
             patchId,
+            patch,
             patchFile,
-            result.targetFile,
             patchError))
     {
         result.errorOutput = patchError;
         return result;
     }
+
+    result.targetFile = patch->sentinel;
 
     result.launched = true;
 

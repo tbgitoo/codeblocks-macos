@@ -5,8 +5,10 @@
  * v3.8 M2: locate Git, revalidate one executable, and perform one
  * explicitly approved shallow tagged clone.
  *
+ * v3.9 M2: check out one of two compiled-in OGRE-Next source ids.
+ *
  * This is deliberately not a general Git command API.
- * The helper does not install Git and does not know anything about OGRE.
+ * The helper does not install Git.
  */
 
 #include <sdk.h>
@@ -16,6 +18,9 @@
     #include <manager.h>
 #endif
 
+#include <vector>
+
+#include <wx/arrstr.h>
 #include <wx/button.h>
 #include <wx/dialog.h>
 #include <wx/dir.h>
@@ -315,8 +320,7 @@ class MacGitCloneDialog : public wxDialog
 {
 public:
     MacGitCloneDialog(wxWindow* parent,
-                      const wxString& tag,
-                      const wxString& destination)
+                      const wxString& summary)
         : wxDialog(
               parent,
               wxID_ANY,
@@ -326,6 +330,7 @@ public:
               wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
           m_text(nullptr),
           m_process(nullptr),
+          m_step(0),
           m_pid(0),
           m_exit(-1),
           m_cancelled(false),
@@ -338,11 +343,7 @@ public:
         wxStaticText* label = new wxStaticText(
             this,
             wxID_ANY,
-            wxString::Format(
-                _("Git is cloning tag %s into:\n%s\n\n"
-                  "There is no progress percentage."),
-                tag,
-                destination));
+            summary);
 
         label->Wrap(560);
         outer->Add(label, 0, wxALL | wxEXPAND, 12);
@@ -397,6 +398,9 @@ public:
     {
         m_timer.Stop();
         delete m_process;
+
+        for (size_t i = 0; i < m_retired.size(); ++i)
+            delete m_retired[i];
     }
 
     bool Start(const wxString& executable,
@@ -404,58 +408,36 @@ public:
                const wxString& tag,
                const wxString& destination)
     {
+        wxArrayString command;
+        command.Add(wxT("clone"));
+        command.Add(wxT("--branch"));
+        command.Add(tag);
+        command.Add(wxT("--depth"));
+        command.Add(wxT("1"));
+        command.Add(url);
+        command.Add(destination);
+
+        std::vector<wxArrayString> commands;
+        commands.push_back(command);
+
+        return StartCommands(executable, commands);
+    }
+
+    bool StartCommands(const wxString& executable,
+                       const std::vector<wxArrayString>& commands)
+    {
         m_executable = executable;
-        m_url = url;
-        m_tag = tag;
-        m_destination = destination;
+        m_commands = commands;
+        m_step = 0;
 
-        m_process = new wxProcess(this);
-        m_process->Redirect();
-
-        wxExecuteEnv env;
-
-        if (!wxGetEnvMap(&env.env) || env.env.empty())
+        if (m_commands.empty())
         {
-            delete m_process;
-            m_process = nullptr;
-
-            Append(
-                wxT("Could not copy the environment, "
-                    "so Git was not started.\n"));
-
+            Append(wxT("Git was not given a command.\n"));
             return false;
         }
 
-        // Do not allow Git to ask for credentials interactively.
-        env.env[wxT("GIT_TERMINAL_PROMPT")] = wxT("0");
-
-        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
-        wxChar* argv[9];
-        argv[0] = const_cast<wxChar*>(m_executable.wx_str());
-        argv[1] = const_cast<wxChar*>(wxT("clone"));
-        argv[2] = const_cast<wxChar*>(wxT("--branch"));
-        argv[3] = const_cast<wxChar*>(m_tag.wx_str());
-        argv[4] = const_cast<wxChar*>(wxT("--depth"));
-        argv[5] = const_cast<wxChar*>(wxT("1"));
-        argv[6] = const_cast<wxChar*>(m_url.wx_str());
-        argv[7] = const_cast<wxChar*>(m_destination.wx_str());
-        argv[8] = nullptr;
-
-        m_pid = wxExecute(
-            argv,
-            wxEXEC_ASYNC,
-            m_process,
-            &env);
-
-        if (m_pid <= 0)
-        {
-            delete m_process;
-            m_process = nullptr;
-            m_pid = 0;
-
-            Append(wxT("Git did not start.\n"));
+        if (!LaunchStep())
             return false;
-        }
 
         m_timer.Start(200);
         return true;
@@ -552,15 +534,102 @@ private:
         ReadPending();
     }
 
+    bool LaunchStep()
+    {
+        if (m_step >= m_commands.size())
+            return false;
+
+        m_process = new wxProcess(this);
+        m_process->Redirect();
+
+        wxExecuteEnv env;
+
+        if (!wxGetEnvMap(&env.env) || env.env.empty())
+        {
+            delete m_process;
+            m_process = nullptr;
+
+            Append(
+                wxT("Could not copy the environment, "
+                    "so Git was not started.\n"));
+
+            return false;
+        }
+
+        // Do not allow Git to ask for credentials interactively.
+        env.env[wxT("GIT_TERMINAL_PROMPT")] = wxT("0");
+
+        wxArrayString& args = m_commands[m_step];
+
+        // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+        std::vector<wxChar*> argv;
+        argv.reserve(args.GetCount() + 2);
+        argv.push_back(const_cast<wxChar*>(m_executable.wx_str()));
+
+        for (size_t i = 0; i < args.GetCount(); ++i)
+            argv.push_back(const_cast<wxChar*>(args.Item(i).wx_str()));
+
+        argv.push_back(nullptr);
+
+        Append(
+            wxString::Format(
+                wxT("\n$ git %s\n"),
+                args.Item(0)));
+
+        m_pid = wxExecute(
+            argv.data(),
+            wxEXEC_ASYNC,
+            m_process,
+            &env);
+
+        if (m_pid <= 0)
+        {
+            delete m_process;
+            m_process = nullptr;
+            m_pid = 0;
+
+            Append(wxT("Git did not start.\n"));
+            return false;
+        }
+
+        return true;
+    }
+
     void OnProcessEnd(wxProcessEvent& event)
     {
         ReadPending();
 
         m_exit = event.GetExitCode();
-        m_finished = true;
         m_pid = 0;
 
-        Finish();
+        if (m_process)
+        {
+            m_retired.push_back(m_process);
+            m_process = nullptr;
+        }
+
+        if (m_cancelled || m_exit != 0)
+        {
+            m_finished = true;
+            Finish();
+            return;
+        }
+
+        ++m_step;
+
+        if (m_step >= m_commands.size())
+        {
+            m_finished = true;
+            Finish();
+            return;
+        }
+
+        if (!LaunchStep())
+        {
+            m_exit = -1;
+            m_finished = true;
+            Finish();
+        }
     }
 
     void OnCancel(wxCommandEvent&)
@@ -609,12 +678,13 @@ private:
 
     wxTextCtrl* m_text;
     wxProcess* m_process;
+    std::vector<wxProcess*> m_retired;
+    std::vector<wxArrayString> m_commands;
 
     wxString m_executable;
-    wxString m_url;
-    wxString m_tag;
-    wxString m_destination;
     wxString m_all;
+
+    size_t m_step;
 
     long m_pid;
     long m_exit;
@@ -625,6 +695,216 @@ private:
 
     wxTimer m_timer;
 };
+
+struct KnownGitSource
+{
+    const wxChar* id;
+    const wxChar* url;
+    const wxChar* commit;
+    const wxChar* leaf;
+    const wxChar* submodulePath;
+    const wxChar* submoduleCommit;
+};
+
+const KnownGitSource kKnownSources[] =
+{
+    {
+        wxT("ogre-next-deps"),
+        wxT("https://github.com/OGRECave/ogre-next-deps.git"),
+        wxT("f7e23191f4fd89ed41134996bc47f9ee23d009df"),
+        wxT("ogre-next-deps-source-3.0.0"),
+        wxT("src/SDL2"),
+        wxT("5d249570393f7a37e037abf22cd6012a4cc56a71")
+    },
+    {
+        wxT("ogre-next"),
+        wxT("https://github.com/OGRECave/ogre-next.git"),
+        wxT("4859016ad2cc956a653dfc4e4a859505696c6509"),
+        wxT("ogre-next-source-3.0.0"),
+        NULL,
+        NULL
+    }
+};
+
+const KnownGitSource* FindKnownSource(const wxString& sourceId)
+{
+    for (size_t i = 0; i < WXSIZEOF(kKnownSources); ++i)
+    {
+        if (sourceId == kKnownSources[i].id)
+            return &kKnownSources[i];
+    }
+
+    return nullptr;
+}
+
+wxString StripTrailingSeparator(wxString path)
+{
+    while (path.Length() > 1
+           && (path.Last() == wxT('/') || path.Last() == wxT('\\')))
+    {
+        path.RemoveLast();
+    }
+
+    return path;
+}
+
+wxString KnownSourceDestination(const KnownGitSource& source)
+{
+    wxFileName dest = wxFileName::DirName(wxGetHomeDir());
+    dest.AppendDir(wxT("Library"));
+    dest.AppendDir(wxT("CodeBlocks"));
+    dest.AppendDir(source.leaf);
+    dest.Normalize(
+        wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE | wxPATH_NORM_TILDE);
+
+    return StripTrailingSeparator(dest.GetFullPath());
+}
+
+bool RunGitSync(const wxString& executable,
+                const wxArrayString& args,
+                long& exitCode,
+                wxString& output,
+                wxString& error)
+{
+    wxProcess process(wxPROCESS_REDIRECT);
+
+    wxExecuteEnv env;
+
+    if (!wxGetEnvMap(&env.env) || env.env.empty())
+    {
+        exitCode = -1;
+        error = wxT("could not copy the environment");
+        return false;
+    }
+
+    env.env[wxT("GIT_TERMINAL_PROMPT")] = wxT("0");
+
+    std::vector<wxChar*> argv;
+    argv.reserve(args.GetCount() + 2);
+    argv.push_back(const_cast<wxChar*>(executable.wx_str()));
+
+    for (size_t i = 0; i < args.GetCount(); ++i)
+        argv.push_back(const_cast<wxChar*>(args.Item(i).wx_str()));
+
+    argv.push_back(nullptr);
+
+    exitCode =
+        wxExecute(
+            argv.data(),
+            wxEXEC_SYNC,
+            &process,
+            &env);
+
+    output = ReadAll(process.GetInputStream());
+    error = ReadAll(process.GetErrorStream());
+
+    return exitCode != -1;
+}
+
+bool RevParseHead(const wxString& executable,
+                  const wxString& directory,
+                  wxString& hash,
+                  wxString& error)
+{
+    wxArrayString args;
+    args.Add(wxT("-C"));
+    args.Add(directory);
+    args.Add(wxT("rev-parse"));
+    args.Add(wxT("HEAD"));
+
+    long exitCode = -1;
+    wxString output;
+
+    if (!RunGitSync(
+            executable,
+            args,
+            exitCode,
+            output,
+            error))
+    {
+        return false;
+    }
+
+    hash = FirstLine(output);
+
+    return exitCode == 0 && hash.Length() == 40;
+}
+
+bool EnsureParentDirectory(const wxString& destination, wxString& error)
+{
+    wxFileName parent = wxFileName::DirName(destination);
+    parent.RemoveLastDir();
+
+    if (parent.DirExists())
+        return true;
+
+    if (!parent.Mkdir(0777, wxPATH_MKDIR_FULL))
+    {
+        error = wxT("could not create the parent directory");
+        return false;
+    }
+
+    return true;
+}
+
+std::vector<wxArrayString> CheckoutCommands(
+    const KnownGitSource& source,
+    const wxString& destination,
+    bool submodulesOnly)
+{
+    std::vector<wxArrayString> commands;
+
+    if (!submodulesOnly)
+    {
+        wxArrayString init;
+        init.Add(wxT("init"));
+        init.Add(destination);
+        commands.push_back(init);
+
+        wxArrayString remote;
+        remote.Add(wxT("-C"));
+        remote.Add(destination);
+        remote.Add(wxT("remote"));
+        remote.Add(wxT("add"));
+        remote.Add(wxT("origin"));
+        remote.Add(source.url);
+        commands.push_back(remote);
+
+        wxArrayString fetch;
+        fetch.Add(wxT("-C"));
+        fetch.Add(destination);
+        fetch.Add(wxT("fetch"));
+        fetch.Add(wxT("--depth"));
+        fetch.Add(wxT("1"));
+        fetch.Add(wxT("origin"));
+        fetch.Add(source.commit);
+        commands.push_back(fetch);
+
+        wxArrayString checkout;
+        checkout.Add(wxT("-C"));
+        checkout.Add(destination);
+        checkout.Add(wxT("checkout"));
+        checkout.Add(wxT("--detach"));
+        checkout.Add(wxT("FETCH_HEAD"));
+        commands.push_back(checkout);
+    }
+
+    if (source.submodulePath)
+    {
+        wxArrayString submodule;
+        submodule.Add(wxT("-C"));
+        submodule.Add(destination);
+        submodule.Add(wxT("submodule"));
+        submodule.Add(wxT("update"));
+        submodule.Add(wxT("--init"));
+        submodule.Add(wxT("--recursive"));
+        submodule.Add(wxT("--depth"));
+        submodule.Add(wxT("1"));
+        commands.push_back(submodule);
+    }
+
+    return commands;
+}
 
 } // namespace
 
@@ -763,8 +1043,11 @@ MacGitCloneResult CloneMacGitRepository(
 
     MacGitCloneDialog dlg(
         parent,
-        tag,
-        destination);
+        wxString::Format(
+            _("Git is cloning tag %s into:\n%s\n\n"
+              "There is no progress percentage."),
+            tag,
+            destination));
 
     if (!dlg.Start(
             probe.executable,
@@ -812,6 +1095,224 @@ wxString FormatMacGitClone(const MacGitCloneResult& result)
         result.tag,
         result.destination,
         result.output);
+}
+
+MacGitAcquireResult AcquireMacGitSource(
+    wxWindow* parent,
+    const wxString& sourceId,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    MacGitAcquireResult result;
+    result.sourceId = sourceId;
+
+    const KnownGitSource* source = FindKnownSource(sourceId);
+
+    if (!source)
+    {
+        result.output = wxT("unknown source identifier");
+        return result;
+    }
+
+    result.url = source->url;
+    result.commit = source->commit;
+    result.destination = KnownSourceDestination(*source);
+
+    if (result.destination.empty() || result.destination == wxT("/"))
+    {
+        result.output = wxT("destination is unsafe");
+        return result;
+    }
+
+    const MacGitProbe probe = ProbeMacGit();
+    result.executable = probe.executable;
+
+    if (probe.access != MacGitWorks)
+    {
+        result.output = wxT("git unavailable");
+
+        if (!probe.errorOutput.empty())
+            result.output += wxT(": ") + FirstLine(probe.errorOutput);
+
+        return result;
+    }
+
+    const bool exists = wxDirExists(result.destination);
+    const bool empty = exists && DirectoryIsEmpty(result.destination);
+
+    wxFileName gitMarker(result.destination, wxT(".git"));
+    const bool isGit =
+           exists
+        && (wxDirExists(gitMarker.GetFullPath())
+            || wxFileExists(gitMarker.GetFullPath()));
+
+    wxString head;
+    wxString revError;
+    const bool headMatches =
+           isGit
+        && RevParseHead(
+               probe.executable,
+               result.destination,
+               head,
+               revError)
+        && head == source->commit;
+
+    bool submoduleMatches = source->submodulePath == NULL;
+
+    if (source->submodulePath && headMatches)
+    {
+        const wxString submoduleDir =
+            result.destination
+            + wxFILE_SEP_PATH
+            + source->submodulePath;
+
+        wxString submoduleHash;
+
+        if (RevParseHead(
+                probe.executable,
+                submoduleDir,
+                submoduleHash,
+                revError)
+            && submoduleHash == source->submoduleCommit)
+        {
+            submoduleMatches = true;
+            result.submoduleCommit = submoduleHash;
+        }
+    }
+
+    if (headMatches && submoduleMatches)
+    {
+        result.alreadyPresent = true;
+        result.success = true;
+        result.exitCode = 0;
+        result.output = wxT("pinned checkout already present");
+        return result;
+    }
+
+    const bool submoduleOnly =
+           headMatches
+        && source->submodulePath != NULL
+        && !submoduleMatches;
+
+    if (exists && !empty && !submoduleOnly)
+    {
+        result.output = wxT("destination is not the pinned checkout");
+        return result;
+    }
+
+    if (!submoduleOnly)
+    {
+        wxString parentError;
+
+        if (!EnsureParentDirectory(result.destination, parentError))
+        {
+            result.output = parentError;
+            return result;
+        }
+    }
+
+    if (!ConfirmClone(parent, explanation, confirmLabel))
+    {
+        result.cancelled = true;
+        result.output = wxT("checkout cancelled before launch");
+        return result;
+    }
+
+    MacGitCloneDialog dlg(
+        parent,
+        wxString::Format(
+            _("Git is checking out %s into:\n%s\n\n"
+              "There is no progress percentage."),
+            source->commit,
+            result.destination));
+
+    if (!dlg.StartCommands(
+            probe.executable,
+            CheckoutCommands(*source, result.destination, submoduleOnly)))
+    {
+        result.output = dlg.OutputTail();
+        return result;
+    }
+
+    dlg.ShowModal();
+
+    result.launched = true;
+    result.cancelled = dlg.Cancelled();
+    result.exitCode = dlg.ExitCode();
+    result.output = dlg.OutputTail();
+
+    if (result.cancelled || result.exitCode != 0)
+        return result;
+
+    wxString checked;
+
+    if (!RevParseHead(
+            probe.executable,
+            result.destination,
+            checked,
+            revError)
+        || checked != source->commit)
+    {
+        result.success = false;
+        result.output = wxT("checked out revision does not match the pin");
+        return result;
+    }
+
+    if (source->submodulePath)
+    {
+        const wxString submoduleDir =
+            result.destination
+            + wxFILE_SEP_PATH
+            + source->submodulePath;
+
+        wxString submoduleHash;
+
+        if (!RevParseHead(
+                probe.executable,
+                submoduleDir,
+                submoduleHash,
+                revError)
+            || submoduleHash != source->submoduleCommit)
+        {
+            result.success = false;
+            result.output = wxT("SDL2 submodule does not match the pin");
+            return result;
+        }
+
+        result.submoduleCommit = submoduleHash;
+    }
+
+    result.success = true;
+    return result;
+}
+
+wxString FormatMacGitAcquire(const MacGitAcquireResult& result)
+{
+    return wxString::Format(
+        wxT("launched=%d\n"
+            "cancelled=%d\n"
+            "already_present=%d\n"
+            "exit=%ld\n"
+            "success=%d\n"
+            "executable=%s\n"
+            "source_id=%s\n"
+            "url=%s\n"
+            "commit=%s\n"
+            "destination=%s\n"
+            "submodule_commit=%s\n"
+            "output=%s"),
+        result.launched ? 1 : 0,
+        result.cancelled ? 1 : 0,
+        result.alreadyPresent ? 1 : 0,
+        result.exitCode,
+        result.success ? 1 : 0,
+        result.executable,
+        result.sourceId,
+        result.url,
+        result.commit,
+        result.destination,
+        result.submoduleCommit,
+        FirstLine(result.output));
 }
 
 #endif // __WXMAC__

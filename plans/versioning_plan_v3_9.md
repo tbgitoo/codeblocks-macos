@@ -1,6 +1,6 @@
 # Code::Blocks v3.9 - OGRE-Next wizard, macOS first
 
-**Status: M1 done.** The Windows manual install in `plans/thoughts/ogre-next-windows-codeblocks-mingw-student-guide.md` has been run from start to finish. The same pins now also build and install on Apple Silicon, and an external program linked only to that install opened a Metal window. No wizard code has been written. The existing OGRE 1.x wizard is left unchanged. The two packaged MinGW patches are unchanged.
+**Status: M3 done.** The Windows manual install in `plans/thoughts/ogre-next-windows-codeblocks-mingw-student-guide.md` has been run from start to finish. The same pins build and install on Apple Silicon. The wizard helpers can check out those two revisions, apply the packaged patches, and configure, build, and install both trees. The OGRE-Next project entry is not registered yet. The existing OGRE 1.x wizard is left unchanged. The two packaged MinGW patches are unchanged.
 
 **Question this version answers:** can Code::Blocks offer a separate OGRE-Next application wizard, on the same pattern as the v3.8 OGRE wizard, that acquires the pinned dependency and engine sources, applies the proven compatibility patches through the same constrained patch helper, installs a clean SDK, and generates an ordinary Code::Blocks project against that SDK?
 
@@ -167,11 +167,21 @@ Reuse the existing helpers. Do not add a general Git, CMake, or patch command AP
 
 ```text
 Wizard.MacGitProbe / MacGitTry / MacGitClone
+Wizard.MacGitAcquire(sourceId, explanation, confirmLabel)
 Wizard.MacCMakeProbe / MacCMakePaths / MacCMakeConfigure
+Wizard.MacCMakeOgreNext(projectId, operation, explanation, confirmLabel)
 Wizard.MacPatchProbe / MacPatchApply
 ```
 
-`MacCMakeConfigure` today configures one OGRE 1.x tree. v3.9 needs a second, still constrained, use of that configure/build/install sequence for the dependency tree, plus `OGRE_DEPENDENCIES_DIR` when configuring the engine. The script still cannot pass arbitrary CMake arguments.
+`MacGitAcquire` accepts only `ogre-next-deps` or `ogre-next`. The URL, commit, SDL2 pin, and destination are compiled in. The destination is `wxGetHomeDir()` plus `Library/CodeBlocks/` plus `ogre-next-deps-source-3.0.0` or `ogre-next-source-3.0.0`. A directory that is already that commit, and for the dependency tree also SDL2 `5d249570393f7a37e037abf22cd6012a4cc56a71`, is reported present and Git is not started. Any other existing directory is left untouched. Cancel before launch does not start Git.
+
+`MacCMakeConfigure` still configures one OGRE 1.x tree, with the same arguments as before. `MacCMakeOgreNext` is the OGRE-Next sequence. `projectId` is only `ogre-next-deps` or `ogre-next`. `operation` is only `configure`, `build`, or `install`. The script cannot pass a path, a prefix, or a `-D` flag.
+
+Dependency configure passes `Release`, `arm64`, and the SDK path from `xcrun --show-sdk-path`. It does not pass `CMAKE_INSTALL_PREFIX`. After configure, the cache prefix must be `<deps build>/ogredeps`. A cache whose prefix is already something else is left unchanged and CMake is not started. An empty `CMAKE_OSX_SYSROOT` from the M1 configure still matches; any other value must be that SDK path.
+
+Engine configure passes `Release`, `arm64`, the SDK path, `CMAKE_INSTALL_PREFIX` set to `~/Library/CodeBlocks/ogre-next-3.0.0`, `OGRE_DEPENDENCIES_DIR` set to the `ogredeps` directory, and samples and tests off. It does not start unless the dependency file list is present. Install runs `cmake --install <build>` with no `--prefix`, and only after the cache prefix matches. Success requires the section 3.1 file list. Exit status alone is not success.
+
+A cache and, for build or install, a file list that already match return success without a confirmation dialog and without starting CMake. Cancelling the confirmation does not start CMake.
 
 Paths are resolved in native code with `wxGetHomeDir()`, as in v3.8. No username and no `D:\` literal in the macOS workflow.
 
@@ -251,6 +261,11 @@ patch id        ogre-next-deps-mingw
 packaged file   ogre-next-deps-mingw.patch
 revision        f7e23191f4fd89ed41134996bc47f9ee23d009df
 
+patch id        ogre-next-deps-apple
+packaged file   ogre-next-deps-apple.patch
+revision        f7e23191f4fd89ed41134996bc47f9ee23d009df
+applies after   ogre-next-deps-mingw
+
 patch id        ogre-next-v3-0-mingw
 packaged file   ogre-next-v3-0-mingw.patch
 revision        4859016ad2cc956a653dfc4e4a859505696c6509
@@ -276,21 +291,27 @@ apply then rebuild   a later configure/build uses the patched tree
 repeated run         idempotent
 ```
 
-The dependency patch is probed against the deps checkout. The engine patch is probed against the OGRE-Next checkout. One patch must not be applied to the other tree.
+The dependency patches are probed against the deps checkout, MinGW first and then `ogre-next-deps-apple`. The engine patch is probed against the OGRE-Next checkout. One patch must not be applied to the other tree. A clean checkout of each pin accepts its own patch and refuses the other. After a successful apply, `git apply --reverse --check` succeeds and a second apply does not. Declining the confirmation does not run `git apply`.
+
+`ogre-next-deps-apple.patch` was generated from a clean checkout of `f7e23191` after `ogre-next-deps-mingw.patch` had been applied. It does not apply before that patch. With both applied, each patch still reverse-checks on its own. The dependency checkout under `~/Library/CodeBlocks` now matches that pair. The engine checkout's Metal and GL3Plus edits remain outside `ogre-next-v3-0-mingw.patch` and still reverse-check as already applied.
 
 ### 4.1 macOS decision, made in M1
 
-`git apply --check` succeeded for both packaged files on the pinned checkouts, and both were applied. No unguarded hunk broke the Mac build. The Mac wizard applies both patches, so the trees match the Windows pin. The Windows wizard, when it is implemented later, does the same.
+`git apply --check` succeeded for both packaged MinGW files on the pinned checkouts, and both were applied. No unguarded hunk broke the Mac build. The Mac wizard applies both MinGW patches, then `ogre-next-deps-apple` on the dependency tree. The Windows wizard, when it is implemented later, applies the two MinGW patches and does not need the Apple patch.
 
-The packaged patches were not sufficient to compile. Three further edits were made in the checkouts only. They are not part of either MinGW patch, and they are not a third packaged patch. M3 does not start until those edits are reviewed as their own Mac change:
+The packaged MinGW patches were not sufficient to compile. The Remotery link is now `ogre-next-deps-apple.patch`, applied after `ogre-next-deps-mingw.patch`. It adds a second Apple block after `install_dep`, so it does not sit inside the MinGW hunk:
 
 ```text
 ogre-next-deps src/Remotery/CMakeLists.txt
-    Inside the existing APPLE block, link
+    After install_dep, link
     -framework Foundation -framework Metal -framework QuartzCore.
     RemoteryMetal.mm otherwise fails with undefined NSThread and objc_msgSend.
     The packaged ws2_32 hunk stays; it is unused on Mac.
+```
 
+Two engine edits are still only in the checkout. They are not part of either MinGW patch, and `MacCMakeOgreNext` does not apply them. A fresh engine checkout plus only the packaged patch still fails to compile until they are present. The checkout under `~/Library/CodeBlocks` already contains them:
+
+```text
 ogre-next RenderSystems/Metal/src/OgreMetalWindow.mm
     This pin is missing the brace that closes if( !externalWindowHandle )
     before else { mIsExternal = true; }. Clang reports "expected expression"
@@ -310,7 +331,7 @@ Configure also needs two arguments the Windows recipe does not pass. Both are fi
 -DCMAKE_OSX_SYSROOT=<output of xcrun --show-sdk-path>
 ```
 
-Without the architecture, this CMake writes `$(ARCHS_STANDARD_32_64_BIT)` and clang is invoked as `-arch -mmacosx-version-min=10.11`. Without the SDK path, CMake 4.4 on Xcode 26.5 stores the `xcodebuild` version banner as the sysroot, because `xcodebuild -n` is no longer accepted, and every compile rule then has an unmatched quote. `CMAKE_INSTALL_PREFIX` is still set at configure time, to `~/Library/CodeBlocks/ogre-next-3.0.0`. `OGRE_DEPENDENCIES_DIR` is the `ogredeps` directory above.
+Without the architecture, this CMake writes `$(ARCHS_STANDARD_32_64_BIT)` and clang is invoked as `-arch -mmacosx-version-min=10.11`. Without the SDK path, CMake 4.4 on Xcode 26.5 stores the `xcodebuild` version banner as the sysroot, because `xcodebuild -n` is no longer accepted, and every compile rule then has an unmatched quote. `MacCMakeOgreNext` passes the architecture and the SDK path for both trees. It passes `CMAKE_INSTALL_PREFIX` and `OGRE_DEPENDENCIES_DIR` only when configuring the engine. The prefix is `~/Library/CodeBlocks/ogre-next-3.0.0`. `OGRE_DEPENDENCIES_DIR` is the `ogredeps` directory above.
 
 ---
 
@@ -366,9 +387,9 @@ The project is an ordinary Code::Blocks C++ project with Debug and Release targe
 | | Objective | Check | Status |
 |---|---|---|---|
 | M1 | Prove the pinned sources on Apple Silicon and freeze the installed-SDK contract. | Exact deps commit, SDL2 submodule hash, and engine commit build and install under `~/Library/CodeBlocks`. Each packaged patch is checked with `git apply --check`. An external program, based on `Tutorial00_Basic`, links only the engine install prefix and opens a rendered OGRE-Next window. The actual include, library, plugin, media, and working-directory layout is written down. | **DONE** |
-| M2 | Acquire those checkouts from the wizard and apply the patches the M1 decision allows. | `macgit` clones the two pinned revisions and the recorded SDL2 submodule without installing Git. `macpatch` probes and applies `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` under the Assimp-patch contract. A declined patch leaves the checkout pristine. | **NEXT** |
-| M3 | Configure, build, and install both trees. | Deps install to the M1 dependency SDK. Engine configure passes that directory and the final `CMAKE_INSTALL_PREFIX` before the build. Install validation checks the M1 file list, not exit status alone. | **PLANNED** |
-| M4 | Add the OGRE-Next wizard and starter project. | New Project shows an OGRE-Next entry distinct from OGRE. The existing OGRE wizard still builds. The generated ordinary C++ project builds and runs against the installed SDK and shows the light-show scene. | **PLANNED** |
+| M2 | Acquire those checkouts from the wizard and apply the patches the M1 decision allows. | `macgit` clones the two pinned revisions and the recorded SDL2 submodule without installing Git. `macpatch` probes and applies `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` under the Assimp-patch contract. A declined patch leaves the checkout pristine. | **DONE** |
+| M3 | Configure, build, and install both trees. | Deps install to the M1 dependency SDK. Engine configure passes that directory and the final `CMAKE_INSTALL_PREFIX` before the build. Install validation checks the M1 file list, not exit status alone. | **DONE** |
+| M4 | Add the OGRE-Next wizard and starter project. | New Project shows an OGRE-Next entry distinct from OGRE. The existing OGRE wizard still builds. The generated ordinary C++ project builds and runs against the installed SDK and shows the light-show scene. | **NEXT** |
 | M5 | Reuse a machine that already has these stages. | A second run skips a matching checkout, an already-applied patch, a finished build, and a validated SDK. It still generates a new project. No stage is cloned or rebuilt merely because the wizard was opened. | **PLANNED** |
 
 Windows wizard automation is not one of these milestones. Section 2 is its specification for a later version.
@@ -383,9 +404,10 @@ Windows wizard automation is not one of these milestones. Section 2 is its speci
 | `config.script` | A second project registration. The OGRE registration stays. |
 | `macgit.cpp` / `.h` | Clone the two pinned revisions. No new general Git operation. |
 | `macpatch.cpp` / `.h` | Add the two known patch ids and their revision guards. |
-| `maccmake.cpp` / `.h` | Second constrained configure/build/install for deps, then engine configure with `OGRE_DEPENDENCIES_DIR` and the install prefix. |
+| `maccmake.cpp` / `.h` | `MacCMakeOgreNext` configures, builds, and installs `ogre-next-deps`, then `ogre-next`. The OGRE 1.x configure is unchanged. |
 | `macbrew.cpp` / `.h` | `cmake` and `pkgconf`, plus a formula only if M1 required it. |
 | `ogre-next-deps-mingw.patch` | Unchanged packaged dependency patch. |
+| `ogre-next-deps-apple.patch` | Remotery framework link. Applies only after the MinGW dependency patch. |
 | `ogre-next-v3-0-mingw.patch` | Unchanged packaged engine patch. |
 | `plans/thoughts/ogre_next_example/` | Proven consumer. M1 may adapt paths; it does not replace the scene. |
 
@@ -443,6 +465,6 @@ Stop if `maccmake` would have to accept arbitrary CMake arguments from the scrip
 
 ## 11. Done when
 
-**M1 done.** v3.9 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply the two packaged patches plus the reviewed Mac edits from section 4.1, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
+**M3 done.** v3.9 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply the two packaged patches plus the reviewed Mac edits from section 4.1, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
 
 The Windows manual path is already done. It remains the pin, the patch set, and the picture of success for a later Windows wizard.

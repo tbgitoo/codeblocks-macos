@@ -2057,6 +2057,31 @@ SQInteger Wiz_MacGitClone(HSQUIRRELVM v)
         FormatMacGitClone(result));
 }
 
+SQInteger Wiz_MacGitAcquire(HSQUIRRELVM v)
+{
+    // this, sourceId, explanation, confirmLabel
+    ExtractParams4<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacGitAcquire"))
+        return extractor.ErrorMessage();
+
+    const MacGitAcquireResult result =
+        AcquireMacGitSource(
+            extractor.p0->GetWizardWindow(),
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacGitAcquire(result));
+}
+
 SQInteger Wiz_MacPatchProbe(HSQUIRRELVM v)
 {
     // this, patchId, sourceRoot
@@ -2251,6 +2276,36 @@ SQInteger Wiz_MacCMakeInstall(
 
     const MacCMakeRunResult result =
         InstallMacCMake(
+            extractor.p0->GetWizardWindow(),
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacCMakeRun(result));
+}
+
+SQInteger Wiz_MacCMakeOgreNext(HSQUIRRELVM v)
+{
+    // this, projectId, operation, explanation, confirmLabel
+    // projectId is ogre-next-deps or ogre-next.
+    // operation is configure, build, or install.
+    // Paths and -D flags are not script arguments.
+    ExtractParams5<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::MacCMakeOgreNext"))
+        return extractor.ErrorMessage();
+
+    const MacCMakeRunResult result =
+        RunMacCMakeOgreNext(
             extractor.p0->GetWizardWindow(),
             *extractor.p1,
             *extractor.p2,
@@ -2734,6 +2789,7 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacGitProbe"), Wiz_MacGitProbe, _SC("Wiz::MacGitProbe"));
         BindMethod(v, _SC("MacGitTry"), Wiz_MacGitTry, _SC("Wiz::MacGitTry"));
         BindMethod(v, _SC("MacGitClone"), Wiz_MacGitClone, _SC("Wiz::MacGitClone"));
+        BindMethod(v, _SC("MacGitAcquire"), Wiz_MacGitAcquire, _SC("Wiz::MacGitAcquire"));
         
         BindMethod(v, _SC("MacPatchProbe"), Wiz_MacPatchProbe, _SC("Wiz::MacPatchProbe"));
         BindMethod(v, _SC("MacPatchApply"), Wiz_MacPatchApply, _SC("Wiz::MacPatchApply"));
@@ -2749,6 +2805,9 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("MacCMakeBuild"), Wiz_MacCMakeBuild, _SC("Wiz::MacCMakeBuild"));
         
         BindMethod(v, _SC("MacCMakeInstall"), Wiz_MacCMakeInstall, _SC("Wiz::MacCMakeInstall"));
+
+        // v3.9 M3. Known project id and operation only.
+        BindMethod(v, _SC("MacCMakeOgreNext"), Wiz_MacCMakeOgreNext, _SC("Wiz::MacCMakeOgreNext"));
         
 #endif
 #if defined(__WXMSW__)
