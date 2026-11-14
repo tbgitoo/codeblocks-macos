@@ -1,6 +1,6 @@
 # Code::Blocks Windows v4.0 — installable Windows distribution
 
-**Status: M7 done. M8 is not done.** The built installer on disk is `packaging\windows\codeblocks-v3.4-win64.exe`. It asks before creating a Start Menu shortcut. Uninstall deletes that shortcut only when its target is the installation being removed. M7 removed `D:\cb-v40-m9` and `D:\cb-v40-m7`, including their marked MinGW trees. The shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe` stayed. `D:\cb-v34-m5`, that official install, its unmarked MinGW, and the profile hash stayed. The single uninstall key was removed with the last uninstall, so `D:\cb-v34-m5` no longer has an Add/Remove Programs entry. v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`.
+**Status: M7 done. M8 silent cases passed. Cancellation and the cleared compiler checkbox are still open, so M8 is not done.** The built installer on disk is `packaging\windows\codeblocks-v3.4-win64.exe`. It asks before creating a Start Menu shortcut. Uninstall deletes that shortcut only when its target is the installation being removed. M7 removed `D:\cb-v40-m9` and `D:\cb-v40-m7`, including their marked MinGW trees. The shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe` stayed. `D:\cb-v34-m5` was already absent at the start of M8. The M8 success install now owns the single uninstall key and points at `D:\cb-v40-m8\success`. v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`. Silent `/S` keeps an explicit `/D=` path; a normal install still suggests the recorded install location on the directory page. Each `MessageBox` has a silent answer, so `/S` does not wait on a dialog.
 
 **Question this version answers:** what is the smallest packaging step that lets a Windows user install this already-working build, launch it, and uninstall it, without the source tree, and optionally obtain the known-good MinGW from its upstream publisher during that install?
 
@@ -276,27 +276,31 @@ Generated and not committed: `packaging\windows\stage\`, `7zr.exe`, and the WinL
 | M5 | **DONE.** Installed at `D:\cb-v34-m5`. The Start Menu shortcut has no arguments. A disposable-profile launch showed the Start page and registered Compiler, Debugger, and ScriptedWizard. No `MinGW` directory was created. | IDE starts from Start Menu; resources and wizards load; MinGW is absent; disposable profile used for test launch. |
 | M6 | **DONE.** Build and run passed (`7 hello`) with the external WinLibs at `D:\Program Files\CodeBlocks\MinGW` (GCC 14.2.0, GDB 16.2). Project debug showed scalar `value` = 7 and `std::string` summary `"hello"`; Stop ended the session. Standalone debug of `standalone.cpp` (not a project file) showed the same watches, Stop worked, and the IDE was closed from the window. On a copy of the shared profile, the only non-layout change was the stored version stamp, `25.03-r13644` to `svn-r0`. | Normal and standalone debugging, Stop, scalar and `std::string` watches work; passive profile differences are absent or fully identified. Stop on unexplained passive setting loss/reset. |
 | M7 | **DONE.** The installer asks before creating the Start Menu shortcut and removes that shortcut only when its target is this installation. Uninstall of `D:\cb-v40-m9` removed that IDE, its marked MinGW, and the shortcut that opened it. A later install at `D:\cb-v40-m7` did not replace a shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe`, and uninstalling `D:\cb-v40-m7` left that shortcut in place. `D:\cb-v34-m5`, the official install, its unmarked MinGW, and `%APPDATA%\CodeBlocks\default.conf` were unchanged. | IDE and this installation's shortcut removed; user profile/projects/other installs/their shortcuts/external or unmarked MinGW untouched. |
-| M8 | Exercise optional compiler success and every failure path. | Both hashes checked before use; successful tree and marker correct; failures leave IDE but no partial MinGW/downloads/run-owned temp. Stop if pinned `7zr.exe` cannot extract the pinned archive. |
+| M8 | Silent cases passed on 13 November 2026. The success install is `D:\cb-v40-m8\success` (GCC 14.2.0, GDB 16.2, marker holds the pinned SHA-256). The version-line failure proved the pinned `7zr.exe` extracted the pinned archive. Cancellation and a cleared compiler checkbox are still open. | Both hashes checked before use; successful tree and marker correct; failures leave IDE but no partial MinGW/downloads/run-owned temp. Stop if pinned `7zr.exe` cannot extract the pinned archive. |
 | M9 | Clean-machine Build/Run/Debug using only downloaded toolchain from non-default drive; repeat shared-profile sequence. | Selected compiler/debugger are `$INSTDIR\MinGW\bin`; C++ build/run/debug/standalone debug pass; download itself does not modify profile. |
 
 ### M8 failure matrix
 
-Test independent runs for:
+Silent runs on 13 November 2026, each to its own folder under `D:\cb-v40-m8`. The script on disk still uses `cb-v34-<id>` and `.codeblocks-v34-mingw`. The network was left enabled. “No network” was `http://127.0.0.1:9/7zr.exe`, which refused the connection. Insufficient disk space was a test-copy threshold of `2000000000` KB, not a filled disk; D: had about 194 GiB free. The shipped threshold remains `1153434` KB.
 
-- no network;
-- 7-Zip URL unavailable;
-- truncated `7zr.exe`;
-- wrong extractor hash;
-- WinLibs download failure;
-- wrong archive hash;
-- extractor cannot run;
-- extraction failure;
-- post-extraction validation failure;
-- insufficient disk space;
-- cancellation;
-- `$INSTDIR\MinGW` appearing immediately before final move.
+| Case | Result |
+|---|---|
+| No network | `The 7zr.exe download failed.` |
+| 7-Zip URL unavailable | `The 7zr.exe download failed.` |
+| Truncated `7zr.exe` | `SHA-256 did not match the pinned digest.` The file was not executed. |
+| Wrong extractor hash | `SHA-256 did not match the pinned digest.` The downloaded `7zr.exe` was not executed. |
+| Insufficient disk space | `Not enough free space on D:\ for the compiler.` |
+| WinLibs download failure | `The MinGW archive download failed.` |
+| Wrong archive hash | `SHA-256 did not match the pinned digest.` The archive was not extracted. |
+| Extractor cannot run | `Extracting the MinGW archive failed.` |
+| Extraction failure | `Extracting the MinGW archive failed.` The real `7zr.exe` returned non-zero on a non-archive. |
+| Post-extraction validation | `The extracted compiler version line did not match.` Extraction itself succeeded. |
+| `$INSTDIR\MinGW` appears before the move | `Could not install the compiler because D:\cb-v40-m8\mingw-appears\MinGW now exists.` The empty folder remained. No marker. |
+| Success | `D:\cb-v40-m8\success\MinGW`. `gcc.exe` 14.2.0, `gdb.exe` 16.2, version line matches, marker is the pinned SHA-256. No `cb-v34-*`, `7zr.exe`, or `winlibs.7z` left behind. |
+| Cancellation | Still open. On-screen Cancel, not Task Manager. |
+| Compiler checkbox cleared | Still open. `/S` skips the page and leaves the checkbox selected. |
 
-Each run leaves the IDE installed, no partial MinGW, no marker, no downloaded payloads, no run-owned temporary directory, and no profile write.
+Each finished silent run left the IDE installed. Failure runs left no marker, no downloaded payloads, and no run-owned temporary directory. The planted empty `MinGW` is the one folder that remained. `%APPDATA%\CodeBlocks\default.conf` stayed `F4AC6809D42233B86DD98F54243EC7723A80B32884757F4A9D0BFCDFE6E78B3F`, 60082 bytes. The Start Menu shortcut stayed `D:\Program Files\CodeBlocks\codeblocks.exe` with no arguments. That official executable stayed 2025-03-31 20:25:02, 2845198 bytes. `D:\cb-v34-m5` was already absent. The single uninstall key now points at `D:\cb-v40-m8\success`. The failure IDEs were left in place.
 
 ---
 
