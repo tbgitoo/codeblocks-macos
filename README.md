@@ -17,8 +17,15 @@ For download, installation, debugger and build information, see:
 
 ## Windows
 
-There is no Windows installer in this tree. To build the 64-bit IDE from
-source, see [README.windows.md](README.windows.md).
+For a general Windows install, use the official Code::Blocks distribution:
+
+[Official Code::Blocks website](https://www.codeblocks.org)
+
+From v4.0, this repository also publishes a Windows installer in the
+**Releases** section. It may be useful when you want the debugger for a source
+file that is not part of a Code::Blocks project, or the wizard updates in this
+tree. Building the 64-bit IDE from source is described in
+[README.windows.md](README.windows.md).
 
 ## Linux users
 
