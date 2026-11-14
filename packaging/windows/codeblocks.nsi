@@ -78,10 +78,13 @@ Function .onInit
   StrCpy $OwnUnpack "0"
   StrCpy $CompilerRunning "0"
   StrCpy $CompilerError ""
+  ; A silent /D= path must stay where it was given. The directory page still suggests the recorded install.
+  IfSilent init_done
   ReadRegStr $0 HKLM "${UNINSTKEY}" "InstallLocation"
   ${If} $0 != ""
     StrCpy $INSTDIR $0
   ${EndIf}
+init_done:
 FunctionEnd
 
 Function un.onInit
@@ -127,13 +130,13 @@ Function EnsureReplaceAllowed
     Goto replace_ok
   ${EndIf}
   IfSilent 0 replace_ask
-  MessageBox MB_ICONSTOP "This folder already contains Code::Blocks. A silent install will not replace it."
+  MessageBox MB_ICONSTOP "This folder already contains Code::Blocks. A silent install will not replace it." /SD IDOK
   Abort
 replace_ask:
   ${If} $ReplaceAnswer == "yes"
     Goto replace_ok
   ${EndIf}
-  MessageBox MB_YESNO|MB_ICONEXCLAMATION "This folder already contains Code::Blocks. Replace the program files in this folder?$\r$\n$\r$\nAn existing MinGW folder will be left unchanged." IDYES replace_yes
+  MessageBox MB_YESNO|MB_ICONEXCLAMATION "This folder already contains Code::Blocks. Replace the program files in this folder?$\r$\n$\r$\nAn existing MinGW folder will be left unchanged." /SD IDNO IDYES replace_yes
   Abort
 replace_yes:
   StrCpy $ReplaceAnswer "yes"
@@ -366,7 +369,7 @@ Function InstallCompilerIfRequested
 compiler_fail:
   Call CleanupCompilerTemps
   DetailPrint "$CompilerError"
-  MessageBox MB_ICONEXCLAMATION "Code::Blocks was installed. The MinGW compiler was not.$\r$\n$\r$\n$CompilerError"
+  MessageBox MB_ICONEXCLAMATION "Code::Blocks was installed. The MinGW compiler was not.$\r$\n$\r$\n$CompilerError" /SD IDOK
 FunctionEnd
 
 Function ShortcutPage
@@ -445,7 +448,7 @@ Function MaybeCreateShortcut
   ${StrCase} $0 $0 "U"
   ${If} $R8 != $0
     DetailPrint "Left the existing Start Menu shortcut unchanged because it opens a different installation."
-    MessageBox MB_ICONINFORMATION "A Start Menu shortcut already opens a different Code::Blocks installation.$\r$\n$\r$\nThat shortcut was left unchanged."
+    MessageBox MB_ICONINFORMATION "A Start Menu shortcut already opens a different Code::Blocks installation.$\r$\n$\r$\nThat shortcut was left unchanged." /SD IDOK
     Return
   ${EndIf}
 shortcut_create:
