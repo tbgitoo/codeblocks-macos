@@ -1,6 +1,12 @@
 # Building Code::Blocks on Windows
 
-This document explains how to build the 64-bit IDE from this source tree. There is no Windows installer here. The build produces a directory you can run directly.
+For a general Windows install, use the official Code::Blocks distribution:
+
+[Official Code::Blocks website](https://www.codeblocks.org)
+
+From v4.0, this repository also publishes a Windows installer in the **Releases** section. It may be useful when you want the debugger for a source file that is not part of a Code::Blocks project, or the wizard updates in this tree. The installer contains the IDE. A selected compiler option downloads a pinned MinGW toolchain during setup; clearing that option installs the IDE only.
+
+This document explains how to build the 64-bit IDE from this source tree. The build produces a directory you can run directly.
 
 The project is `src\CodeBlocks_wx33_64.cbp`. It builds against wxWidgets 3.3 as one shared Unicode library, using MinGW-w64.
 

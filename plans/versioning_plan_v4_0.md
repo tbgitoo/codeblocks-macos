@@ -1,6 +1,6 @@
 # Code::Blocks Windows v4.0 — installable Windows distribution
 
-**Status: M7 done. M8 silent cases passed. Cancellation and the cleared compiler checkbox are still open, so M8 is not done.** The built installer on disk is `packaging\windows\codeblocks-v3.4-win64.exe`. It asks before creating a Start Menu shortcut. Uninstall deletes that shortcut only when its target is the installation being removed. M7 removed `D:\cb-v40-m9` and `D:\cb-v40-m7`, including their marked MinGW trees. The shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe` stayed. `D:\cb-v34-m5` was already absent at the start of M8. The M8 success install now owns the single uninstall key and points at `D:\cb-v40-m8\success`. v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`. Silent `/S` keeps an explicit `/D=` path; a normal install still suggests the recorded install location on the directory page. Each `MessageBox` has a silent answer, so `/S` does not wait on a dialog.
+**Status: M8 done. M9 is not done. Cancelling from the progress page is deferred to v4.1.** The built installer on disk is `packaging\windows\codeblocks-v3.4-win64.exe`. It asks before creating a Start Menu shortcut. Uninstall deletes that shortcut only when its target is the installation being removed. M7 removed `D:\cb-v40-m9` and `D:\cb-v40-m7`, including their marked MinGW trees. The shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe` stayed. `D:\cb-v34-m5` was already absent at the start of M8. The cleared-checkbox install at `D:\cb-v40-m8\no_compiler` now owns the single uninstall key. `D:\cb-v40-m8\success` and its marked MinGW remain on disk. v3.3 is complete and is the baseline. This version does not reopen the SFML, GLFW, or SDL3 wizards. The only compile change is declaring the existing `nativewatchsummary` sources on the Debugger target so that target links. On Windows the package is Code::Blocks, not a side-by-side “macOS port” product, and `%APPDATA%\CodeBlocks` stays the shared profile on purpose. Neither the installer nor a passive launch may overwrite, reset, or remove pre-existing settings in that profile. Only a deliberate settings change made by the user may be persisted. v4.0 produces one installer. It does not embed a compiler. An optional page can download one pinned WinLibs archive from its upstream publisher, check its SHA-256 with Windows PowerShell `Get-FileHash`, and extract it as `$INSTDIR\MinGW`. `certutil.exe` is not that check. The optional compiler step downloads pinned 7-Zip 26.05 `7zr.exe` from its upstream publisher and checks that file's own SHA-256. The installer does not embed `7zr.exe`. Silent `/S` keeps an explicit `/D=` path; a normal install still suggests the recorded install location on the directory page. Each `MessageBox` has a silent answer, so `/S` does not wait on a dialog.
 
 **Question this version answers:** what is the smallest packaging step that lets a Windows user install this already-working build, launch it, and uninstall it, without the source tree, and optionally obtain the known-good MinGW from its upstream publisher during that install?
 
@@ -196,7 +196,7 @@ If the chosen temporary name already exists, stop without deleting it. Never del
 10. Write `$INSTDIR\MinGW\.codeblocks-v40-mingw` last, containing the WinLibs SHA-256.
 11. Delete `7zr.exe`, the archive, digest files, and the now-empty run-owned temporary directory.
 
-Every failure or cancellation leaves the IDE installed but no partial MinGW, no marker, no downloaded files, and no run-owned temporary directory. It does not delete a pre-existing `MinGW.incomplete` or another run's `cb-v40-*` directory.
+Every compiler failure leaves the IDE installed but no partial MinGW, no marker, no downloaded files, and no run-owned temporary directory. It does not delete a pre-existing `MinGW.incomplete` or another run's `cb-v40-*` directory. The progress page does not offer Cancel: stock NSIS disables that button while the install sections run, and on 14 November 2026 it stayed disabled for the whole install. v4.0 ships that behavior. Making Cancel available during the compiler download or extraction, and still leaving the IDE with no partial MinGW, is v4.1.
 
 ### Uninstall
 
@@ -276,7 +276,7 @@ Generated and not committed: `packaging\windows\stage\`, `7zr.exe`, and the WinL
 | M5 | **DONE.** Installed at `D:\cb-v34-m5`. The Start Menu shortcut has no arguments. A disposable-profile launch showed the Start page and registered Compiler, Debugger, and ScriptedWizard. No `MinGW` directory was created. | IDE starts from Start Menu; resources and wizards load; MinGW is absent; disposable profile used for test launch. |
 | M6 | **DONE.** Build and run passed (`7 hello`) with the external WinLibs at `D:\Program Files\CodeBlocks\MinGW` (GCC 14.2.0, GDB 16.2). Project debug showed scalar `value` = 7 and `std::string` summary `"hello"`; Stop ended the session. Standalone debug of `standalone.cpp` (not a project file) showed the same watches, Stop worked, and the IDE was closed from the window. On a copy of the shared profile, the only non-layout change was the stored version stamp, `25.03-r13644` to `svn-r0`. | Normal and standalone debugging, Stop, scalar and `std::string` watches work; passive profile differences are absent or fully identified. Stop on unexplained passive setting loss/reset. |
 | M7 | **DONE.** The installer asks before creating the Start Menu shortcut and removes that shortcut only when its target is this installation. Uninstall of `D:\cb-v40-m9` removed that IDE, its marked MinGW, and the shortcut that opened it. A later install at `D:\cb-v40-m7` did not replace a shortcut that opens `D:\Program Files\CodeBlocks\codeblocks.exe`, and uninstalling `D:\cb-v40-m7` left that shortcut in place. `D:\cb-v34-m5`, the official install, its unmarked MinGW, and `%APPDATA%\CodeBlocks\default.conf` were unchanged. | IDE and this installation's shortcut removed; user profile/projects/other installs/their shortcuts/external or unmarked MinGW untouched. |
-| M8 | Silent cases passed on 13 November 2026. The success install is `D:\cb-v40-m8\success` (GCC 14.2.0, GDB 16.2, marker holds the pinned SHA-256). The version-line failure proved the pinned `7zr.exe` extracted the pinned archive. Cancellation and a cleared compiler checkbox are still open. | Both hashes checked before use; successful tree and marker correct; failures leave IDE but no partial MinGW/downloads/run-owned temp. Stop if pinned `7zr.exe` cannot extract the pinned archive. |
+| M8 | **DONE.** Silent cases passed on 13 November 2026. The success install is `D:\cb-v40-m8\success` (GCC 14.2.0, GDB 16.2, marker holds the pinned SHA-256). The version-line failure proved the pinned `7zr.exe` extracted the pinned archive. On 14 November 2026 an install at `D:\cb-v40-m8\no_compiler` with the compiler checkbox cleared left the IDE and its fourteen plugins, with no MinGW, marker, download, or `cb-v34-*` directory. Mid-install Cancel is deferred to v4.1. | Both hashes checked before use; successful tree and marker correct; failures and a cleared checkbox leave the IDE but no partial MinGW/downloads/run-owned temp. Stop if pinned `7zr.exe` cannot extract the pinned archive. A disabled Cancel button is not a v4.0 failure. |
 | M9 | Clean-machine Build/Run/Debug using only downloaded toolchain from non-default drive; repeat shared-profile sequence. | Selected compiler/debugger are `$INSTDIR\MinGW\bin`; C++ build/run/debug/standalone debug pass; download itself does not modify profile. |
 
 ### M8 failure matrix
@@ -297,10 +297,12 @@ Silent runs on 13 November 2026, each to its own folder under `D:\cb-v40-m8`. Th
 | Post-extraction validation | `The extracted compiler version line did not match.` Extraction itself succeeded. |
 | `$INSTDIR\MinGW` appears before the move | `Could not install the compiler because D:\cb-v40-m8\mingw-appears\MinGW now exists.` The empty folder remained. No marker. |
 | Success | `D:\cb-v40-m8\success\MinGW`. `gcc.exe` 14.2.0, `gdb.exe` 16.2, version line matches, marker is the pinned SHA-256. No `cb-v34-*`, `7zr.exe`, or `winlibs.7z` left behind. |
-| Cancellation | Still open. On-screen Cancel, not Task Manager. |
-| Compiler checkbox cleared | Still open. `/S` skips the page and leaves the checkbox selected. |
+| Cancellation during the progress page | Deferred to v4.1. On 14 November 2026 Cancel stayed disabled for the whole install. v4.0 does not enable it and does not test it. |
+| Compiler checkbox cleared | Passed on 14 November 2026 at `D:\cb-v40-m8\no_compiler`. IDE and plugins present. No MinGW, marker, `7zr.exe`, `winlibs.7z`, or `cb-v34-*` directory. |
 
-Each finished silent run left the IDE installed. Failure runs left no marker, no downloaded payloads, and no run-owned temporary directory. The planted empty `MinGW` is the one folder that remained. `%APPDATA%\CodeBlocks\default.conf` stayed `F4AC6809D42233B86DD98F54243EC7723A80B32884757F4A9D0BFCDFE6E78B3F`, 60082 bytes. The Start Menu shortcut stayed `D:\Program Files\CodeBlocks\codeblocks.exe` with no arguments. That official executable stayed 2025-03-31 20:25:02, 2845198 bytes. `D:\cb-v34-m5` was already absent. The single uninstall key now points at `D:\cb-v40-m8\success`. The failure IDEs were left in place.
+Each finished silent run left the IDE installed. Failure runs left no marker, no downloaded payloads, and no run-owned temporary directory. The planted empty `MinGW` is the one folder that remained. Through those silent runs, `%APPDATA%\CodeBlocks\default.conf` stayed `F4AC6809D42233B86DD98F54243EC7723A80B32884757F4A9D0BFCDFE6E78B3F`, 60082 bytes, and the Start Menu shortcut stayed `D:\Program Files\CodeBlocks\codeblocks.exe` with no arguments. `D:\cb-v34-m5` was already absent. The failure IDEs were left in place.
+
+The cleared-checkbox install moved the single uninstall key to `D:\cb-v40-m8\no_compiler`. `D:\cb-v40-m8\success`, including its marked MinGW, was still present afterwards. The shortcut and the official executable were unchanged: still `D:\Program Files\CodeBlocks\codeblocks.exe`, 2025-03-31 20:25:02, 2845198 bytes. `%APPDATA%\CodeBlocks\default.conf` was already `8F4E6FB738B1529AE3E44AD8DE52218086676AF6F9E461D3EF85D9A5BA4F7FC1`, 60217 bytes, written at 11:26:57. This install wrote `share` at 11:27:32 and `uninstall.exe` at 11:27:35. The installer script does not refer to that profile.
 
 ---
 
@@ -310,7 +312,7 @@ Each finished silent run left the IDE installed. Failure runs left no marker, no
 2. **Stage:** application-only, no import libraries/compiler/GDB/development leftovers; sanitised-PATH launch succeeds using disposable profile.
 3. **IDE without compiler:** default and non-default drive installs open and load plugins/resources/wizards; no MinGW is created.
 4. **External toolchain:** C++ build, run, project debug, standalone debug, Stop, scalar watch, and `std::string` summary pass.
-5. **Optional compiler:** both hashes match before use; compiler lands at selected `$INSTDIR\MinGW`; marker is present; downloaded files disappear; C++ build/run/debug passes; failure matrix leaves no partial installation.
+5. **Optional compiler:** both hashes match before use; compiler lands at selected `$INSTDIR\MinGW`; marker is present; downloaded files disappear; C++ build/run/debug passes; the v4.0 failure matrix leaves no partial installation. Mid-install Cancel is not part of this check.
 6. **Other installs:** unselected Code::Blocks directories and compilers remain untouched. Replacing files in a selected foreign directory requires explicit confirmation and does not delete unmarked MinGW.
 7. **Shared profile:** tests use a copy; passive launch/close does not remove/reset/replace prior settings; every difference is identified; stale compiler-path behaviour is recorded rather than patched through a second profile.
 8. **Uninstall:** removes installed IDE, the Start Menu shortcut when it opens this installation, the uninstall key, and only marked MinGW; leaves profile, projects, other installations, shortcuts to those installations, external compilers, and unmarked MinGW untouched.
@@ -318,7 +320,11 @@ Each finished silent run left the IDE installed. Failure runs left no marker, no
 
 ---
 
-## 9. Rejected scope
+## 9. Deferred to v4.1
+
+- **Cancel during installation.** The progress page's Cancel button stays disabled while the install sections run. `.onUserAbort` therefore never runs during the compiler download or extraction. v4.1 enables Cancel for that step, stops the download or extraction, and leaves the IDE installed with no partial MinGW, no marker, no downloaded payload, and no run-owned temporary directory. v4.0 ships the disabled button.
+
+## 10. Rejected scope
 
 - Redesigning the Windows build, plugin loader, compiler detection, or debugger
 - Editing `update.bat` to stop copying import libraries; the stage filter is sufficient
@@ -344,7 +350,7 @@ Each finished silent run left the IDE installed. Failure runs left no marker, no
 
 ---
 
-## 10. Risks
+## 11. Risks
 
 - **Stale output risk:** M2 refreshed `output33_64`; an older tree would ship an older scripted-wizard plugin.
 - **Strip risk:** Stop and native `std::string` summary were exercised in devel; M6 must prove the stripped plugin preserves them.
@@ -362,7 +368,7 @@ Each finished silent run left the IDE installed. Failure runs left no marker, no
 
 ---
 
-## 11. Done when
+## 12. Done when
 
 `codeblocks-v4.0-win64.exe` exists and passes M5–M9 and the acceptance checks above.
 
