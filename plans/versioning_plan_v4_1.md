@@ -1,4 +1,4 @@
-# Code::Blocks v3.9 - OGRE-Next wizard, macOS first
+# Code::Blocks v4.1 - OGRE-Next wizard, macOS first
 
 **Status: M4 done.** The Windows manual install in `plans/thoughts/ogre-next-windows-codeblocks-mingw-student-guide.md` has been run from start to finish. The same pins build and install on Apple Silicon. The macOS New Project list has a separate OGRE-Next entry. Its wizard checks out the two revisions, applies the packaged patches, installs both trees, and generates an ordinary C++ project against the installed engine SDK. The OGRE 1.x wizard is left unchanged. The two packaged MinGW patches are unchanged.
 
@@ -161,7 +161,7 @@ Success was:
 
 ## 3. macOS wizard, following v3.8
 
-v3.8 acquires one upstream tree, configures with the install prefix fixed before the build, installs under `~/Library/CodeBlocks`, and generates an ordinary Code::Blocks project that never refers to the source or build tree. v3.9 does the same for two trees: `ogre-next-deps`, then OGRE-Next.
+v3.8 acquires one upstream tree, configures with the install prefix fixed before the build, installs under `~/Library/CodeBlocks`, and generates an ordinary Code::Blocks project that never refers to the source or build tree. v4.1 does the same for two trees: `ogre-next-deps`, then OGRE-Next.
 
 Reuse the existing helpers. Do not add a general Git, CMake, or patch command API.
 
@@ -367,8 +367,19 @@ resources2.cfg    project-local, one setting:
                   [Hlms]
                   DoNotUseAsResource=<SDK>/Media
                   The installed bin/resources2.cfg is not usable.
-working directory the directory that contains plugins.cfg,
-                  resources2.cfg, and ogrehead.mesh
+working directory the created project folder, which contains
+                  plugins.cfg, resources2.cfg, and ogrehead.mesh.
+                  This is the directory of the project file. The path
+                  page's chosen folder is its parent, so the wizard does
+                  not use GetProjectPath() here. main.cpp opens
+                  ./plugins.cfg, resources2.cfg, and the mesh from that
+                  directory. It does not embed the project path.
+                  When Console programs is Terminal.app, the Mac launch
+                  command is clear; cd $WORKDIR && $SCRIPT; exit.
+                  $WORKDIR is this working directory. That command is
+                  DEFAULT_CONSOLE_TERM in src/sdk/globals.cpp. A value
+                  already saved as /console_terminal in the user config
+                  overrides the compiled default.
 app bundle        Contents/MacOS/<program>
                   Contents/Frameworks -> <SDK>/lib/Release
                   This matches the frameworks' @executable_path/../Frameworks
@@ -387,7 +398,7 @@ The proof linked only `~/Library/CodeBlocks/ogre-next-3.0.0`. It selected `Metal
 
 The project is an ordinary Code::Blocks C++ project with Debug and Release targets. It is not a CMake project and not an OGRE-Next source build.
 
-The macOS wizard writes that project from `resources/ogre-next/`. `main.cpp` is the light show, without the M1 frame cap. `plugins.cfg` leaves `PluginFolder` empty and loads Metal, GL3Plus, and ParticleFX. `resources2.cfg` sets `DoNotUseAsResource` to the installed `Media` directory. The texture directory in `main.cpp` is that same SDK `Media/materials/textures` path. `ogrehead.mesh` is copied into the project directory, which is the working directory. Each target's output is `Name.app/Contents/MacOS/Name`, and the post-build step points `Contents/Frameworks` at `<SDK>/lib/Release`. The link line is `-F<SDK>/lib/Release` plus the `Ogre`, `OgreHlmsPbs`, and `OgreHlmsUnlit` frameworks.
+The macOS wizard writes that project from `resources/ogre-next/`. `main.cpp` is the light show, without the M1 frame cap, and loads `plugins.cfg`, `resources2.cfg`, and `ogrehead.mesh` from the working directory. `plugins.cfg` leaves `PluginFolder` empty and loads Metal, GL3Plus, and ParticleFX. `resources2.cfg` sets `DoNotUseAsResource` to the installed `Media` directory. The texture directory in `main.cpp` is that same SDK `Media/materials/textures` path. `ogrehead.mesh` is copied into the project directory. Both targets set the working directory to the folder that contains the project file. Each target's output is `Name.app/Contents/MacOS/Name`, and the post-build step points `Contents/Frameworks` at `<SDK>/lib/Release`. The link line is `-F<SDK>/lib/Release` plus the `Ogre`, `OgreHlmsPbs`, and `OgreHlmsUnlit` frameworks. The compiled Mac console command changes to `$WORKDIR` before running the program.
 
 A build of that starter against the installed SDK selected `Metal Rendering Subsystem` on Apple M2 Max, loaded `ogrehead.mesh`, and compiled the light-show shaders. The process stayed open until it was stopped, which is the starter's behaviour without the M1 frame cap.
 
@@ -409,7 +420,7 @@ Windows wizard automation is not one of these milestones. Section 2 is its speci
 
 ## 7. Expected files
 
-| Area | v3.9 role |
+| Area | v4.1 role |
 |---|---|
 | New `src/plugins/scriptedwizard/resources/ogre-next/` | Wizard script, starter `main.cpp`, and macOS `plugins.cfg` / resource templates. Not a copy that replaces `resources/ogre/`. |
 | `config.script` | A second project registration. The OGRE registration stays. |
@@ -421,13 +432,14 @@ Windows wizard automation is not one of these milestones. Section 2 is its speci
 | `ogre-next-deps-apple.patch` | Remotery framework link. Applies only after the MinGW dependency patch. |
 | `ogre-next-v3-0-mingw.patch` | Unchanged packaged engine patch. |
 | `ogre-apple.patch` | Metal window brace and GL3Plus `include/GL`. Applied after the MinGW engine patch. |
+| `src/sdk/globals.cpp` | Mac `DEFAULT_CONSOLE_TERM` runs `cd $WORKDIR && $SCRIPT`, so a Terminal.app launch uses the target working directory. |
 | `plans/thoughts/ogre_next_example/` | Proven consumer. M1 may adapt paths; it does not replace the scene. |
 
 ---
 
 ## 8. Acceptance criteria
 
-v3.9 is accepted only if:
+v4.1 is accepted only if:
 
 1. The dependency checkout is `f7e23191f4fd89ed41134996bc47f9ee23d009df` and its SDL2 submodule is `5d249570393f7a37e037abf22cd6012a4cc56a71`.
 2. The engine checkout is `4859016ad2cc956a653dfc4e4a859505696c6509` on branch `v3-0`.
@@ -477,6 +489,6 @@ Stop if `maccmake` would have to accept arbitrary CMake arguments from the scrip
 
 ## 11. Done when
 
-**M4 done.** v3.9 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply the packaged patches, including `ogre-apple` after the MinGW engine patch, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
+**M4 done.** v4.1 is done when a user on Apple Silicon can choose the new OGRE-Next wizard, acquire the two pinned revisions, apply the packaged patches, including `ogre-apple` after the MinGW engine patch, install the engine SDK under `~/Library/CodeBlocks`, and Build and Run an ordinary project that opens a rendered OGRE-Next window, without editing paths and without disturbing the OGRE 1.x wizard.
 
 The Windows manual path is already done. It remains the pin, the patch set, and the picture of success for a later Windows wizard.

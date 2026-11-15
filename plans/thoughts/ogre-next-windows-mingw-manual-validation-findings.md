@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-07  
 **Status:** active investigation; dependency build not yet fully passing  
-**Purpose:** preserve the exact findings from manual validation so they can later be converted into a rigorous implementation plan for the Code::Blocks v3.9 OGRE-Next wizard.
+**Purpose:** preserve the exact findings from manual validation so they can later be converted into a rigorous implementation plan for the Code::Blocks v4.1 OGRE-Next wizard.
 
 ## 1\. What is being validated
 
@@ -422,7 +422,7 @@ A future implementation plan should preserve these principles:
    * Only then should the wizard automate the proven sequence.
 7. **Keep OGRE and OGRE-Next separate.**
 
-   * The new v3.9 OGRE-Next wizard must not replace or repurpose the existing OGRE 1.x wizard.
+   * The new v4.1 OGRE-Next wizard must not replace or repurpose the existing OGRE 1.x wizard.
 
 \---
 
