@@ -68,9 +68,9 @@ const wxString DEFAULT_CONSOLE_TERM  =
     "-e 'tell application \"Terminal\"' "
     "-e 'activate' "
     "-e 'if terminalWasRunning then' "
-    "-e 'do script \"clear; $SCRIPT; exit\"' "
+    "-e 'do script \"clear; cd $WORKDIR && $SCRIPT; exit\"' "
     "-e 'else' "
-    "-e 'do script \"clear; $SCRIPT; exit\" in window 1' "
+    "-e 'do script \"clear; cd $WORKDIR && $SCRIPT; exit\" in window 1' "
     "-e 'end if' "
     "-e 'end tell'";
 const wxString DEFAULT_CONSOLE_SHELL = "/bin/zsh -c";

@@ -1,4 +1,4 @@
-# Code::Blocks v3.9 - OGRE-Next on Windows
+# Code::Blocks v4.1 - OGRE-Next on Windows
 
 **Status:** manual build validated; clean-clone replay in progress.  
 **Expected first build time:** approximately 1-2 hours in total. On the tested computer, dependencies alone took about 30 minutes with four parallel jobs.  
@@ -570,7 +570,7 @@ The new wizard must:
 
 ## 14. Acceptance
 
-Code::Blocks v3.9 is accepted when:
+Code::Blocks v4.1 is accepted when:
 
 - this clean-clone manual procedure passes Gates 1-3;
 - the new OGRE-Next wizard reproduces the same stages;

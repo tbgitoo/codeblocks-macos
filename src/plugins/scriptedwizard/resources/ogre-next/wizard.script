@@ -742,7 +742,10 @@ function SetupProject(project)
     project.AddLinkerOption(_T("-Wl,-headerpad_max_install_names"));
 
     // The frameworks' install names are @executable_path/../Frameworks.
-    // The mesh is loaded from the project directory, which is the working directory.
+    // plugins.cfg, resources2.cfg, and ogrehead.mesh live in the created
+    // project folder. GetProjectPath() is the parent folder chosen on the
+    // path page, so the working directory is the folder that contains the
+    // project file.
     local afterBuild =
         _T("/bin/ln -sfn \"") + frameworkDir + _T("\" \"$(TARGET_OUTPUT_DIR)../Frameworks\" && /bin/cp -f \"")
         + OgreNextJoin(OgreNextInstall, _T("Media/models/ogrehead.mesh"))
@@ -753,11 +756,12 @@ function SetupProject(project)
     CppExceptionsOn(project, Wizard.GetCompilerID());
 
     local name = Wizard.GetProjectName();
+    local projectDir = Wizard.GetProjectFullFilename().BeforeLast(_T("/"));
     local target = project.GetBuildTarget(Wizard.GetDebugName());
     if (!IsNull(target))
     {
         target.SetTargetType(ttConsoleOnly);
-        target.SetWorkingDir(Wizard.GetProjectPath());
+        target.SetWorkingDir(projectDir);
         target.SetOutputFilename(OgreNextBundleOutput(Wizard.GetDebugOutputDir(), name));
         DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
@@ -766,7 +770,7 @@ function SetupProject(project)
     if (!IsNull(target))
     {
         target.SetTargetType(ttExecutable);
-        target.SetWorkingDir(Wizard.GetProjectPath());
+        target.SetWorkingDir(projectDir);
         target.SetOutputFilename(OgreNextBundleOutput(Wizard.GetReleaseOutputDir(), name));
         target.AddCompilerOption(_T("-DNDEBUG"));
         OptimizationsOn(target, Wizard.GetCompilerID());
