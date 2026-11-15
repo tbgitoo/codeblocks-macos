@@ -6,10 +6,11 @@
  * patch to an explicitly supported source checkout using Git.
  *
  * Known ids are ogre-14.6.3-assimp-sidecar, ogre-next-deps-mingw,
- * ogre-next-deps-apple, and ogre-next-v3-0-mingw. Each id carries its
- * packaged file and the revision it may touch. ogre-next-deps-apple
- * applies only after ogre-next-deps-mingw. The script cannot name a
- * different file.
+ * ogre-next-deps-apple, ogre-next-v3-0-mingw, and ogre-apple. Each id
+ * carries its packaged file and the revision it may touch.
+ * ogre-next-deps-apple applies only after ogre-next-deps-mingw.
+ * The wizard applies ogre-apple after ogre-next-v3-0-mingw. The script
+ * cannot name a different file.
  *
  * This is deliberately not a general patch or Git command API.
  * The helper accepts only known patch identifiers and never accepts

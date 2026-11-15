@@ -1,0 +1,32 @@
+diff --git a/RenderSystems/GL3Plus/CMakeLists.txt b/RenderSystems/GL3Plus/CMakeLists.txt
+index 882212e..f27dfb7 100644
+--- a/RenderSystems/GL3Plus/CMakeLists.txt
++++ b/RenderSystems/GL3Plus/CMakeLists.txt
+@@ -91,10 +91,10 @@ if(NOT APPLE)
+   include_directories(
+     ${OPENGL_INCLUDE_DIR}
+   )
+-  include_directories(
+-	include/GL
+-  )
+ endif()
++include_directories(
++	include/GL
++)
+ 
+ if( OGRE_GLSUPPORT_USE_GLX )
+   # Separate GLSupport and Window out to fix Unity builds
+diff --git a/RenderSystems/Metal/src/OgreMetalWindow.mm b/RenderSystems/Metal/src/OgreMetalWindow.mm
+index 217a62d..447498e 100644
+--- a/RenderSystems/Metal/src/OgreMetalWindow.mm
++++ b/RenderSystems/Metal/src/OgreMetalWindow.mm
+@@ -423,7 +423,8 @@ static void SetupMetalWindowListeners( Ogre::MetalWindow *metalWindow, NSWindow
+                 SetupMetalWindowListeners( this, window );
+                 [window orderFront:nil];
+             }
+-            else { mIsExternal = true; }
++        }
++        else { mIsExternal = true; }
+ 
+             if( !mMetalView )
+             {

@@ -79,6 +79,13 @@ const KnownPatch kKnownPatches[] =
         wxT("RenderSystems/Direct3D11/src/OgreD3D11Device.cpp"),
         MacPatchRevisionExactCommit,
         wxT("4859016ad2cc956a653dfc4e4a859505696c6509")
+    },
+    {
+        wxT("ogre-apple"),
+        wxT("ogre-apple.patch"),
+        wxT("RenderSystems/Metal/src/OgreMetalWindow.mm"),
+        MacPatchRevisionExactCommit,
+        wxT("4859016ad2cc956a653dfc4e4a859505696c6509")
     }
 };
 

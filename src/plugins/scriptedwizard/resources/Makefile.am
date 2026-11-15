@@ -24,6 +24,7 @@ SUBDIRS = avr \
 	mcs51 \
 	msp430 \
 	ogre \
+	ogre-next \
 	opencv \
 	opengl \
 	patches \
