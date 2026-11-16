@@ -131,20 +131,34 @@ wxString LastLine(const wxString& text)
             lines.Insert(line, 0);
     }
 
-    wxString out;
-
-    for (size_t i = 0; i < lines.GetCount(); ++i)
+    // The script keeps one line of this field. Prefer the CMake or
+    // compiler error over the feature summary that follows it.
+    for (int i = static_cast<int>(lines.GetCount()) - 1; i >= 0; --i)
     {
-        if (!out.empty())
-            out += wxT('\n');
+        const wxString& line = lines[static_cast<size_t>(i)];
 
-        out += lines[i];
+        if (line.Contains(wxT("CMake Error"))
+            || line.Contains(wxT("Cannot find source"))
+            || line.Contains(wxT("fatal error"))
+            || line.Contains(wxT("error:"))
+            || line.Contains(wxT("Error ")))
+        {
+            if (line.Length() > 500)
+                return line.Mid(line.Length() - 500);
+
+            return line;
+        }
     }
 
-    if (out.Length() > 800)
-        out = out.Mid(out.Length() - 800);
+    if (lines.IsEmpty())
+        return wxString();
 
-    return out;
+    const wxString& last = lines.Last();
+
+    if (last.Length() > 500)
+        return last.Mid(last.Length() - 500);
+
+    return last;
 }
 
 wxString StripTrailingSlash(wxString path)
@@ -1501,6 +1515,25 @@ bool ListsNewerThanCache(const wxString& build)
     return listsTime > cacheTime;
 }
 
+bool GeneratedMakefile(const wxString& build)
+{
+    return wxFileExists(build + wxT("\\Makefile"));
+}
+
+// A cache that does not mention the option is accepted. OGRE's failed
+// configure records the option as ON, and that result is not reusable.
+bool CacheOptionAccepts(const wxString& cache,
+                        const wxString& name,
+                        const wxString& expected)
+{
+    const wxString prefix = name + wxT(":");
+
+    if (!cache.Contains(prefix))
+        return true;
+
+    return CacheVariableEquals(cache, name, expected);
+}
+
 bool FindOnPath(const wxString& fileName, wxString& found)
 {
     wxString path;
@@ -1903,9 +1936,13 @@ wxString DescribeWinOgreCache(const wxString& buildInput, const wxString& instal
     {
         const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
         ready = !cache.empty()
+            && GeneratedMakefile(build)
             && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
             && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
-            && !ListsNewerThanCache(build);
+            && !ListsNewerThanCache(build)
+            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_DEPENDENCIES"), wxT("OFF"))
+            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_COMPONENT_OVERLAY_IMGUI"), wxT("OFF"))
+            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_SAMPLES"), wxT("OFF"));
     }
     else
     {
@@ -1984,7 +2021,11 @@ WinCMakeRunResult ConfigureWinOgre(
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
         && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
-        && !ListsNewerThanCache(build))
+        && !ListsNewerThanCache(build)
+        && GeneratedMakefile(build)
+        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_DEPENDENCIES"), wxT("OFF"))
+        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_COMPONENT_OVERLAY_IMGUI"), wxT("OFF"))
+        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_SAMPLES"), wxT("OFF")))
     {
         result.success = true;
         result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
@@ -2043,6 +2084,14 @@ WinCMakeRunResult ConfigureWinOgre(
     args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
     args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
     args.Add(wxT("-DCMAKE_PREFIX_PATH=") + PrefixList(mingwRoot, sdl2Prefix, assimpPrefix));
+    // OGRE otherwise downloads SDL2, Assimp 6, zlib, freetype, pugixml,
+    // Bullet, and imgui during configure. This CMake cannot verify those
+    // HTTPS certificates, so the archives are empty and generation stops.
+    // SDL2 and Assimp 5.4.3 are already on CMAKE_PREFIX_PATH. The generated
+    // project does not need OGRE's sample browser or the imgui overlay.
+    args.Add(wxT("-DOGRE_BUILD_DEPENDENCIES=OFF"));
+    args.Add(wxT("-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF"));
+    args.Add(wxT("-DOGRE_BUILD_SAMPLES=OFF"));
 
     const wxString summary = wxString::Format(
         _("CMake is configuring OGRE 14.6.3.\n\nSource:\n%s\n\nBuild:\n%s\n\nInstall:\n%s"),
@@ -2319,6 +2368,7 @@ WinCMakeRunResult ConfigureWinDep(
     const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
 
     if (!cache.empty()
+        && GeneratedMakefile(build)
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
         && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))

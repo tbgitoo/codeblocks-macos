@@ -149,7 +149,9 @@ Assimp 5.4.3 is unpacked from the pinned archive, so that tree has no Git checko
 | Sentinel | `CMakeLists.txt` |
 | Marker | `PROJECT(Assimp VERSION 5.4.3)` |
 
-The official file launches `ccache` whenever `ccache.exe` is found. The MinGW makefile generator writes that path unquoted, and a path containing a space makes `mingw32-make` stop on the first source file. The patch skips that launcher only when the path contains a space. ccache stays in use when its path has no space. The stored OGRE patch is not edited. A `CMakeLists.txt` newer than `CMakeCache.txt` is configured again.
+The official file launches `ccache` whenever `ccache.exe` is found. The MinGW makefile generator writes that path unquoted, and a path containing a space makes `mingw32-make` stop on the first source file. The patch skips that launcher only when the path contains a space. ccache stays in use when its path has no space. The stored OGRE patch is not edited. A `CMakeLists.txt` newer than `CMakeCache.txt` is configured again. A cache counts as configured only when the MinGW `Makefile` was generated.
+
+OGRE configure passes `-DOGRE_BUILD_DEPENDENCIES=OFF`, `-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF`, and `-DOGRE_BUILD_SAMPLES=OFF`. With the dependencies option left on, OGRE downloads SDL2, Assimp 6, zlib, freetype, pugixml, and Bullet during configure. This MinGW CMake cannot verify those HTTPS certificates, so the archives are empty and generation stops. SDL2 and Assimp 5.4.3 are the trees already on `CMAKE_PREFIX_PATH`. The generated project does not build OGRE's sample browser or the Dear ImGui overlay.
 
 ### 3.4 Installed layout and the generated project
 
