@@ -471,6 +471,74 @@ bool EntryNameSafe(const wxString& raw)
     return true;
 }
 
+bool AppendRelative(wxArrayString& parts, const wxString& relative)
+{
+    wxString rest = relative;
+    rest.Replace(wxT("\\"), wxT("/"));
+
+    while (!rest.empty())
+    {
+        const int slash = rest.Find(wxT('/'));
+        const wxString part = slash == wxNOT_FOUND ? rest : rest.Mid(0, slash);
+
+        if (slash == wxNOT_FOUND)
+            rest.clear();
+        else
+            rest = rest.Mid(slash + 1);
+
+        if (part.empty() || part == wxT("."))
+            continue;
+
+        if (part == wxT(".."))
+        {
+            if (parts.IsEmpty())
+                return false;
+
+            parts.RemoveAt(parts.GetCount() - 1);
+            continue;
+        }
+
+        parts.Add(part);
+    }
+
+    return true;
+}
+
+// A symlink is kept only when its target stays inside the archive.
+bool LinkStaysInside(const wxString& linkName, const wxString& target)
+{
+    wxString dest = target;
+    dest.Trim(true).Trim(false);
+
+    if (dest.empty()
+        || dest[0] == wxT('/')
+        || dest[0] == wxT('\\')
+        || dest.Find(wxT(':')) != wxNOT_FOUND)
+    {
+        return false;
+    }
+
+    wxString parent = linkName;
+    parent.Replace(wxT("\\"), wxT("/"));
+
+    if (parent.EndsWith(wxT("/")))
+        parent.RemoveLast();
+
+    const int slash = parent.Find(wxT('/'), true);
+
+    if (slash == wxNOT_FOUND)
+        parent.clear();
+    else
+        parent = parent.Mid(0, slash);
+
+    wxArrayString parts;
+
+    if (!AppendRelative(parts, parent) || !AppendRelative(parts, dest))
+        return false;
+
+    return !parts.IsEmpty();
+}
+
 // Runs on the download thread. wxExecute is not used here: a synchronous
 // execute from the dialog's timer does not return while that dialog is modal.
 bool ListArchive(const wxString& tar, const wxString& flag, const wxString& zip, wxArrayString& lines)
@@ -575,8 +643,8 @@ bool VerifyDownload(FetchJob& job)
     return true;
 }
 
-// Names from tar -tf, types from tar -tvf. A link, or any type other than
-// a file or directory, is rejected before unpack.
+// Names from tar -tf, types from tar -tvf. A symlink is accepted only when
+// its target stays inside the archive. Any other non-file entry is rejected.
 bool ArchiveEntriesSafe(const wxString& tar, const wxString& zip, std::string& error)
 {
     wxArrayString names;
@@ -586,33 +654,41 @@ bool ArchiveEntriesSafe(const wxString& tar, const wxString& zip, std::string& e
         error = "the archive could not be read";
         return false;
     }
-    int count = 0;
-    for (size_t i = 0; i < names.GetCount(); ++i)
-    {
-        wxString name = names[i];
-        name.Trim(true).Trim(false);
-        if (name.empty())
-            continue;
-        ++count;
-        if (!EntryNameSafe(name))
-        {
-            error = "the archive was rejected";
-            return false;
-        }
-    }
-    if (count == 0)
+    if (names.GetCount() == 0 || names.GetCount() != verbose.GetCount())
     {
         error = "the archive was rejected";
         return false;
     }
-    for (size_t i = 0; i < verbose.GetCount(); ++i)
+    for (size_t i = 0; i < names.GetCount(); ++i)
     {
+        wxString name = names[i];
+        name.Trim(true).Trim(false);
+        if (name.empty() || !EntryNameSafe(name))
+        {
+            error = "the archive was rejected";
+            return false;
+        }
+
         wxString line = verbose[i];
         line.Trim(false);
         if (line.empty())
-            continue;
+        {
+            error = "the archive was rejected";
+            return false;
+        }
+
         const wxChar kind = line[0];
-        if (kind != wxT('-') && kind != wxT('d'))
+        if (kind == wxT('-') || kind == wxT('d'))
+            continue;
+
+        if (kind != wxT('l'))
+        {
+            error = "the archive was rejected";
+            return false;
+        }
+
+        const int arrow = line.Find(wxT(" -> "));
+        if (arrow == wxNOT_FOUND || !LinkStaysInside(name, line.Mid(arrow + 4)))
         {
             error = "the archive was rejected";
             return false;
@@ -1173,18 +1249,25 @@ WinSdkFetch StageWinSdk(const wxString& url,
         result.output = wxString::FromUTF8(job.error.c_str());
     else if (!result.success)
         result.output = wxT("the download did not finish");
+
+    // Windows tar exits non-zero when it cannot create a symlink, after it
+    // has already written the ordinary files. The hash matched, so accept
+    // the tree when the requested markers are present.
+    const wxString marked = FindMarkedRoot(unpack, markers);
+    if (!result.cancelled && !marked.empty())
+    {
+        result.success = true;
+        result.prefix = marked;
+        result.output.clear();
+        return result;
+    }
+
     if (!result.success)
         return result;
 
-    const wxString marked = FindMarkedRoot(unpack, markers);
-    if (marked.empty())
-    {
-        result.success = false;
-        result.prefix.Clear();
-        result.output = wxT("the archive did not contain the expected files");
-        return result;
-    }
-    result.prefix = marked;
+    result.success = false;
+    result.prefix.Clear();
+    result.output = wxT("the archive did not contain the expected files");
     return result;
 }
 
@@ -1250,6 +1333,98 @@ WinSdkFetch PublishWinSdk(const wxString& libraryId,
         return result;
     }
     cfg->Write(SavedKey(libraryId), dest);
+    result.success = true;
+    result.prefix = dest;
+    return result;
+}
+
+WinSdkFetch PlaceWinSdkSource(const wxString& libraryId,
+                              const wxString& stagingPrefix,
+                              const wxString& leaf)
+{
+    WinSdkFetch result;
+
+    if (!LibraryIdOk(libraryId) || !LibraryIdOk(leaf) || leaf == wxT("sdk"))
+    {
+        result.output = wxT("invalid library");
+        return result;
+    }
+
+    wxString local;
+
+    if (!wxGetEnv(wxT("LOCALAPPDATA"), &local) || local.empty())
+    {
+        result.output = wxT("no local data directory");
+        return result;
+    }
+
+    wxFileName rootName = wxFileName::DirName(local);
+    rootName.AppendDir(wxT("codeblocks"));
+    wxString root = rootName.GetFullPath();
+
+    if (root.EndsWith(wxT("\\")) || root.EndsWith(wxT("/")))
+        root.RemoveLast();
+
+    if (root.Lower().Contains(wxT("\\program files\\codeblocks")))
+    {
+        result.output = wxT("refusing the Code::Blocks install directory");
+        return result;
+    }
+
+    const wxString stageRoot = NormalizedDir(SdkRoot() + wxT("\\_cb_stage\\") + libraryId);
+    const wxString staged = NormalizedDir(stagingPrefix);
+
+    if (stagingPrefix.empty()
+        || !wxDirExists(stagingPrefix)
+        || !staged.Lower().StartsWith(stageRoot.Lower()))
+    {
+        result.output = wxT("refusing a directory outside the staging area");
+        return result;
+    }
+
+    if (!wxFileExists(stagingPrefix + wxT("\\CMakeLists.txt")))
+    {
+        result.output = wxT("the staged source has no CMakeLists.txt");
+        return result;
+    }
+
+    const wxString dest = root + wxT("\\") + leaf;
+
+    if (wxFileExists(dest + wxT("\\CMakeLists.txt")))
+    {
+        result.success = true;
+        result.prefix = dest;
+        result.output = wxT("source already present");
+        return result;
+    }
+
+    if (wxDirExists(dest))
+    {
+        wxDir existing(dest);
+        wxString any;
+
+        if (existing.IsOpened()
+            && existing.GetFirst(&any, wxEmptyString, wxDIR_FILES | wxDIR_DIRS))
+        {
+            result.output = wxT("destination directory is not empty");
+            return result;
+        }
+    }
+
+    if (!CopyTree(stagingPrefix, dest))
+    {
+        wxFileName::Rmdir(dest, wxPATH_RMDIR_RECURSIVE);
+        result.output = wxT("could not copy the source tree");
+        return result;
+    }
+
+    if (!wxFileExists(dest + wxT("\\CMakeLists.txt")))
+    {
+        wxFileName::Rmdir(dest, wxPATH_RMDIR_RECURSIVE);
+        result.output = wxT("the copied source has no CMakeLists.txt");
+        return result;
+    }
+
     result.success = true;
     result.prefix = dest;
     return result;

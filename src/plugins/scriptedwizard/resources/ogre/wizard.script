@@ -730,8 +730,1032 @@ function OgreMacAllReady()
     return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Windows. Same tag, patch, and page order. No Homebrew and no macOS layout.
+////////////////////////////////////////////////////////////////////////////////
+
+OgreWinCompilerState <- _T("");
+OgreWinGcc <- _T("");
+OgreWinConfiguredGcc <- _T("");
+OgreWinGxx <- _T("");
+OgreWinMake <- _T("");
+OgreWinBin <- _T("");
+OgreWinCMakeState <- _T("");
+OgreWinCMakeExe <- _T("");
+OgreWinPkgconfState <- _T("");
+OgreWinPkgconfExe <- _T("");
+OgreWinSdl2State <- _T("");
+OgreWinSdl2Prefix <- _T("");
+OgreWinAssimpState <- _T("");
+OgreWinAssimpPrefix <- _T("");
+OgreWinToolError <- _T("");
+
+OgreWinRoot <- _T("");
+OgreWinSource <- _T("");
+OgreWinBuild <- _T("");
+OgreWinInstall <- _T("");
+OgreWinPathsValid <- false;
+
+OgreWinGitAccess <- _T("");
+OgreWinGitExecutable <- _T("");
+OgreWinGitVersion <- _T("");
+
+OgreWinPatchState <- _T("");
+OgreWinPatchError <- _T("");
+OgreWinRebuildRequired <- false;
+OgreWinPatchPendingKey <- _T("/windows/ogre/patch_rebuild_required");
+
+OgreWinPluginDir <- _T("");
+OgreWinLibDir <- _T("");
+OgreWinRuntimeDir <- _T("");
+OgreWinBuildSucceeded <- false;
+OgreWinInstallSucceeded <- false;
+
+function OgreWinSameText(left, right)
+{
+    return !left.IsEmpty() && left.Find(right) == 0 && left.Length() == right.Length();
+}
+
+function OgreWinLoadTools()
+{
+    local report = Wizard.WinOgreTools(Wizard.GetCompilerID());
+    OgreWinCompilerState = OgreReportField(report, _T("compiler"));
+    OgreWinGcc = OgreReportField(report, _T("gcc"));
+
+    if (OgreWinConfiguredGcc.IsEmpty() && OgreReportField(report, _T("compiler")).Matches(_T("works")))
+        OgreWinConfiguredGcc = OgreWinGcc;
+    OgreWinGxx = OgreReportField(report, _T("gxx"));
+    OgreWinMake = OgreReportField(report, _T("make"));
+    OgreWinBin = OgreReportField(report, _T("bin"));
+    OgreWinCMakeState = OgreReportField(report, _T("cmake"));
+    OgreWinCMakeExe = OgreReportField(report, _T("cmake_exe"));
+    OgreWinPkgconfState = OgreReportField(report, _T("pkgconf"));
+    OgreWinPkgconfExe = OgreReportField(report, _T("pkgconf_exe"));
+    OgreWinSdl2State = OgreReportField(report, _T("sdl2"));
+    OgreWinSdl2Prefix = OgreReportField(report, _T("sdl2_prefix"));
+    OgreWinAssimpState = OgreReportField(report, _T("assimp"));
+    OgreWinAssimpPrefix = OgreReportField(report, _T("assimp_prefix"));
+    OgreWinToolError = OgreReportField(report, _T("error"));
+}
+
+function OgreWinToolBlockReason()
+{
+    OgreWinLoadTools();
+
+    if (!OgreWinCompilerState.Matches(_T("works")))
+        return _("The active GNU GCC installation does not contain gcc.exe, g++.exe, and mingw32-make.exe. This wizard does not download a compiler.");
+
+    if (!OgreWinPkgconfState.Matches(_T("works")))
+        return _("pkgconf.exe or pkg-config.exe was not found beside that compiler or on PATH.");
+
+    if (!OgreWinSdl2State.Matches(_T("works")))
+        return _("SDL2 is not installed under the selected MinGW prefix or %LOCALAPPDATA%\\codeblocks\\sdl2.");
+
+    if (!OgreWinAssimpState.Matches(_T("works")))
+        return _("Assimp is not installed under the selected MinGW prefix or %LOCALAPPDATA%\\codeblocks\\assimp.");
+
+    return _T("");
+}
+
+function OgreWinToolPageText(reason)
+{
+    local text = _("The Windows OGRE workflow builds official OGRE v14.6.3 with the selected MinGW GCC.\n\nRequired tools:\n    gcc, g++, and mingw32-make from the active GNU GCC\n    CMake\n    pkgconf\n    SDL2 headers\n    Assimp headers\n\n");
+    text += OgreWinCompilerState.Matches(_T("works")) ? _("Compiler\n    ") + OgreWinGcc + _("\n\n") : _("Compiler\n    Not usable\n\n");
+    text += OgreWinPkgconfState.Matches(_T("works")) ? _("pkgconf\n    ") + OgreWinPkgconfExe + _("\n\n") : _("pkgconf\n    Not found\n\n");
+    text += OgreWinSdl2State.Matches(_T("works")) ? _("SDL2\n    ") + OgreWinSdl2Prefix + _("\n\n") : _("SDL2\n    Not found\n\n");
+    text += OgreWinAssimpState.Matches(_T("works")) ? _("Assimp\n    ") + OgreWinAssimpPrefix + _("\n\n") : _("Assimp\n    Not found\n\n");
+    if (!reason.IsEmpty())
+        text += reason + _("\n\n");
+    if (!OgreWinToolError.IsEmpty())
+        text += OgreWinToolError + _("\n\n");
+    text += _("Press Next to download and build the next missing library with the selected MinGW GCC.\nAn existing tree under %LOCALAPPDATA%\\codeblocks is reused.\nCMake, pkgconf, and the compiler are not downloaded.\n");
+    return text;
+}
+
+OgreWinSdl2Url <- _T("https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz");
+OgreWinSdl2Hash <- _T("5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165");
+OgreWinSdl2SourceLeaf <- _T("sdl2-source-2.32.10");
+OgreWinSdl2InstallLeaf <- _T("sdl2");
+OgreWinAssimpUrl <- _T("https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.tar.gz");
+OgreWinAssimpHash <- _T("66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb");
+OgreWinAssimpSourceLeaf <- _T("assimp-source-5.4.3");
+OgreWinAssimpInstallLeaf <- _T("assimp");
+
+function OgreWinRunFailed(report, title)
+{
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("That step was stopped. Files already written are left in place."));
+        return false;
+    }
+
+    local output = OgreReportField(report, _T("output"));
+
+    if (OgreReportField(report, _T("launched")).Matches(_T("1")) || !output.IsEmpty())
+        ShowError(title + _("\n\n") + output);
+    else
+        ShowMessage(_("That step was stopped before it started."));
+
+    return false;
+}
+
+function OgreWinLibraryInstalled(install, header)
+{
+    return IO.FileExists(install + wxFILE_SEP_PATH + header);
+}
+
+function OgreWinAcquireLibrary(libraryId, sourceLeaf, installLeaf, url, hash, markers, header, downloadLabel, configureLabel)
+{
+    local paths = Wizard.WinCMakePaths(sourceLeaf, installLeaf);
+
+    if (!OgreReportField(paths, _T("valid")).Matches(_T("1")))
+    {
+        ShowError(OgreReportField(paths, _T("error")));
+        return false;
+    }
+
+    local source = OgreReportField(paths, _T("source"));
+    local build = OgreReportField(paths, _T("build"));
+    local install = OgreReportField(paths, _T("install"));
+    local sep = wxFILE_SEP_PATH;
+
+    if (!IO.FileExists(source + sep + _T("CMakeLists.txt")))
+    {
+        local explanation = _("Code::Blocks will download the official source.\n\nNothing is downloaded until you approve it.\nThe selected MinGW GCC will build it.\nAn existing source tree is left untouched.");
+        local staged = Wizard.WinSdkStage(url, hash, libraryId, markers, explanation, downloadLabel);
+
+        if (!OgreReportField(staged, _T("success")).Matches(_T("1")))
+            return OgreWinRunFailed(staged, downloadLabel + _(" did not finish."));
+
+        local placed = Wizard.WinSdkPlace(libraryId, OgreReportField(staged, _T("prefix")), sourceLeaf);
+
+        if (!OgreReportField(placed, _T("success")).Matches(_T("1")))
+        {
+            ShowError(OgreReportField(placed, _T("output")));
+            return false;
+        }
+    }
+
+    if (!OgreReportField(Wizard.WinOgreCache(build, install), _T("ready")).Matches(_T("1")))
+    {
+        local explanation = _("Code::Blocks will configure this library with CMake.\n\nInstall:\n") + install + _("\n\nBuild type:\nRelease");
+        local report = Wizard.WinDepConfigure(libraryId, source, build, install, explanation, configureLabel);
+
+        if (!OgreReportField(report, _T("success")).Matches(_T("1")))
+            return OgreWinRunFailed(report, configureLabel + _(" did not finish."));
+    }
+
+    if (OgreWinLibraryInstalled(install, header))
+        return true;
+
+    local built = Wizard.WinDepBuild(libraryId, build, _T(""), _T(""));
+
+    if (!OgreReportField(built, _T("success")).Matches(_T("1")))
+        return OgreWinRunFailed(built, configureLabel + _(" did not build."));
+
+    local installed = Wizard.WinDepInstall(libraryId, build, install, _T(""), _T(""));
+
+    if (!OgreReportField(installed, _T("success")).Matches(_T("1")))
+        return OgreWinRunFailed(installed, configureLabel + _(" did not install."));
+
+    if (!OgreWinLibraryInstalled(install, header))
+    {
+        ShowError(_("CMake finished, but the installed headers were not found."));
+        return false;
+    }
+
+    return true;
+}
+
+function OnLeave_OgreWinPrerequisites(fwd)
+{
+    if (!fwd)
+        return true;
+
+    local reason = OgreWinToolBlockReason();
+
+    if (reason.IsEmpty())
+        return true;
+
+    if (!OgreWinCompilerState.Matches(_T("works")) || !OgreWinPkgconfState.Matches(_T("works")))
+    {
+        ShowMessage(OgreWinToolPageText(reason));
+        return false;
+    }
+
+    if (!OgreWinSdl2State.Matches(_T("works")))
+    {
+        if (!OgreWinAcquireLibrary(
+                _T("sdl2"),
+                OgreWinSdl2SourceLeaf,
+                OgreWinSdl2InstallLeaf,
+                OgreWinSdl2Url,
+                OgreWinSdl2Hash,
+                _T("include/SDL.h;CMakeLists.txt"),
+                _T("include") + wxFILE_SEP_PATH + _T("SDL2") + wxFILE_SEP_PATH + _T("SDL.h"),
+                _("Download SDL2 2.32.10"),
+                _("Configure SDL2 2.32.10")))
+            return false;
+
+        reason = OgreWinToolBlockReason();
+
+        if (reason.IsEmpty())
+            return true;
+
+        ShowMessage(_("SDL2 is ready.\n\n") + reason + _("\n\nPress Next to continue."));
+        return false;
+    }
+
+    if (!OgreWinAssimpState.Matches(_T("works")))
+    {
+        if (!OgreWinAcquireLibrary(
+                _T("assimp"),
+                OgreWinAssimpSourceLeaf,
+                OgreWinAssimpInstallLeaf,
+                OgreWinAssimpUrl,
+                OgreWinAssimpHash,
+                _T("include/assimp/Importer.hpp;CMakeLists.txt"),
+                _T("include") + wxFILE_SEP_PATH + _T("assimp") + wxFILE_SEP_PATH + _T("Importer.hpp"),
+                _("Download Assimp 5.4.3"),
+                _("Configure Assimp 5.4.3")))
+            return false;
+
+        reason = OgreWinToolBlockReason();
+
+        if (reason.IsEmpty())
+            return true;
+
+        ShowMessage(OgreWinToolPageText(reason));
+        return false;
+    }
+
+    ShowMessage(OgreWinToolPageText(reason));
+    return false;
+}
+
+function OgreWinResolvePaths()
+{
+    OgreWinPathsValid = false;
+    OgreWinRoot = _T("");
+    OgreWinSource = _T("");
+    OgreWinBuild = _T("");
+    OgreWinInstall = _T("");
+    local report = Wizard.WinCMakePaths(OgreMacSourceLeaf, OgreMacInstallLeaf);
+
+    if (!OgreReportField(report, _T("valid")).Matches(_T("1")))
+        return OgreReportField(report, _T("error"));
+
+    OgreWinRoot = OgreReportField(report, _T("root"));
+    OgreWinSource = OgreReportField(report, _T("source"));
+    OgreWinBuild = OgreReportField(report, _T("build"));
+    OgreWinInstall = OgreReportField(report, _T("install"));
+
+    if (OgreWinRoot.IsEmpty() || OgreWinSource.IsEmpty() || OgreWinBuild.IsEmpty() || OgreWinInstall.IsEmpty())
+        return _("CMake path resolution returned an incomplete result.");
+
+    OgreWinPathsValid = true;
+    return _T("");
+}
+
+function OgreWinCMakeBlockReason()
+{
+    OgreWinLoadTools();
+    local report = Wizard.WinCMakeProbe();
+    OgreWinCMakeState = OgreReportField(report, _T("access"));
+    OgreWinCMakeExe = OgreReportField(report, _T("executable"));
+
+    if (!OgreWinCMakeState.Matches(_T("works")) && !OgreReportField(Wizard.WinOgreTools(Wizard.GetCompilerID()), _T("cmake")).Matches(_T("works")))
+        return _("CMake could not be found. Code::Blocks also looks for cmake.exe in the selected MinGW bin.");
+
+    if (!OgreWinCMakeState.Matches(_T("works")))
+    {
+        report = Wizard.WinCMakeProbe();
+        OgreWinCMakeState = OgreReportField(report, _T("access"));
+        OgreWinCMakeExe = OgreReportField(report, _T("executable"));
+    }
+
+    if (!OgreWinCMakeState.Matches(_T("works")))
+        return _("CMake could not be found.");
+
+    return OgreWinResolvePaths();
+}
+
+function OgreWinCMakePageText(reason)
+{
+    local text = _("CMake and the Code::Blocks-owned OGRE directories.\n\n");
+    text += OgreWinCMakeState.Matches(_T("works")) ? _("CMake\n    ") + OgreWinCMakeExe + _("\n\n") : _("CMake\n    Not usable\n\n");
+
+    if (OgreWinPathsValid)
+        text += _("Root:\n    ") + OgreWinRoot + _("\n\nSource:\n    ") + OgreWinSource + _("\n\nBuild:\n    ") + OgreWinBuild + _("\n\nInstall:\n    ") + OgreWinInstall + _("\n\n");
+
+    text += reason.IsEmpty() ? _("CMake and paths are ready.\n") : reason + _("\n\nPress Next to choose an existing cmake.exe.\n");
+    return text;
+}
+
+function OgreWinConsiderCMake(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+
+    local report = Wizard.WinCMakeTry(path);
+
+    if (OgreReportField(report, _T("access")).Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/windows/cmake/executable"), path);
+        return _T("");
+    }
+
+    return _("That file did not pass cmake --version, so it was not remembered.\n\n") + OgreReportField(report, _T("version")) + _("\n") + OgreReportField(report, _T("error"));
+}
+
+function OnLeave_OgreWinCMake(fwd)
+{
+    if (!fwd)
+        return true;
+
+    local reason = OgreWinCMakeBlockReason();
+
+    if (reason.IsEmpty())
+        return true;
+
+    if (!OgreWinCMakeState.Matches(_T("works")))
+    {
+        local picked = IO.SelectFile(_("Choose the CMake executable"), _T("cmake.exe"), _("Executable (*.exe)|*.exe"));
+        local rejected = OgreWinConsiderCMake(picked);
+
+        if (!rejected.IsEmpty())
+            ShowError(rejected);
+    }
+
+    reason = OgreWinCMakeBlockReason();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    return true;
+}
+
+function OgreWinGitBlockReason()
+{
+    local report = Wizard.WinGitProbe();
+    OgreWinGitAccess = OgreReportField(report, _T("access"));
+    OgreWinGitExecutable = OgreReportField(report, _T("executable"));
+    OgreWinGitVersion = OgreReportField(report, _T("version"));
+
+    if (OgreWinGitAccess.Matches(_T("works")))
+        return _T("");
+
+    if (OgreWinGitAccess.Matches(_T("present_unusable")))
+        return _("Git was found but could not be used from Code::Blocks.");
+
+    return _("Git could not be found. Code::Blocks does not install Git.");
+}
+
+function OgreWinConsiderGit(path)
+{
+    if (path.IsEmpty())
+        return _T("");
+
+    local report = Wizard.WinGitTry(path);
+
+    if (OgreReportField(report, _T("access")).Matches(_T("works")))
+    {
+        GetConfigManager().Write(_T("/windows/git/executable"), path);
+        return _T("");
+    }
+
+    return _("That file did not pass git --version, so it was not remembered.\n\n") + OgreReportField(report, _T("version")) + _("\n") + OgreReportField(report, _T("error"));
+}
+
+function OgreWinGitPageText(reason)
+{
+    local text = _("OGRE 14.6.3 is obtained from the official upstream Git repository.\n\n");
+    text += OgreWinGitAccess.Matches(_T("works")) ? _("Git\n    Found: ") + OgreWinGitExecutable + _("\n    Version: ") + OgreWinGitVersion + _("\n\n") : _("Git\n    Not usable\n\n");
+
+    if (!reason.IsEmpty())
+        text += reason + _("\n\n");
+
+    return text + _("Code::Blocks does not install Git.\nPress Next to choose an existing git.exe.\n");
+}
+
+function OnLeave_OgreWinGit(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (OgreWinGitBlockReason().IsEmpty())
+        return true;
+
+    local picked = IO.SelectFile(_("Choose the Git executable"), _T("git.exe"), _("Executable (*.exe)|*.exe"));
+    local rejected = OgreWinConsiderGit(picked);
+
+    if (!rejected.IsEmpty())
+        ShowError(rejected);
+
+    return OgreWinGitBlockReason().IsEmpty();
+}
+
+function OgreWinSourceReady()
+{
+    if (!OgreWinPathsValid)
+    {
+        local reason = OgreWinResolvePaths();
+
+        if (!reason.IsEmpty())
+            return false;
+    }
+
+    local sep = wxFILE_SEP_PATH;
+    return IO.FileExists(OgreWinSource + sep + _T(".git") + sep + _T("HEAD")) && IO.FileExists(OgreWinSource + sep + _T("CMakeLists.txt"));
+}
+
+function OgreWinAcquirePageText()
+{
+    local reason = OgreWinResolvePaths();
+
+    if (!reason.IsEmpty())
+        return reason;
+
+    return _("The official OGRE 14.6.3 source is not present yet.\n\nRepository:\n    ") + OgreMacRepository + _("\n\nRelease tag:\n    ") + OgreMacTag + _("\n\nDestination:\n    ") + OgreWinSource + _("\n\nPress Next to approve a shallow tagged clone.\nThis step downloads source only.\nA directory that already exists is left untouched.\n");
+}
+
+function OgreWinCloneOgre()
+{
+    local reason = OgreWinResolvePaths();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    local explanation = _("Code::Blocks will download the official OGRE 14.6.3 source release.\n\nRepository:\n") + OgreMacRepository + _("\n\nRelease tag:\n") + OgreMacTag + _("\n\nDestination:\n") + OgreWinSource + _("\n\nThis step downloads the source only.");
+    local report = Wizard.WinGitClone(OgreMacRepository, OgreMacTag, OgreWinSource, explanation, _("Download OGRE 14.6.3"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+        return OgreWinSourceReady();
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        ShowMessage(_("The OGRE download was stopped. Partial files are left in place."));
+    else
+        ShowError(_("OGRE 14.6.3 was not downloaded successfully.\n\n") + OgreReportField(report, _T("output")));
+
+    return false;
+}
+
+function OnLeave_OgreWinAcquire(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (OgreWinSourceReady())
+        return true;
+
+    if (!OgreWinGitBlockReason().IsEmpty())
+    {
+        ShowError(_("Git is not ready."));
+        return false;
+    }
+
+    return OgreWinCloneOgre();
+}
+
+function OgreWinPatchProbe()
+{
+    OgreWinPatchState = _T("");
+    OgreWinPatchError = _T("");
+    local reason = OgreWinResolvePaths();
+
+    if (!reason.IsEmpty())
+    {
+        OgreWinPatchError = reason;
+        return _T("");
+    }
+
+    if (!OgreWinSourceReady())
+    {
+        OgreWinPatchError = _("The OGRE source checkout is not present.");
+        return _T("");
+    }
+
+    local report = Wizard.WinPatchProbe(OgreMacPatchId, OgreWinSource);
+    OgreWinPatchState = OgreReportField(report, _T("state"));
+    OgreWinPatchError = OgreReportField(report, _T("error"));
+    return report;
+}
+
+function OgreWinPatchPageText()
+{
+    OgreWinPatchProbe();
+    local text = _("Optional OGRE 14.6.3 compatibility patch\n\nThe official OGRE 14.6.3 Assimp integration passes absolute sidecar paths to OGRE's resource system, which expects names relative to the registered model resource location. OgreAssimpConverter also registers that location as non-recursive.\n\nThe patch is the stored macOS patch, applied unchanged. It modifies:\n    PlugIns/Assimp/src/AssimpLoader.cpp\n    Tools/AssimpConverter/main.cpp\n\n");
+
+    if (OgreWinPatchState.Matches(_T("applicable")))
+        text += _("Patch state:\n    Available for this exact OGRE 14.6.3 checkout\n\nPress Next to choose whether to apply the patch.\nDeclining leaves the official upstream source unchanged.\n");
+    else if (OgreWinPatchState.Matches(_T("already_applied")))
+        text += _("Patch state:\n    Already applied\n\nNo additional source change is required.\n");
+    else if (OgreWinPatchState.Matches(_T("unsupported_version")))
+        text += _("Patch state:\n    Unsupported OGRE source version\n\nThe patch will not be applied.\n");
+    else if (OgreWinPatchState.Matches(_T("git_unavailable")))
+        text += _("Patch state:\n    Git is unavailable\n\nThe patch will not be applied.\n");
+    else if (OgreWinPatchState.Matches(_T("unexpected_source")))
+        text += _("Patch state:\n    The target source files are neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify this source tree.\n");
+    else
+        text += _("Patch state:\n    Not yet available\n\nThe source state will be checked again when leaving this page.\n");
+
+    if (!OgreWinPatchError.IsEmpty())
+        text += _("\nDetails:\n    ") + OgreWinPatchError + _("\n");
+
+    return text;
+}
+
+function OgreWinLoadPatchBuildState()
+{
+    OgreWinRebuildRequired = GetConfigManager().Read(OgreWinPatchPendingKey, _T("")).Matches(_T("1"));
+}
+
+function OgreWinSetRebuildRequired(required)
+{
+    OgreWinRebuildRequired = required;
+    GetConfigManager().Write(OgreWinPatchPendingKey, required ? _T("1") : _T("0"));
+}
+
+function OgreWinApplyPatch()
+{
+    local explanation = _("Code::Blocks can apply the stored OGRE 14.6.3 compatibility patch to this checkout.\n\nSource:\n") + OgreWinSource + _("\n\nThe patch file is applied as stored. Declining leaves the source unchanged.");
+    local report = Wizard.WinPatchApply(OgreMacPatchId, OgreWinSource, explanation, _("Apply OGRE compatibility patch"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+    {
+        OgreWinPatchProbe();
+
+        if (!OgreWinPatchState.Matches(_T("already_applied")))
+            return false;
+
+        if (OgreReportField(report, _T("launched")).Matches(_T("1")))
+        {
+            OgreWinSetRebuildRequired(true);
+            OgreWinBuildSucceeded = false;
+            OgreWinInstallSucceeded = false;
+        }
+
+        return true;
+    }
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        return true;
+
+    local error = OgreReportField(report, _T("error"));
+
+    if (error.IsEmpty())
+        error = OgreReportField(report, _T("output"));
+
+    ShowError(_("The OGRE compatibility patch was not applied.\n\n") + error);
+    return false;
+}
+
+function OnLeave_OgreWinPatch(fwd)
+{
+    if (!fwd)
+        return true;
+
+    OgreWinPatchProbe();
+
+    if (OgreWinPatchState.Matches(_T("already_applied")))
+        return true;
+
+    if (OgreWinPatchState.Matches(_T("applicable")))
+        return OgreWinApplyPatch();
+
+    if (OgreWinPatchState.Matches(_T("unexpected_source")))
+    {
+        ShowMessage(_("The OGRE source files are neither pristine nor recognised as already patched.\n\nCode::Blocks will not modify the source tree. The wizard will continue without the compatibility patch."));
+        return true;
+    }
+
+    if (OgreWinPatchState.Matches(_T("unsupported_version")))
+    {
+        ShowMessage(_("The compatibility patch does not support this OGRE source version. The wizard will continue without it."));
+        return true;
+    }
+
+    if (OgreWinPatchState.Matches(_T("git_unavailable")))
+    {
+        ShowMessage(_("Git is not available for compatibility-patch validation. The wizard will continue without the patch."));
+        return true;
+    }
+
+    ShowMessage(_("The compatibility patch could not be validated. The wizard will continue without modifying the OGRE source tree.\n\n") + OgreWinPatchError);
+    return true;
+}
+
+function OgreWinCacheReady()
+{
+    if (!OgreWinPathsValid && !OgreWinResolvePaths().IsEmpty())
+        return false;
+
+    local report = Wizard.WinOgreCache(OgreWinBuild, OgreWinInstall);
+    return OgreReportField(report, _T("ready")).Matches(_T("1"));
+}
+
+function OgreWinBuilt()
+{
+    if (!OgreWinPathsValid && !OgreWinResolvePaths().IsEmpty())
+        return false;
+
+    local report = Wizard.WinOgreBuilt(OgreWinBuild);
+    return OgreReportField(report, _T("valid")).Matches(_T("1"));
+}
+
+function OgreWinRememberLayout(report)
+{
+    OgreWinPluginDir = OgreReportField(report, _T("plugin"));
+    OgreWinLibDir = OgreReportField(report, _T("lib"));
+    OgreWinRuntimeDir = OgreReportField(report, _T("runtime"));
+}
+
+function OgreWinInstalled()
+{
+    if (!OgreWinPathsValid && !OgreWinResolvePaths().IsEmpty())
+        return false;
+
+    local report = Wizard.WinOgreLayout(OgreWinInstall);
+
+    if (!OgreReportField(report, _T("valid")).Matches(_T("1")))
+        return false;
+
+    OgreWinRememberLayout(report);
+    return !OgreWinPluginDir.IsEmpty() && !OgreWinLibDir.IsEmpty();
+}
+
+function OgreWinConfigurePageText()
+{
+    return _("OGRE 14.6.3 is ready to be configured with CMake.\n\nSource:\n    ") + OgreWinSource + _("\n\nBuild:\n    ") + OgreWinBuild + _("\n\nInstall:\n    ") + OgreWinInstall + _("\n\nBuild type:\n    Release\n\nCompiler:\n    ") + OgreWinGcc + _("\n\nPress Next to configure OGRE.\nThis step does not build or install OGRE.\n");
+}
+
+function OgreWinConfigureOgre()
+{
+    local reason = OgreWinResolvePaths();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    local explanation = _("Code::Blocks will configure OGRE 14.6.3 with CMake.\n\nSource:\n") + OgreWinSource + _("\n\nBuild:\n") + OgreWinBuild + _("\n\nInstall:\n") + OgreWinInstall + _("\n\nBuild type:\nRelease\n\nThe install prefix is fixed during this configuration step.\nOGRE is not built or installed by this operation.");
+    local report = Wizard.WinOgreConfigure(OgreWinSource, OgreWinBuild, OgreWinInstall, explanation, _("Configure OGRE 14.6.3"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+        return OgreWinCacheReady();
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        ShowMessage(_("CMake configuration was stopped. Files already written by CMake are left in place."));
+    else
+        ShowError(_("OGRE 14.6.3 was not configured successfully.\n\n") + OgreReportField(report, _T("output")));
+
+    return false;
+}
+
+function OnLeave_OgreWinConfigure(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (OgreWinCacheReady())
+        return true;
+
+    return OgreWinConfigureOgre();
+}
+
+function OgreWinBuildPageText()
+{
+    return _("OGRE 14.6.3 is configured and ready to build.\n\nBuild directory:\n    ") + OgreWinBuild + _("\n\nCode::Blocks will use bounded native parallelism.\n\nPress Next to build OGRE.\nThis step does not install OGRE.\n");
+}
+
+function OgreWinBuildOgre()
+{
+    if (!OgreWinCacheReady())
+    {
+        ShowError(_("OGRE 14.6.3 has not been configured with CMake."));
+        return false;
+    }
+
+    local explanation = _("Code::Blocks will build OGRE 14.6.3 with CMake.\n\nBuild directory:\n") + OgreWinBuild + _("\n\nThe native helper selects a bounded parallel job count.\nThis operation does not install OGRE.");
+    local report = Wizard.WinOgreBuild(OgreWinBuild, explanation, _("Build OGRE 14.6.3"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+    {
+        OgreWinBuildSucceeded = OgreWinBuilt();
+
+        if (OgreWinBuildSucceeded)
+            return true;
+
+        ShowError(_("CMake reported a successful build, but RenderSystem_GL.dll was not found in the build tree."));
+        return false;
+    }
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        ShowMessage(_("The OGRE build was stopped. Files already produced by the build are left in place."));
+    else
+        ShowError(_("OGRE 14.6.3 was not built successfully.\n\n") + OgreReportField(report, _T("output")));
+
+    return false;
+}
+
+function OnLeave_OgreWinBuild(fwd)
+{
+    if (!fwd)
+        return true;
+
+    OgreWinLoadPatchBuildState();
+
+    if (OgreWinRebuildRequired)
+        return OgreWinBuildOgre();
+
+    if (OgreWinBuildSucceeded || OgreWinBuilt())
+    {
+        OgreWinBuildSucceeded = true;
+        return true;
+    }
+
+    return OgreWinBuildOgre();
+}
+
+function OgreWinInstallPageText()
+{
+    return _("OGRE 14.6.3 is built and ready to install.\n\nBuild directory:\n    ") + OgreWinBuild + _("\n\nInstall prefix fixed during configuration:\n    ") + OgreWinInstall + _("\n\nPress Next to install and validate the OGRE SDK.\nNo replacement --prefix is supplied during installation.\n");
+}
+
+function OgreWinInstallOgre()
+{
+    if (!OgreWinBuilt())
+    {
+        ShowError(_("OGRE 14.6.3 has not been built successfully."));
+        return false;
+    }
+
+    local explanation = _("Code::Blocks will install OGRE 14.6.3 with CMake.\n\nBuild directory:\n") + OgreWinBuild + _("\n\nInstall prefix:\n") + OgreWinInstall + _("\n\nThe install prefix was fixed during configuration.\nCode::Blocks will not pass a replacement --prefix.\nAfter installation, the installed SDK is validated.");
+    local report = Wizard.WinOgreInstall(OgreWinBuild, OgreWinInstall, explanation, _("Install OGRE 14.6.3"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+    {
+        OgreWinInstallSucceeded = OgreWinInstalled();
+
+        if (OgreWinInstallSucceeded)
+            return true;
+
+        ShowError(_("CMake reported a successful install, but the installed OGRE SDK contract was not found."));
+        return false;
+    }
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        ShowMessage(_("The OGRE install was stopped. Files already installed are left in place."));
+    else
+        ShowError(_("OGRE 14.6.3 was not installed successfully.\n\n") + OgreReportField(report, _T("output")));
+
+    return false;
+}
+
+function OnLeave_OgreWinInstall(fwd)
+{
+    if (!fwd)
+        return true;
+
+    OgreWinLoadPatchBuildState();
+
+    if (OgreWinRebuildRequired)
+    {
+        if (!OgreWinInstallOgre())
+            return false;
+
+        OgreWinSetRebuildRequired(false);
+        return true;
+    }
+
+    if (OgreWinInstallSucceeded || OgreWinInstalled())
+    {
+        OgreWinInstallSucceeded = true;
+        return true;
+    }
+
+    return OgreWinInstallOgre();
+}
+
+function OgreWinAllReady()
+{
+    if (PLATFORM != PLATFORM_MSW)
+        return true;
+
+    local reason = OgreWinToolBlockReason();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    reason = OgreWinCMakeBlockReason();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    reason = OgreWinGitBlockReason();
+
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+
+    if (!OgreWinSourceReady())
+    {
+        ShowError(_("The official OGRE 14.6.3 source has not been acquired."));
+        return false;
+    }
+
+    if (!OgreWinCacheReady())
+    {
+        ShowError(_("OGRE 14.6.3 has not been configured with CMake."));
+        return false;
+    }
+
+    if (!OgreWinBuilt())
+    {
+        ShowError(_("OGRE 14.6.3 has not been built successfully."));
+        return false;
+    }
+
+    if (!OgreWinInstalled())
+    {
+        ShowError(_("The OGRE 14.6.3 SDK has not been installed and validated."));
+        return false;
+    }
+
+    return true;
+}
+
+function AddOgreWinSetupPages()
+{
+    if (PLATFORM != PLATFORM_MSW)
+        return;
+
+    OgreWinLoadPatchBuildState();
+    local reason = OgreWinToolBlockReason();
+
+    if (!reason.IsEmpty())
+        Wizard.AddInfoPage(_T("OgreWinPrerequisites"), OgreWinToolPageText(reason));
+
+    reason = OgreWinCMakeBlockReason();
+    Wizard.AddInfoPage(_T("OgreWinCMake"), OgreWinCMakePageText(reason));
+    local gitReason = OgreWinGitBlockReason();
+
+    if (!gitReason.IsEmpty())
+        Wizard.AddInfoPage(_T("OgreWinGit"), OgreWinGitPageText(gitReason));
+
+    if (!OgreWinSourceReady())
+        Wizard.AddInfoPage(_T("OgreWinAcquire"), OgreWinAcquirePageText());
+
+    Wizard.AddInfoPage(_T("OgreWinPatch"), OgreWinPatchPageText());
+    Wizard.AddInfoPage(_T("OgreWinConfigure"), OgreWinConfigurePageText());
+    Wizard.AddInfoPage(_T("OgreWinBuild"), OgreWinBuildPageText());
+    Wizard.AddInfoPage(_T("OgreWinInstall"), OgreWinInstallPageText());
+}
+
+function OgreWinQueueDll(project, dir, name)
+{
+    if (dir.IsEmpty())
+        return;
+
+    local path = dir + wxFILE_SEP_PATH + name;
+
+    if (!IO.FileExists(path))
+        return;
+
+    project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + path + _T("\" \"$(TARGET_OUTPUT_DIR)") + name + _T("\""));
+}
+
+function OgreWinSelectedCompilerMatches()
+{
+    local report = Wizard.WinSdkCompiler(Wizard.GetCompilerID());
+    local exe = OgreReportField(report, _T("executable"));
+
+    if (OgreWinSameText(exe, OgreWinConfiguredGcc))
+        return true;
+
+    ShowError(_("The selected compiler is not the GNU GCC this OGRE SDK was configured with.\n\nRequired:\n") + OgreWinConfiguredGcc);
+    return false;
+}
+
+function SetupWinOgreProject(project)
+{
+    if (!OgreWinAllReady())
+        return false;
+
+    if (!OgreWinSelectedCompilerMatches())
+        return false;
+
+    local sep = wxFILE_SEP_PATH;
+    project.AddIncludeDir(OgreWinInstall + sep + _T("include") + sep + _T("OGRE") + sep + _T("Bites"));
+    project.AddIncludeDir(OgreWinInstall + sep + _T("include") + sep + _T("OGRE"));
+    project.AddIncludeDir(OgreWinInstall + sep + _T("include") + sep + _T("OGRE") + sep + _T("Overlay"));
+    project.AddIncludeDir(OgreWinInstall + sep + _T("include") + sep + _T("OGRE") + sep + _T("RTShaderSystem"));
+
+    if (!OgreWinSdl2Prefix.IsEmpty())
+        project.AddIncludeDir(OgreWinSdl2Prefix + sep + _T("include"));
+
+    project.AddLibDir(OgreWinLibDir);
+
+    if (!OgreWinSdl2Prefix.IsEmpty())
+        project.AddLibDir(OgreWinSdl2Prefix + sep + _T("lib"));
+
+    project.AddCompilerOption(_T("-std=gnu++17"));
+    project.AddCompilerOption(_T("-DWIN32"));
+
+    local sdlLib = OgreWinSdl2Prefix + sep + _T("lib");
+
+    if (IO.FileExists(sdlLib + sep + _T("libSDL2main.a")) || IO.FileExists(sdlLib + sep + _T("libSDL2main.dll.a")))
+    {
+        project.AddLinkLib(_T("mingw32"));
+        project.AddLinkLib(_T("SDL2main"));
+    }
+
+    project.AddLinkLib(_T("OgreBites"));
+    project.AddLinkLib(_T("OgreOverlay"));
+    project.AddLinkLib(_T("OgreRTShaderSystem"));
+    project.AddLinkLib(_T("OgreMain"));
+
+    if (IO.FileExists(sdlLib + sep + _T("libSDL2.dll.a")) || IO.FileExists(sdlLib + sep + _T("libSDL2.a")))
+        project.AddLinkLib(_T("SDL2"));
+
+    WarningsOn(project, Wizard.GetCompilerID());
+    CppExceptionsOn(project, Wizard.GetCompilerID());
+
+    local names = [
+        _T("OgreMain.dll"),
+        _T("OgreBites.dll"),
+        _T("OgreOverlay.dll"),
+        _T("OgreRTShaderSystem.dll"),
+        _T("OgreMeshLodGenerator.dll"),
+        _T("OgreProperty.dll"),
+        _T("RenderSystem_GL.dll"),
+        _T("RenderSystem_GL3Plus.dll"),
+        _T("Plugin_ParticleFX.dll"),
+        _T("Plugin_BSPSceneManager.dll"),
+        _T("Codec_STBI.dll"),
+        _T("Plugin_PCZSceneManager.dll"),
+        _T("Plugin_OctreeZone.dll"),
+        _T("Plugin_OctreeSceneManager.dll"),
+        _T("Plugin_DotScene.dll"),
+        _T("SDL2.dll"),
+        _T("zlib1.dll"),
+        _T("libzlib.dll"),
+        _T("libpng16.dll")
+    ];
+
+    foreach (i, name in names)
+    {
+        OgreWinQueueDll(project, OgreWinRuntimeDir, name);
+        OgreWinQueueDll(project, OgreWinPluginDir, name);
+    }
+
+    if (!OgreWinSdl2Prefix.IsEmpty())
+        OgreWinQueueDll(project, OgreWinSdl2Prefix + sep + _T("bin"), _T("SDL2.dll"));
+
+    local target = project.GetBuildTarget(Wizard.GetDebugName());
+
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttConsoleOnly);
+        target.SetWorkingDir(Wizard.GetProjectPath());
+        target.SetOutputFilename(target.SuggestOutputFilename());
+        DebugSymbolsOn(target, Wizard.GetCompilerID());
+    }
+
+    target = project.GetBuildTarget(Wizard.GetReleaseName());
+
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttExecutable);
+        target.SetWorkingDir(Wizard.GetProjectPath());
+        target.SetOutputFilename(target.SuggestOutputFilename());
+        target.AddCompilerOption(_T("-DNDEBUG"));
+        OptimizationsOn(target, Wizard.GetCompilerID());
+    }
+
+    return true;
+}
+
 function SetupCustom()
 {
+    if (PLATFORM == PLATFORM_MSW)
+        return OgreWinAllReady();
+
     return OgreMacAllReady();
 }
 
@@ -804,7 +1828,11 @@ function BeginWizard()
             _T("OgreSetupIntro"),
             _("OGRE SDK setup\n\nThis wizard installs, repairs and validates the Code::Blocks-managed OGRE 14.6.3 SDK.\n\nNo project will be created."));
 
-        AddOgreMacSetupPages();
+        if (PLATFORM == PLATFORM_MSW)
+            AddOgreWinSetupPages();
+        else
+            AddOgreMacSetupPages();
+
         return;
     }
 
@@ -812,11 +1840,14 @@ function BeginWizard()
         _T("OgreIntro"),
         _("Welcome to the OGRE project wizard!\n\nThis wizard uses the official OGRE 14.6.3 source release.\n\nv3.8.2 validates prerequisites, optionally applies the OGRE compatibility patch, configures, builds, installs and validates the OGRE SDK."));
 
-    AddOgreMacSetupPages();
+    if (PLATFORM == PLATFORM_MSW)
+        AddOgreWinSetupPages();
+    else
+        AddOgreMacSetupPages();
 
     Wizard.AddProjectPathPage();
 
-    if (PLATFORM != PLATFORM_MAC)
+    if (PLATFORM != PLATFORM_MAC && PLATFORM != PLATFORM_MSW)
     {
         Wizard.AddGenericSingleChoiceListPage(
             _T("OgreSDKType"),
@@ -834,7 +1865,7 @@ function BeginWizard()
 
     local compilers =
         PLATFORM == PLATFORM_MSW
-            ? _T("gcc*;msv*")
+            ? _T("gcc*")
             : _T("*");
 
     Wizard.AddCompilerPage(
@@ -845,15 +1876,34 @@ function BeginWizard()
 }
 
 function OnGetNextPage_OgreSDKType() { OgreIsSource = Wizard.GetListboxSelection(_T("lstSelections")) == 0; if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("CompilerPage"); return _T("OgrePath"); }
-function OnGetPrevPage_CompilerPage() { if (PLATFORM == PLATFORM_MAC) return _T("ProjectPathPage"); if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("OgreSDKType"); return _T("OgrePath"); }
+function OnGetPrevPage_CompilerPage() { if (PLATFORM == PLATFORM_MAC || PLATFORM == PLATFORM_MSW) return _T("ProjectPathPage"); if (PLATFORM != PLATFORM_MSW && !OgreIsSource) return _T("OgreSDKType"); return _T("OgrePath"); }
 function OnLeave_OgrePath(fwd) { if (fwd) { local dir = Wizard.GetTextControlValue(_T("txtFolder")); local raw = ReplaceMacros(dir); if ((OgreIsSource && !IO.FileExists(raw + _T("/OgreMain/include/Ogre.h"))) || (!OgreIsSource && !IO.FileExists(raw + _T("/include/Ogre.h")))) { ShowError(_("This wizard cannot locate OGRE files in that path.")); return false; } OgrePath = dir; } return true; }
-function OnLeave_ProjectPathPage(fwd) { return !fwd || OgreMacAllReady(); }
-function OnLeave_CompilerPage(fwd) { return !fwd || OgreMacAllReady(); }
+function OnLeave_ProjectPathPage(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (PLATFORM == PLATFORM_MSW)
+        return OgreWinAllReady();
+
+    return OgreMacAllReady();
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (!fwd)
+        return true;
+
+    if (PLATFORM == PLATFORM_MSW)
+        return OgreWinAllReady() && OgreWinSelectedCompilerMatches();
+
+    return OgreMacAllReady();
+}
 
 
 function GetFilesDir()
 {
-    if (PLATFORM == PLATFORM_MAC)
+    if (PLATFORM == PLATFORM_MAC || PLATFORM == PLATFORM_MSW)
         return _T("");
 
     return _T("ogre/files");
@@ -863,7 +1913,7 @@ function GetFilesDir()
 // Return an empty string when there are no more files.
 function GetGeneratedFile(file_index)
 {
-    if (PLATFORM != PLATFORM_MAC)
+    if (PLATFORM != PLATFORM_MAC && PLATFORM != PLATFORM_MSW)
         return _T("");
 
     local filename = _T("");
@@ -898,15 +1948,35 @@ function GetGeneratedFile(file_index)
         IO.ReadFileContents(
             path);
 
-    buffer.Replace(
-        _T("[OGRE_PLUGIN_FOLDER]"),
-        OgreMacInstall +
-        _T("/lib/macosx/Release"));
+    if (PLATFORM == PLATFORM_MAC)
+    {
+        buffer.Replace(
+            _T("[OGRE_PLUGIN_FOLDER]"),
+            OgreMacInstall +
+            _T("/lib/macosx/Release"));
 
-    buffer.Replace(
-        _T("[OGRE_MEDIA_FOLDER]"),
-        OgreMacInstall +
-        _T("/Media"));
+        buffer.Replace(
+            _T("[OGRE_MEDIA_FOLDER]"),
+            OgreMacInstall +
+            _T("/Media"));
+    }
+    else
+    {
+        local tests = buffer.Find(_T("[Tests]"));
+
+        if (tests != -1)
+            buffer = buffer.Mid(0, tests);
+
+        buffer.Replace(
+            _T("[OGRE_PLUGIN_FOLDER]"),
+            OgreWinPluginDir);
+
+        buffer.Replace(
+            _T("[OGRE_MEDIA_FOLDER]"),
+            OgreWinInstall +
+            wxFILE_SEP_PATH +
+            _T("Media"));
+    }
 
     return filename +
            _T(";") +
@@ -1045,12 +2115,9 @@ function SetupProject(project)
    if (PLATFORM == PLATFORM_MAC)
     return SetupMacOgreProject(project);
     if (PLATFORM == PLATFORM_MSW)
-    {
-        if (!OgreIsSource) { project.AddIncludeDir(OgrePath + _T("/include")); project.AddIncludeDir(OgrePath + _T("/samples/include")); project.AddIncludeDir(OgrePath + _T("/samples/refapp/include")); project.AddLibDir(OgrePath + _T("/lib")); }
-        project.AddCompilerOption(_T("-mthreads")); project.AddCompilerOption(_T("-fmessage-length=0")); project.AddCompilerOption(_T("-fexceptions")); project.AddCompilerOption(_T("-fident")); project.AddCompilerOption(_T("-DWIN32")); project.AddCompilerOption(_T("-D_WINDOWS"));
-        project.AddLinkerOption(_T("-Wl,--enable-runtime-pseudo-reloc")); project.AddLinkerOption(_T("-Wl,--enable-auto-image-base")); project.AddLinkerOption(_T("-Wl,--add-stdcall-alias")); project.AddLinkerOption(_T("-mthreads"));
-    }
-    else { if (!OgreIsSource) { project.AddCompilerOption(_T("`pkg-config --cflags OGRE`")); project.AddLinkerOption(_T("`pkg-config --libs OGRE`")); } project.AddLinkLib(_T("GL")); }
+        return SetupWinOgreProject(project);
+    if (!OgreIsSource) { project.AddCompilerOption(_T("`pkg-config --cflags OGRE`")); project.AddLinkerOption(_T("`pkg-config --libs OGRE`")); }
+    project.AddLinkLib(_T("GL"));
     if (OgreIsSource) { project.AddIncludeDir(OgrePath + _T("/OgreMain/include")); project.AddIncludeDir(OgrePath + _T("/Samples/Common/include")); }
     WarningsOn(project, Wizard.GetCompilerID()); CppExceptionsOn(project, Wizard.GetCompilerID());
     local target = project.GetBuildTarget(Wizard.GetDebugName());

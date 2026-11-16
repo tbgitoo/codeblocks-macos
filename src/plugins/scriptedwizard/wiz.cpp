@@ -2471,6 +2471,161 @@ SQInteger Wiz_WinCMakeInstall(HSQUIRRELVM v)
         *extractor.p4);
     return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
 }
+
+SQInteger Wiz_WinOgreTools(HSQUIRRELVM v)
+{
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreTools"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, DescribeWinOgreTools(*extractor.p1));
+}
+
+SQInteger Wiz_WinOgreCache(HSQUIRRELVM v)
+{
+    ExtractParams3<Wiz*, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreCache"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, DescribeWinOgreCache(*extractor.p1, *extractor.p2));
+}
+
+SQInteger Wiz_WinOgreBuilt(HSQUIRRELVM v)
+{
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreBuilt"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, DescribeWinOgreBuilt(*extractor.p1));
+}
+
+SQInteger Wiz_WinOgreLayout(HSQUIRRELVM v)
+{
+    ExtractParams2<Wiz*, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreLayout"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(v, DescribeWinOgreLayout(*extractor.p1));
+}
+
+SQInteger Wiz_WinOgreConfigure(HSQUIRRELVM v)
+{
+    ExtractParams6<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreConfigure"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = ConfigureWinOgre(
+        extractor.p0->GetWizardWindow(),
+        extractor.p0->GetCompilerID(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4,
+        *extractor.p5);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinOgreBuild(HSQUIRRELVM v)
+{
+    ExtractParams4<Wiz*, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreBuild"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = BuildWinOgre(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinOgreInstall(HSQUIRRELVM v)
+{
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinOgreInstall"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = InstallWinOgre(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinPatchProbe(HSQUIRRELVM v)
+{
+    ExtractParams3<Wiz*, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinPatchProbe"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacPatchProbe(ProbeMacPatch(*extractor.p1, *extractor.p2)));
+}
+
+SQInteger Wiz_WinSdkPlace(HSQUIRRELVM v)
+{
+    ExtractParams4<Wiz*, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinSdkPlace"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(
+        v,
+        FormatWinSdkFetch(PlaceWinSdkSource(*extractor.p1, *extractor.p2, *extractor.p3)));
+}
+
+SQInteger Wiz_WinDepConfigure(HSQUIRRELVM v)
+{
+    ExtractParams7<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinDepConfigure"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = ConfigureWinDep(
+        extractor.p0->GetWizardWindow(),
+        extractor.p0->GetCompilerID(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4,
+        *extractor.p5,
+        *extractor.p6);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinDepBuild(HSQUIRRELVM v)
+{
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinDepBuild"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = BuildWinDep(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinDepInstall(HSQUIRRELVM v)
+{
+    ExtractParams6<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinDepInstall"))
+        return extractor.ErrorMessage();
+    const WinCMakeRunResult result = InstallWinDep(
+        extractor.p0->GetWizardWindow(),
+        *extractor.p1,
+        *extractor.p2,
+        *extractor.p3,
+        *extractor.p4,
+        *extractor.p5);
+    return ConstructAndReturnInstance(v, FormatWinCMakeRun(result));
+}
+
+SQInteger Wiz_WinPatchApply(HSQUIRRELVM v)
+{
+    ExtractParams5<Wiz*, const wxString *, const wxString *, const wxString *, const wxString *> extractor(v);
+    if (!extractor.Process("Wiz::WinPatchApply"))
+        return extractor.ErrorMessage();
+    return ConstructAndReturnInstance(
+        v,
+        FormatMacPatchApply(ApplyMacPatch(
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4)));
+}
 #endif
 
 SQInteger Wiz_GetSpinControlValue(HSQUIRRELVM v)
@@ -2818,6 +2973,7 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("WinSdkFetch"), Wiz_WinSdkFetch, _SC("Wiz::WinSdkFetch"));
         BindMethod(v, _SC("WinSdkStage"), Wiz_WinSdkStage, _SC("Wiz::WinSdkStage"));
         BindMethod(v, _SC("WinSdkPublish"), Wiz_WinSdkPublish, _SC("Wiz::WinSdkPublish"));
+        BindMethod(v, _SC("WinSdkPlace"), Wiz_WinSdkPlace, _SC("Wiz::WinSdkPlace"));
         BindMethod(v, _SC("WinGitProbe"), Wiz_WinGitProbe, _SC("Wiz::WinGitProbe"));
         BindMethod(v, _SC("WinGitTry"), Wiz_WinGitTry, _SC("Wiz::WinGitTry"));
         BindMethod(v, _SC("WinGitClone"), Wiz_WinGitClone, _SC("Wiz::WinGitClone"));
@@ -2827,6 +2983,18 @@ void Wiz::RegisterWizard()
         BindMethod(v, _SC("WinCMakeConfigure"), Wiz_WinCMakeConfigure, _SC("Wiz::WinCMakeConfigure"));
         BindMethod(v, _SC("WinCMakeBuild"), Wiz_WinCMakeBuild, _SC("Wiz::WinCMakeBuild"));
         BindMethod(v, _SC("WinCMakeInstall"), Wiz_WinCMakeInstall, _SC("Wiz::WinCMakeInstall"));
+        BindMethod(v, _SC("WinOgreTools"), Wiz_WinOgreTools, _SC("Wiz::WinOgreTools"));
+        BindMethod(v, _SC("WinOgreCache"), Wiz_WinOgreCache, _SC("Wiz::WinOgreCache"));
+        BindMethod(v, _SC("WinOgreBuilt"), Wiz_WinOgreBuilt, _SC("Wiz::WinOgreBuilt"));
+        BindMethod(v, _SC("WinOgreLayout"), Wiz_WinOgreLayout, _SC("Wiz::WinOgreLayout"));
+        BindMethod(v, _SC("WinOgreConfigure"), Wiz_WinOgreConfigure, _SC("Wiz::WinOgreConfigure"));
+        BindMethod(v, _SC("WinOgreBuild"), Wiz_WinOgreBuild, _SC("Wiz::WinOgreBuild"));
+        BindMethod(v, _SC("WinOgreInstall"), Wiz_WinOgreInstall, _SC("Wiz::WinOgreInstall"));
+        BindMethod(v, _SC("WinPatchProbe"), Wiz_WinPatchProbe, _SC("Wiz::WinPatchProbe"));
+        BindMethod(v, _SC("WinPatchApply"), Wiz_WinPatchApply, _SC("Wiz::WinPatchApply"));
+        BindMethod(v, _SC("WinDepConfigure"), Wiz_WinDepConfigure, _SC("Wiz::WinDepConfigure"));
+        BindMethod(v, _SC("WinDepBuild"), Wiz_WinDepBuild, _SC("Wiz::WinDepBuild"));
+        BindMethod(v, _SC("WinDepInstall"), Wiz_WinDepInstall, _SC("Wiz::WinDepInstall"));
 #endif
 
         BindDefaultInstanceCmp<FileTreeData>(v);

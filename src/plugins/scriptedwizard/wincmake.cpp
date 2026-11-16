@@ -462,7 +462,9 @@ public:
         delete m_process;
     }
 
-    bool Start(const wxArrayString& args, const wxString& compilerBin)
+    bool Start(const wxArrayString& args,
+               const wxString& compilerBin,
+               const wxString& pkgConfigLibDir = wxEmptyString)
     {
         m_args = args;
 
@@ -489,6 +491,12 @@ public:
 
         if (!compilerBin.empty())
             PrependCompilerBin(env, compilerBin);
+
+        if (!pkgConfigLibDir.empty())
+        {
+            env.env[wxT("PKG_CONFIG_PATH")] = pkgConfigLibDir;
+            env.env[wxT("PKG_CONFIG_LIBDIR")] = pkgConfigLibDir;
+        }
 
         // wxExecute needs a null-terminated argv. wxWidgets 3.0 takes wchar_t**.
         // The strings stay in m_args and are not modified.
@@ -934,7 +942,8 @@ WinCMakeRunResult RunCMake(
     const wxString& compilerBin,
     const wxString& summary,
     const wxString& explanation,
-    const wxString& confirmLabel)
+    const wxString& confirmLabel,
+    const wxString& pkgConfigLibDir = wxEmptyString)
 {
     WinCMakeRunResult result;
     result.operation = operation;
@@ -947,7 +956,7 @@ WinCMakeRunResult RunCMake(
         return result;
     }
 
-    if (!ConfirmAction(parent, explanation, confirmLabel))
+    if (!confirmLabel.empty() && !ConfirmAction(parent, explanation, confirmLabel))
         return result;
 
     wxArrayString command;
@@ -958,7 +967,7 @@ WinCMakeRunResult RunCMake(
 
     WinCMakeRunDialog dlg(parent, summary);
 
-    if (!dlg.Start(command, compilerBin))
+    if (!dlg.Start(command, compilerBin, pkgConfigLibDir))
     {
         result.output = dlg.OutputTail();
         return result;
@@ -1322,6 +1331,1091 @@ WinCMakeRunResult InstallWinCMake(
         return result;
 
     if (!InstalledContract(install, error))
+    {
+        result.success = false;
+        result.output = error;
+    }
+
+    return result;
+}
+
+namespace
+{
+
+wxString JoinUnder(const wxString& root, const wxString& relative)
+{
+    wxString path = root;
+
+    if (!path.EndsWith(wxT("\\")) && !path.EndsWith(wxT("/")))
+        path += wxT("\\");
+
+    wxString rest = relative;
+    rest.Replace(wxT("/"), wxT("\\"));
+    return path + rest;
+}
+
+bool FirstExistingFile(
+    const wxString& root,
+    const wxChar* const* relatives,
+    wxString& found)
+{
+    for (size_t i = 0; relatives[i] != nullptr; ++i)
+    {
+        const wxString path = JoinUnder(root, relatives[i]);
+
+        if (wxFileExists(path))
+        {
+            found = path;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool CacheVariableEquals(
+    const wxString& cache,
+    const wxString& name,
+    const wxString& expected)
+{
+    wxString remaining = cache;
+    const wxString prefix = name + wxT(":");
+
+    while (!remaining.empty())
+    {
+        wxString line = remaining.BeforeFirst(wxT('\n'));
+        remaining = remaining.AfterFirst(wxT('\n'));
+
+        if (line.EndsWith(wxT("\r")))
+            line.RemoveLast();
+
+        if (!line.StartsWith(prefix))
+            continue;
+
+        const int equals = line.Find(wxT('='));
+
+        if (equals == wxNOT_FOUND)
+            continue;
+
+        wxString value = line.Mid(equals + 1);
+        value.Trim(true).Trim(false);
+        return value == expected;
+    }
+
+    return false;
+}
+
+bool FindOnPath(const wxString& fileName, wxString& found)
+{
+    wxString path;
+
+    if (!wxGetEnv(wxT("PATH"), &path) || path.empty())
+        return false;
+
+    const wxArrayString dirs = wxSplit(path, wxT(';'));
+
+    for (size_t i = 0; i < dirs.GetCount(); ++i)
+    {
+        wxString dir = dirs[i];
+        dir.Trim(true).Trim(false);
+
+        if (dir.empty())
+            continue;
+
+        const wxString candidate = JoinUnder(dir, fileName);
+
+        if (wxFileExists(candidate))
+        {
+            found = candidate;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ToolRuns(const wxString& executable)
+{
+    long exitCode = -1;
+    wxString output;
+    wxString error;
+    return RunVersion(executable, exitCode, output, error) && exitCode == 0;
+}
+
+struct OgreLayout
+{
+    bool valid;
+    wxString pluginDir;
+    wxString libDir;
+    wxString runtimeDir;
+    wxString media;
+    wxString cmake;
+    wxString header;
+    wxString ogreMainDll;
+    wxString error;
+
+    OgreLayout()
+        : valid(false)
+    {}
+};
+
+OgreLayout InspectOgreTree(const wxString& root, bool installedContract)
+{
+    OgreLayout layout;
+
+    wxString normalised;
+
+    if (!NormaliseAbsoluteDirectory(root, normalised))
+    {
+        layout.error = wxT("directory is not absolute");
+        return layout;
+    }
+
+    static const wxChar* pluginFiles[] = {
+        wxT("bin\\RenderSystem_GL.dll"),
+        wxT("bin\\Release\\RenderSystem_GL.dll"),
+        wxT("lib\\OGRE\\RenderSystem_GL.dll"),
+        wxT("lib\\Release\\RenderSystem_GL.dll"),
+        wxT("lib\\RenderSystem_GL.dll"),
+        nullptr
+    };
+
+    static const wxChar* importLibs[] = {
+        wxT("lib\\libOgreMain.dll.a"),
+        wxT("lib\\Release\\libOgreMain.dll.a"),
+        wxT("lib\\OGRE\\libOgreMain.dll.a"),
+        nullptr
+    };
+
+    static const wxChar* runtimeDlls[] = {
+        wxT("bin\\OgreMain.dll"),
+        wxT("bin\\Release\\OgreMain.dll"),
+        wxT("lib\\OGRE\\OgreMain.dll"),
+        wxT("lib\\Release\\OgreMain.dll"),
+        wxT("lib\\OgreMain.dll"),
+        nullptr
+    };
+
+    wxString pluginFile;
+
+    if (!FirstExistingFile(normalised, pluginFiles, pluginFile))
+    {
+        layout.error = wxT("RenderSystem_GL.dll was not found");
+        return layout;
+    }
+
+    layout.pluginDir = wxFileName(pluginFile).GetPath();
+
+    wxString importLib;
+
+    if (FirstExistingFile(normalised, importLibs, importLib))
+        layout.libDir = wxFileName(importLib).GetPath();
+
+    wxString runtime;
+
+    if (FirstExistingFile(normalised, runtimeDlls, runtime))
+    {
+        layout.ogreMainDll = runtime;
+        layout.runtimeDir = wxFileName(runtime).GetPath();
+    }
+    else if (wxFileExists(JoinUnder(layout.pluginDir, wxT("OgreMain.dll"))))
+    {
+        layout.ogreMainDll = JoinUnder(layout.pluginDir, wxT("OgreMain.dll"));
+        layout.runtimeDir = layout.pluginDir;
+    }
+
+    if (!installedContract)
+    {
+        layout.valid = true;
+        return layout;
+    }
+
+    static const wxChar* headers[] = {
+        wxT("include\\OGRE\\Ogre.h"),
+        nullptr
+    };
+
+    static const wxChar* mediaFiles[] = {
+        wxT("Media\\models\\ogrehead.mesh"),
+        nullptr
+    };
+
+    static const wxChar* cmakeFiles[] = {
+        wxT("CMake\\OGREConfig.cmake"),
+        wxT("lib\\cmake\\OGRE\\OGREConfig.cmake"),
+        wxT("cmake\\OGREConfig.cmake"),
+        nullptr
+    };
+
+    if (!FirstExistingFile(normalised, headers, layout.header))
+    {
+        layout.error = wxT("include/OGRE/Ogre.h was not found");
+        return layout;
+    }
+
+    wxString mediaFile;
+
+    if (!FirstExistingFile(normalised, mediaFiles, mediaFile))
+    {
+        layout.error = wxT("Media/models/ogrehead.mesh was not found");
+        return layout;
+    }
+
+    wxFileName mediaDir = wxFileName::DirName(wxFileName(mediaFile).GetPath());
+    mediaDir.RemoveLastDir();
+    layout.media = StripTrailingSlash(mediaDir.GetFullPath());
+
+    if (!FirstExistingFile(normalised, cmakeFiles, layout.cmake))
+    {
+        layout.error = wxT("OGREConfig.cmake was not found");
+        return layout;
+    }
+
+    if (layout.libDir.empty())
+    {
+        layout.error = wxT("libOgreMain.dll.a was not found");
+        return layout;
+    }
+
+    if (layout.ogreMainDll.empty())
+    {
+        layout.error = wxT("OgreMain.dll was not found");
+        return layout;
+    }
+
+    layout.valid = true;
+    return layout;
+}
+
+wxString FormatOgreLayout(const OgreLayout& layout)
+{
+    return wxString::Format(
+        wxT("valid=%d\n"
+            "plugin=%s\n"
+            "lib=%s\n"
+            "runtime=%s\n"
+            "media=%s\n"
+            "cmake=%s\n"
+            "header=%s\n"
+            "ogremain_dll=%s\n"
+            "error=%s"),
+        layout.valid ? 1 : 0,
+        layout.pluginDir,
+        layout.libDir,
+        layout.runtimeDir,
+        layout.media,
+        layout.cmake,
+        layout.header,
+        layout.ogreMainDll,
+        layout.error);
+}
+
+bool AdoptMingwCMake(const wxString& bin)
+{
+    const WinCMakeProbe current = ProbeWinCMake();
+
+    if (current.access == WinCMakeWorks)
+        return true;
+
+    const wxString candidate = JoinUnder(bin, wxT("cmake.exe"));
+
+    if (!wxFileExists(candidate))
+        return false;
+
+    const WinCMakeProbe probe = ProbeWinCMakePath(candidate);
+
+    if (probe.access != WinCMakeWorks)
+        return false;
+
+    ConfigManager* cfg = Manager::Get()->GetConfigManager(wxT("scripts"));
+
+    if (cfg)
+        cfg->Write(kSavedExecutableKey, candidate);
+
+    return ProbeWinCMake().access == WinCMakeWorks;
+}
+
+wxString PrefixList(const wxString& mingwRoot, const wxString& sdl2, const wxString& assimp)
+{
+    wxString list = mingwRoot;
+
+    if (!sdl2.empty() && !SamePath(sdl2, mingwRoot))
+        list += wxT(";") + sdl2;
+
+    if (!assimp.empty() && !SamePath(assimp, mingwRoot) && !SamePath(assimp, sdl2))
+        list += wxT(";") + assimp;
+
+    return list;
+}
+
+wxString PkgConfigLibDir(const wxString& mingwRoot,
+                         const wxString& sdl2,
+                         const wxString& assimp)
+{
+    wxString list;
+    const wxString prefixes[] = { mingwRoot, sdl2, assimp };
+
+    for (size_t i = 0; i < WXSIZEOF(prefixes); ++i)
+    {
+        if (prefixes[i].empty())
+            continue;
+
+        const wxString dir = JoinUnder(prefixes[i], wxT("lib\\pkgconfig"));
+
+        if (!wxDirExists(dir))
+            continue;
+
+        if (!list.empty())
+            list += wxT(";");
+
+        list += dir;
+    }
+
+    return list;
+}
+
+wxString DescribeOneTool(const wxString& compilerId, wxString& bin, wxString& mingwRoot)
+{
+    wxString gcc;
+    wxString gxx;
+    wxString make;
+    wxString error;
+
+    if (!MingwTools(compilerId, gcc, gxx, make, bin, error))
+    {
+        return wxString::Format(
+            wxT("compiler=missing\n"
+                "gcc=\n"
+                "gxx=\n"
+                "make=\n"
+                "bin=\n"
+                "cmake=missing\n"
+                "cmake_exe=\n"
+                "pkgconf=missing\n"
+                "pkgconf_exe=\n"
+                "sdl2=missing\n"
+                "sdl2_prefix=\n"
+                "assimp=missing\n"
+                "assimp_prefix=\n"
+                "error=%s"),
+            FirstLine(error));
+    }
+
+    mingwRoot = ParentDirectory(bin);
+
+    wxString cmakeState = wxT("missing");
+    wxString cmakeExe;
+
+    if (AdoptMingwCMake(bin))
+    {
+        const WinCMakeProbe cmake = ProbeWinCMake();
+        cmakeState = wxT("works");
+        cmakeExe = cmake.executable;
+    }
+
+    wxString pkgconfExe;
+    wxString pkgconfState = wxT("missing");
+
+    if (wxFileExists(JoinUnder(bin, wxT("pkgconf.exe"))))
+        pkgconfExe = JoinUnder(bin, wxT("pkgconf.exe"));
+    else if (wxFileExists(JoinUnder(bin, wxT("pkg-config.exe"))))
+        pkgconfExe = JoinUnder(bin, wxT("pkg-config.exe"));
+    else if (!FindOnPath(wxT("pkgconf.exe"), pkgconfExe))
+        FindOnPath(wxT("pkg-config.exe"), pkgconfExe);
+
+    if (!pkgconfExe.empty() && ToolRuns(pkgconfExe))
+        pkgconfState = wxT("works");
+
+    wxString sdl2Prefix;
+    wxString sdl2State = wxT("missing");
+    const wxString localRoot = CodeBlocksRoot();
+
+    if (wxFileExists(JoinUnder(mingwRoot, wxT("include\\SDL2\\SDL.h"))))
+    {
+        sdl2Prefix = mingwRoot;
+        sdl2State = wxT("works");
+    }
+    else if (!localRoot.empty()
+             && wxFileExists(JoinUnder(localRoot, wxT("sdl2\\include\\SDL2\\SDL.h"))))
+    {
+        sdl2Prefix = JoinUnder(localRoot, wxT("sdl2"));
+        sdl2State = wxT("works");
+    }
+
+    wxString assimpPrefix;
+    wxString assimpState = wxT("missing");
+
+    if (wxFileExists(JoinUnder(mingwRoot, wxT("include\\assimp\\Importer.hpp"))))
+    {
+        assimpPrefix = mingwRoot;
+        assimpState = wxT("works");
+    }
+    else if (!localRoot.empty()
+             && wxFileExists(JoinUnder(localRoot, wxT("assimp\\include\\assimp\\Importer.hpp"))))
+    {
+        assimpPrefix = JoinUnder(localRoot, wxT("assimp"));
+        assimpState = wxT("works");
+    }
+
+    return wxString::Format(
+        wxT("compiler=works\n"
+            "gcc=%s\n"
+            "gxx=%s\n"
+            "make=%s\n"
+            "bin=%s\n"
+            "cmake=%s\n"
+            "cmake_exe=%s\n"
+            "pkgconf=%s\n"
+            "pkgconf_exe=%s\n"
+            "sdl2=%s\n"
+            "sdl2_prefix=%s\n"
+            "assimp=%s\n"
+            "assimp_prefix=%s\n"
+            "error="),
+        gcc,
+        gxx,
+        make,
+        bin,
+        cmakeState,
+        cmakeExe,
+        pkgconfState,
+        pkgconfExe,
+        sdl2State,
+        sdl2Prefix,
+        assimpState,
+        assimpPrefix);
+}
+
+} // namespace
+
+wxString DescribeWinOgreTools(const wxString& compilerId)
+{
+    wxString bin;
+    wxString mingwRoot;
+    return DescribeOneTool(compilerId, bin, mingwRoot);
+}
+
+wxString DescribeWinOgreCache(const wxString& buildInput, const wxString& installInput)
+{
+    wxString build;
+    wxString install;
+    wxString error;
+    bool ready = false;
+
+    if (NormaliseAbsoluteDirectory(buildInput, build)
+        && NormaliseAbsoluteDirectory(installInput, install))
+    {
+        const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+        ready = !cache.empty()
+            && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
+            && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"));
+    }
+    else
+    {
+        error = wxT("build or install directory is not absolute");
+    }
+
+    return wxString::Format(
+        wxT("ready=%d\nerror=%s"),
+        ready ? 1 : 0,
+        error);
+}
+
+wxString DescribeWinOgreBuilt(const wxString& build)
+{
+    const OgreLayout layout = InspectOgreTree(build, false);
+    return FormatOgreLayout(layout);
+}
+
+wxString DescribeWinOgreLayout(const wxString& install)
+{
+    const OgreLayout layout = InspectOgreTree(install, true);
+    return FormatOgreLayout(layout);
+}
+
+WinCMakeRunResult ConfigureWinOgre(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& sourceInput,
+    const wxString& buildInput,
+    const wxString& installInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("configure");
+
+    wxString source;
+    wxString build;
+    wxString install;
+    wxString error;
+
+    if (!ValidateConfigureInputs(
+            sourceInput,
+            buildInput,
+            installInput,
+            wxT("Release"),
+            source,
+            build,
+            install,
+            error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    wxString gcc;
+    wxString gxx;
+    wxString make;
+    wxString bin;
+
+    if (!MingwTools(compilerId, gcc, gxx, make, bin, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    if (!AdoptMingwCMake(bin))
+    {
+        result.output = wxT("cmake unavailable");
+        return result;
+    }
+
+    const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (!cache.empty()
+        && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
+        && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
+        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+    {
+        result.success = true;
+        result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
+        return result;
+    }
+
+    wxString ignoredBin;
+    wxString mingwRoot;
+    const wxString tools = DescribeOneTool(compilerId, ignoredBin, mingwRoot);
+    wxString sdl2Prefix;
+    wxString assimpPrefix;
+
+    {
+        const int sdlAt = tools.Find(wxT("sdl2_prefix="));
+        if (sdlAt != wxNOT_FOUND)
+        {
+            sdl2Prefix = tools.Mid(sdlAt + wxString(wxT("sdl2_prefix=")).Length());
+            sdl2Prefix = sdl2Prefix.BeforeFirst(wxT('\n'));
+        }
+
+        const int assimpAt = tools.Find(wxT("assimp_prefix="));
+        if (assimpAt != wxNOT_FOUND)
+        {
+            assimpPrefix = tools.Mid(assimpAt + wxString(wxT("assimp_prefix=")).Length());
+            assimpPrefix = assimpPrefix.BeforeFirst(wxT('\n'));
+        }
+    }
+
+    wxString pathPrefix = bin;
+    const int pkgAt = tools.Find(wxT("pkgconf_exe="));
+
+    if (pkgAt != wxNOT_FOUND)
+    {
+        wxString pkgconfExe = tools.Mid(pkgAt + wxString(wxT("pkgconf_exe=")).Length());
+        pkgconfExe = pkgconfExe.BeforeFirst(wxT('\n'));
+
+        if (!pkgconfExe.empty())
+        {
+            const wxString pkgBin = wxFileName(pkgconfExe).GetPath();
+
+            if (!pkgBin.empty() && !SamePath(pkgBin, bin))
+                pathPrefix = pkgBin + wxT(";") + pathPrefix;
+        }
+    }
+
+    wxArrayString args;
+    args.Add(wxT("-S"));
+    args.Add(source);
+    args.Add(wxT("-B"));
+    args.Add(build);
+    args.Add(wxT("-G"));
+    args.Add(wxT("MinGW Makefiles"));
+    args.Add(wxT("-DCMAKE_BUILD_TYPE=Release"));
+    args.Add(wxT("-DCMAKE_INSTALL_PREFIX=") + install);
+    args.Add(wxT("-DCMAKE_C_COMPILER=") + gcc);
+    args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
+    args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
+    args.Add(wxT("-DCMAKE_PREFIX_PATH=") + PrefixList(mingwRoot, sdl2Prefix, assimpPrefix));
+
+    const wxString summary = wxString::Format(
+        _("CMake is configuring OGRE 14.6.3.\n\nSource:\n%s\n\nBuild:\n%s\n\nInstall:\n%s"),
+        source,
+        build,
+        install);
+
+    result = RunCMake(
+        parent,
+        wxT("configure"),
+        args,
+        pathPrefix,
+        summary,
+        explanation,
+        confirmLabel,
+        PkgConfigLibDir(mingwRoot, sdl2Prefix, assimpPrefix));
+
+    if (!result.success)
+        return result;
+
+    const wxString written = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (written.empty()
+        || !CacheVariableIsPath(written, wxT("CMAKE_INSTALL_PREFIX"), install)
+        || !CacheVariableIsPath(written, wxT("CMAKE_C_COMPILER"), gcc)
+        || !CacheVariableEquals(written, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+    {
+        result.success = false;
+        result.output = wxT("CMake finished, but the cache does not record this install prefix, Release, and gcc");
+    }
+
+    return result;
+}
+
+WinCMakeRunResult BuildWinOgre(
+    wxWindow* parent,
+    const wxString& buildInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("build");
+
+    wxString build;
+    wxString error;
+
+    if (!ValidateBuildDirectory(buildInput, build, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    const int jobs = BoundedJobCount();
+    wxArrayString args;
+    args.Add(wxT("--build"));
+    args.Add(build);
+    args.Add(wxT("--parallel"));
+    args.Add(wxString::Format(wxT("%d"), jobs));
+
+    const wxString summary = wxString::Format(
+        _("CMake is building OGRE 14.6.3.\n\nBuild:\n%s\n\nParallel jobs: %d"),
+        build,
+        jobs);
+
+    result = RunCMake(
+        parent,
+        wxT("build"),
+        args,
+        wxEmptyString,
+        summary,
+        explanation,
+        confirmLabel);
+
+    if (!result.success)
+        return result;
+
+    const OgreLayout layout = InspectOgreTree(build, false);
+
+    if (!layout.valid)
+    {
+        result.success = false;
+        result.output = layout.error.empty()
+            ? wxString(wxT("CMake finished, but RenderSystem_GL.dll was not found"))
+            : layout.error;
+    }
+
+    return result;
+}
+
+WinCMakeRunResult InstallWinOgre(
+    wxWindow* parent,
+    const wxString& buildInput,
+    const wxString& installInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("install");
+
+    wxString build;
+    wxString install;
+    wxString error;
+
+    if (!ValidateBuildDirectory(buildInput, build, error)
+        || !NormaliseAbsoluteDirectory(installInput, install))
+    {
+        result.output = error.empty() ? wxString(wxT("install directory is not absolute")) : error;
+        return result;
+    }
+
+    const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (!CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install))
+    {
+        result.output = wxT("install directory is not the prefix fixed at configure time");
+        return result;
+    }
+
+    wxArrayString args;
+    args.Add(wxT("--install"));
+    args.Add(build);
+
+    const wxString summary = wxString::Format(
+        _("CMake is installing OGRE 14.6.3.\n\nBuild:\n%s\n\nInstall:\n%s"),
+        build,
+        install);
+
+    result = RunCMake(
+        parent,
+        wxT("install"),
+        args,
+        wxEmptyString,
+        summary,
+        explanation,
+        confirmLabel);
+
+    if (!result.success)
+        return result;
+
+    const OgreLayout layout = InspectOgreTree(install, true);
+
+    if (!layout.valid)
+    {
+        result.success = false;
+        result.output = layout.error.empty()
+            ? wxString(wxT("installed OGRE SDK contract was not found"))
+            : layout.error;
+    }
+
+    return result;
+}
+
+bool DepIdOk(const wxString& libraryId)
+{
+    return libraryId == wxT("sdl2") || libraryId == wxT("assimp");
+}
+
+bool DepInstalled(const wxString& libraryId, const wxString& install, wxString& error)
+{
+    const wxChar* header = libraryId == wxT("sdl2")
+        ? wxT("include\\SDL2\\SDL.h")
+        : wxT("include\\assimp\\Importer.hpp");
+    const wxChar* importLib = libraryId == wxT("sdl2")
+        ? wxT("lib\\libSDL2.dll.a")
+        : wxT("lib\\libassimp.dll.a");
+
+    if (!wxFileExists(JoinUnder(install, header)))
+    {
+        error = wxString(header) + wxT(" was not found");
+        return false;
+    }
+
+    if (!wxFileExists(JoinUnder(install, importLib)))
+    {
+        error = wxString(importLib) + wxT(" was not found");
+        return false;
+    }
+
+    if (libraryId == wxT("sdl2"))
+    {
+        if (!wxFileExists(JoinUnder(install, wxT("bin\\SDL2.dll"))))
+        {
+            error = wxT("bin/SDL2.dll was not found");
+            return false;
+        }
+
+        return true;
+    }
+
+    wxDir bin(JoinUnder(install, wxT("bin")));
+    wxString name;
+
+    if (!bin.IsOpened()
+        || !bin.GetFirst(&name, wxT("libassimp*.dll"), wxDIR_FILES))
+    {
+        error = wxT("bin/libassimp*.dll was not found");
+        return false;
+    }
+
+    return true;
+}
+
+wxString IsolatedPkgConfigDir()
+{
+    const wxString root = CodeBlocksRoot();
+
+    if (root.empty())
+        return wxString();
+
+    const wxString dir = JoinUnder(root, wxT("_pkgconfig"));
+    wxFileName name = wxFileName::DirName(dir);
+
+    if (!wxDirExists(dir) && !name.Mkdir(wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+        return wxString();
+
+    return dir;
+}
+
+WinCMakeRunResult ConfigureWinDep(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& libraryId,
+    const wxString& sourceInput,
+    const wxString& buildInput,
+    const wxString& installInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("configure");
+
+    if (!DepIdOk(libraryId))
+    {
+        result.output = wxT("unknown library");
+        return result;
+    }
+
+    wxString source;
+    wxString build;
+    wxString install;
+    wxString error;
+
+    if (!ValidateConfigureInputs(
+            sourceInput,
+            buildInput,
+            installInput,
+            wxT("Release"),
+            source,
+            build,
+            install,
+            error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    wxString gcc;
+    wxString gxx;
+    wxString make;
+    wxString bin;
+
+    if (!MingwTools(compilerId, gcc, gxx, make, bin, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    if (!AdoptMingwCMake(bin))
+    {
+        result.output = wxT("cmake unavailable");
+        return result;
+    }
+
+    const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (!cache.empty()
+        && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
+        && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
+        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+    {
+        result.success = true;
+        result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
+        return result;
+    }
+
+    const wxString mingwRoot = ParentDirectory(bin);
+    wxString pkgDir = PkgConfigLibDir(mingwRoot, wxEmptyString, wxEmptyString);
+
+    if (pkgDir.empty())
+        pkgDir = IsolatedPkgConfigDir();
+
+    wxArrayString args;
+    args.Add(wxT("-S"));
+    args.Add(source);
+    args.Add(wxT("-B"));
+    args.Add(build);
+    args.Add(wxT("-G"));
+    args.Add(wxT("MinGW Makefiles"));
+    args.Add(wxT("-DCMAKE_BUILD_TYPE=Release"));
+    args.Add(wxT("-DCMAKE_INSTALL_PREFIX=") + install);
+    args.Add(wxT("-DCMAKE_C_COMPILER=") + gcc);
+    args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
+    args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
+    args.Add(wxT("-DCMAKE_PREFIX_PATH=") + mingwRoot);
+
+    const wxString title = libraryId == wxT("sdl2")
+        ? wxString(_("SDL2 2.32.10"))
+        : wxString(_("Assimp 5.4.3"));
+
+    if (libraryId == wxT("sdl2"))
+    {
+        args.Add(wxT("-DSDL_SHARED=ON"));
+        args.Add(wxT("-DSDL_STATIC=OFF"));
+        args.Add(wxT("-DSDL_TEST=OFF"));
+    }
+    else
+    {
+        args.Add(wxT("-DBUILD_SHARED_LIBS=ON"));
+        args.Add(wxT("-DASSIMP_BUILD_ASSIMP_TOOLS=OFF"));
+        args.Add(wxT("-DASSIMP_BUILD_TESTS=OFF"));
+        args.Add(wxT("-DASSIMP_WARNINGS_AS_ERRORS=OFF"));
+        args.Add(wxT("-DASSIMP_BUILD_ZLIB=ON"));
+    }
+
+    const wxString summary = wxString::Format(
+        _("CMake is configuring %s.\n\nSource:\n%s\n\nBuild:\n%s\n\nInstall:\n%s"),
+        title,
+        source,
+        build,
+        install);
+
+    result = RunCMake(
+        parent,
+        wxT("configure"),
+        args,
+        bin,
+        summary,
+        explanation,
+        confirmLabel,
+        pkgDir);
+
+    if (!result.success)
+        return result;
+
+    const wxString written = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (written.empty()
+        || !CacheVariableIsPath(written, wxT("CMAKE_INSTALL_PREFIX"), install)
+        || !CacheVariableIsPath(written, wxT("CMAKE_C_COMPILER"), gcc)
+        || !CacheVariableEquals(written, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+    {
+        result.success = false;
+        result.output = wxT("CMake finished, but the cache does not record this install prefix, Release, and gcc");
+    }
+
+    return result;
+}
+
+WinCMakeRunResult BuildWinDep(
+    wxWindow* parent,
+    const wxString& libraryId,
+    const wxString& buildInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("build");
+
+    if (!DepIdOk(libraryId))
+    {
+        result.output = wxT("unknown library");
+        return result;
+    }
+
+    wxString build;
+    wxString error;
+
+    if (!ValidateBuildDirectory(buildInput, build, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    const int jobs = BoundedJobCount();
+    wxArrayString args;
+    args.Add(wxT("--build"));
+    args.Add(build);
+    args.Add(wxT("--parallel"));
+    args.Add(wxString::Format(wxT("%d"), jobs));
+
+    const wxString title = libraryId == wxT("sdl2")
+        ? wxString(_("SDL2 2.32.10"))
+        : wxString(_("Assimp 5.4.3"));
+    const wxString summary = wxString::Format(
+        _("CMake is building %s.\n\nBuild:\n%s\n\nParallel jobs: %d"),
+        title,
+        build,
+        jobs);
+
+    return RunCMake(
+        parent,
+        wxT("build"),
+        args,
+        wxEmptyString,
+        summary,
+        explanation,
+        confirmLabel);
+}
+
+WinCMakeRunResult InstallWinDep(
+    wxWindow* parent,
+    const wxString& libraryId,
+    const wxString& buildInput,
+    const wxString& installInput,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinCMakeRunResult result;
+    result.operation = wxT("install");
+
+    if (!DepIdOk(libraryId))
+    {
+        result.output = wxT("unknown library");
+        return result;
+    }
+
+    wxString build;
+    wxString install;
+    wxString error;
+
+    if (!ValidateBuildDirectory(buildInput, build, error)
+        || !NormaliseAbsoluteDirectory(installInput, install))
+    {
+        result.output = error.empty() ? wxString(wxT("install directory is not absolute")) : error;
+        return result;
+    }
+
+    const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+
+    if (!CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install))
+    {
+        result.output = wxT("install directory is not the prefix fixed at configure time");
+        return result;
+    }
+
+    wxArrayString args;
+    args.Add(wxT("--install"));
+    args.Add(build);
+
+    const wxString title = libraryId == wxT("sdl2")
+        ? wxString(_("SDL2 2.32.10"))
+        : wxString(_("Assimp 5.4.3"));
+    const wxString summary = wxString::Format(
+        _("CMake is installing %s.\n\nBuild:\n%s\n\nInstall:\n%s"),
+        title,
+        build,
+        install);
+
+    result = RunCMake(
+        parent,
+        wxT("install"),
+        args,
+        wxEmptyString,
+        summary,
+        explanation,
+        confirmLabel);
+
+    if (!result.success)
+        return result;
+
+    if (!DepInstalled(libraryId, install, error))
     {
         result.success = false;
         result.output = error;

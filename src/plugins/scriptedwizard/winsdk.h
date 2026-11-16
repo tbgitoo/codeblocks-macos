@@ -97,6 +97,13 @@ WinSdkFetch PublishWinSdk(const wxString& libraryId,
                           const wxString& stagingPrefix,
                           const wxString& note);
 
+// Copy one staged source tree to %LOCALAPPDATA%\codeblocks\<leaf>.
+// A leaf that already contains CMakeLists.txt is left untouched.
+// A non-empty leaf without that file is refused and not deleted.
+WinSdkFetch PlaceWinSdkSource(const wxString& libraryId,
+                              const wxString& stagingPrefix,
+                              const wxString& leaf);
+
 #endif // __WXMSW__
 
 #endif // WINSDK_H

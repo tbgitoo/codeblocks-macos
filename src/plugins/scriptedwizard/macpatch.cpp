@@ -27,10 +27,15 @@
 #include <wx/utils.h>
 #include <wx/window.h>
 
-#include "macgit.h"
 #include "macpatch.h"
 
 #if defined(__WXMAC__)
+    #include "macgit.h"
+#elif defined(__WXMSW__)
+    #include "wingit.h"
+#endif
+
+#if defined(__WXMAC__) || defined(__WXMSW__)
 
 namespace
 {
@@ -537,11 +542,17 @@ MacPatchProbe ProbeMacPatch(
 
     result.sourceRoot = normalisedSource;
 
+#if defined(__WXMAC__)
     const MacGitProbe gitProbe = ProbeMacGit();
+    const int gitWorks = MacGitWorks;
+#elif defined(__WXMSW__)
+    const WinGitProbe gitProbe = ProbeWinGit();
+    const int gitWorks = WinGitWorks;
+#endif
 
     result.gitExecutable = gitProbe.executable;
 
-    if (gitProbe.access != MacGitWorks)
+    if (gitProbe.access != gitWorks)
     {
         result.state = MacPatchGitUnavailable;
         result.errorOutput =
@@ -801,4 +812,4 @@ wxString FormatMacPatchApply(
         FirstLine(result.errorOutput));
 }
 
-#endif // defined(__WXMAC__)
+#endif // defined(__WXMAC__) || defined(__WXMSW__)
