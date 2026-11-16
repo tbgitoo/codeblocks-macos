@@ -26,6 +26,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v3.7b (Windows SDCC: detect an existing install, or open the official 4.6.0 x64 page; Run launches s51.exe)
   → v4.0 (installable Windows distribution; NSIS; no bundled compiler)
   → v4.1 (OGRE-Next project wizard on Apple Silicon, separate from the OGRE 1.x wizard)
+  → v4.2 (Windows OGRE 1.x wizard: the v3.8 tag, patch, and sequence)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -70,6 +71,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.7b** | **In progress.** On Windows the MCS51 wizard detects an existing SDCC install. If none is found, Yes opens the official 4.6.0 x64 page. The wizard does not download or run the installer. Run through `s51.exe` is still open. | [versioning_plan_v3_7b.md](versioning_plan_v3_7b.md) |
 | **v4.0** | **Released.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. Optional pinned MinGW. Mid-install Cancel stays deferred and is not part of v4.1. | [versioning_plan_v4_0.md](versioning_plan_v4_0.md) |
 | **v4.1** | **M4 done** (tree). M5 is next. OGRE-Next wizard on Apple Silicon: pinned deps and engine, packaged patches including `ogre-apple`, SDK under `~/Library/CodeBlocks`, ordinary C++ project. The OGRE 1.x wizard is unchanged. | [versioning_plan_v4_1.md](versioning_plan_v4_1.md) |
+| **v4.2** | **Planning.** Windows Ogre wizard transcribes the current v3.8 flow: tag `v14.6.3`, the same Assimp sidecar patch, selected MinGW GCC, SDK under `%LOCALAPPDATA%\codeblocks`. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
 
 ### One-line outcomes
 
@@ -96,6 +98,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.7b** | On Windows, a detected SDCC installation is accepted. Otherwise Yes opens the official 4.6.0 x64 download page, and Next detects again. Run launches `s51.exe`. Keil and IAR are left alone. |
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. An optional page can add the pinned MinGW. |
 | **v4.1** | File → New → Project → OGRE-Next project on Apple Silicon checks out the pinned dependency and engine revisions, applies the packaged patches, installs the SDK under `~/Library/CodeBlocks`, and Build and Run opens the light-show window. The OGRE 1.x wizard stays separate. |
+| **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head. The macOS wizard and OGRE-Next stay unchanged. |
 
 ---
 
