@@ -2246,6 +2246,12 @@
 		<Unit filename="plugins/scriptedwizard/wincmake.h">
 			<Option target="Scripted wizard" />
 		</Unit>
+		<Unit filename="plugins/scriptedwizard/macpatch.cpp">
+			<Option target="Scripted wizard" />
+		</Unit>
+		<Unit filename="plugins/scriptedwizard/macpatch.h">
+			<Option target="Scripted wizard" />
+		</Unit>
 		<Unit filename="plugins/scriptedwizard/wingit.cpp">
 			<Option target="Scripted wizard" />
 		</Unit>

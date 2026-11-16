@@ -1,6 +1,6 @@
 # Code::Blocks v4.2 — OGRE wizard on Windows
 
-**Status: Planning.** v3.8 is the macOS OGRE wizard. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard and does not list OGRE-Next. v4.2 replaces that Windows Ogre wizard with the v3.8 workflow.
+**Status: M2 and M3 are implemented in the wizard. M1 has not been run, so none of the milestones are done.** v3.8 is the macOS OGRE wizard. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard until this tree is rebuilt and that install is replaced. v4.2 replaces the Windows Ogre wizard with the v3.8 workflow.
 
 **Question this version answers:** can the Windows Ogre project wizard follow the same sequence, pins, patch, and generated-project contract as the current v3.8 wizard, with a difference only where Windows has no Homebrew and no `lib/macosx/Release` layout?
 
@@ -100,6 +100,8 @@ Not passed on Windows:
 -DOGRE_PLUGINS_PATH=lib/macosx/Release
 ```
 
+Windows also passes `-DCMAKE_PREFIX_PATH` set to the selected MinGW prefix plus any detected SDL2 or Assimp prefix that is not already that directory. That is how the detected headers become visible to OGRE's CMake. It is not a macOS rpath or plugin-path setting.
+
 The selected compiler is the active GNU GCC installation directory. If `gcc.exe`, `g++.exe`, or `mingw32-make.exe` is missing there, the wizard stops. This version does not download a compiler.
 
 ### 3.2 Directories
@@ -126,11 +128,22 @@ The macOS wizard requires Homebrew formulas `cmake`, `pkgconf`, `sdl2`, and `ass
 | SDL2 | Detect a development tree that contains the SDL2 headers OGRE's CMake looks for. |
 | Assimp | Detect `include/assimp/Importer.hpp`, the same check the macOS page uses. |
 
-A missing CMake, pkgconf, SDL2, or Assimp is installed only after an explicit Yes. The bits are not unpacked into the OGRE source tree and are not vendored into Code::Blocks. Their Windows download URLs are written into this plan only after one manual build on this machine names an official artifact for each missing tool. Until that record exists, the wizard may detect and reuse what is already installed, and it must not invent a download.
+A missing CMake, pkgconf, SDL2, or Assimp is installed only after an explicit Yes. The bits are not unpacked into the OGRE source tree and are not vendored into Code::Blocks. Git, CMake, pkgconf, and the compiler are not downloaded.
+
+SDL2 and Assimp are reused when the header check already succeeds under the selected MinGW prefix or under the install leaf below. Otherwise the wizard asks, then downloads the pinned official source and builds it with the selected MinGW GCC. A second run skips a source tree, CMake cache, or install that already matches.
+
+| Library | Source | Install leaf | SHA-256 |
+|---|---|---|---|
+| SDL 2.32.10 | `https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz` | `%LOCALAPPDATA%\codeblocks\sdl2` | `5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165` |
+| Assimp 5.4.3 | `https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.tar.gz` | `%LOCALAPPDATA%\codeblocks\assimp` | `66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb` |
+
+Source leaves are `sdl2-source-2.32.10` and `assimp-source-5.4.3`, each with `build-codeblocks` inside. Configure is `Release` with the install prefix fixed first. SDL2 is built shared, without the test library. Assimp is built shared, with its vendored zlib, and without its tools and tests. pkg-config is limited to the selected MinGW prefix and these install prefixes, so a different MinGW on `PATH` is not linked in.
 
 ### 3.4 Installed layout and the generated project
 
-The macOS contract checks `lib/macosx/Release` and frameworks. Windows checks the DLLs and import libraries the M1 install actually writes, then rebases `plugins.cfg` to that plugin directory. The template `ogre/files/plugins.cfg` keeps the `[OGRE_PLUGIN_FOLDER]` placeholder. The folder string is the Windows install layout, not `lib/macosx/Release`.
+The macOS contract checks `lib/macosx/Release` and frameworks. Windows checks the DLLs and import libraries the install writes, then rebases `plugins.cfg` to that plugin directory. The template `ogre/files/plugins.cfg` keeps the `[OGRE_PLUGIN_FOLDER]` placeholder. The folder string is the Windows install layout, not `lib/macosx/Release`.
+
+Until M1 records the directory this machine actually produced, the wizard accepts the first existing file among `bin\RenderSystem_GL.dll`, `bin\Release\RenderSystem_GL.dll`, `lib\OGRE\RenderSystem_GL.dll`, `lib\Release\RenderSystem_GL.dll`, and `lib\RenderSystem_GL.dll`. The import library is `libOgreMain.dll.a` under `lib`, `lib\Release`, or `lib\OGRE`. The install also requires `include\OGRE\Ogre.h`, `Media\models\ogrehead.mesh`, `OgreMain.dll`, and `OGREConfig.cmake`. M1 replaces this search with the directory that build wrote if it is different.
 
 `resources.cfg` still rebases `[OGRE_MEDIA]` at the installed `Media` directory and drops the `[Tests]` section.
 
@@ -146,9 +159,9 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 
 | | Objective | Check | Status |
 |---|---|---|---|
-| M1 | Build tag `v14.6.3` by hand with the selected MinGW GCC, apply the stored patch, and install under `%LOCALAPPDATA%\codeblocks\ogre-14.6.3`. | An external project, not the wizard, builds and renders the textured, lit, rotating `ogrehead.mesh`. The plugin directory, import libraries, and any prerequisite downloads used are written into this plan. Stop if the stored patch does not apply to this tag. | Planning |
-| M2 | Drive that same sequence from the Ogre wizard on Windows. | A second run skips a checkout, patch state, build tree, or SDK that already matches. Cancel does not delete a tree the run did not create. The macOS wizard is unchanged. | Planning |
-| M3 | Generate the ordinary C++ project. | Build and Run from the Windows IDE opens the same scene. The project contains no source-tree or build-tree path. Closing the IDE does not rewrite `%APPDATA%\CodeBlocks` except for the normal project and layout records. | Planning |
+| M1 | Build tag `v14.6.3` by hand with the selected MinGW GCC, apply the stored patch, and install under `%LOCALAPPDATA%\codeblocks\ogre-14.6.3`. | An external project, not the wizard, builds and renders the textured, lit, rotating `ogrehead.mesh`. The plugin directory, import libraries, and any prerequisite downloads used are written into this plan. Stop if the stored patch does not apply to this tag. | Not run |
+| M2 | Drive that same sequence from the Ogre wizard on Windows. | A second run skips a checkout, patch state, build tree, or SDK that already matches. Cancel does not delete a tree the run did not create. The macOS wizard is unchanged. | Implemented, not exercised |
+| M3 | Generate the ordinary C++ project. | Build and Run from the Windows IDE opens the same scene. The project contains no source-tree or build-tree path. Closing the IDE does not rewrite `%APPDATA%\CodeBlocks` except for the normal project and layout records. | Implemented, not exercised |
 
 ---
 

@@ -23,7 +23,7 @@
 
 #include <wx/string.h>
 
-#if defined(__WXMAC__)
+#if defined(__WXMAC__) || defined(__WXMSW__)
 
 // State of one known compatibility patch against one validated source tree.
 enum MacPatchState
@@ -157,6 +157,6 @@ MacPatchApplyResult ApplyMacPatch(
 // Report string returned to wizard.script.
 wxString FormatMacPatchApply(const MacPatchApplyResult& result);
 
-#endif // defined(__WXMAC__)
+#endif // defined(__WXMAC__) || defined(__WXMSW__)
 
 #endif // MACPATCH_H

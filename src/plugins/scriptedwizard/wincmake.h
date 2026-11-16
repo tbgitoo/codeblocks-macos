@@ -112,6 +112,69 @@ WinCMakeRunResult InstallWinCMake(
 
 wxString FormatWinCMakeRun(const WinCMakeRunResult& result);
 
+// v4.2. OGRE 14.6.3 configure/build/install for the selected MinGW GCC.
+// These do not use the FLTK arguments or the FLTK output checks.
+// compilerId empty selects the IDE's default compiler.
+wxString DescribeWinOgreTools(const wxString& compilerId);
+
+wxString DescribeWinOgreCache(
+    const wxString& build,
+    const wxString& install);
+
+wxString DescribeWinOgreBuilt(const wxString& build);
+
+wxString DescribeWinOgreLayout(const wxString& install);
+
+WinCMakeRunResult ConfigureWinOgre(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& source,
+    const wxString& build,
+    const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+WinCMakeRunResult BuildWinOgre(
+    wxWindow* parent,
+    const wxString& build,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+// libraryId is "sdl2" or "assimp". Arguments and install checks are fixed.
+// An empty confirmLabel means consent was already given; CMake still shows
+// its progress window and that window can be cancelled.
+WinCMakeRunResult ConfigureWinDep(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& libraryId,
+    const wxString& source,
+    const wxString& build,
+    const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+WinCMakeRunResult BuildWinDep(
+    wxWindow* parent,
+    const wxString& libraryId,
+    const wxString& build,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+WinCMakeRunResult InstallWinDep(
+    wxWindow* parent,
+    const wxString& libraryId,
+    const wxString& build,
+    const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
+WinCMakeRunResult InstallWinOgre(
+    wxWindow* parent,
+    const wxString& build,
+    const wxString& install,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+
 #endif // __WXMSW__
 
 #endif // WINCMAKE_H
