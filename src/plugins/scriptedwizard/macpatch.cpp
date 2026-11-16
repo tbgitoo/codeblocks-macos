@@ -20,6 +20,7 @@
 
 #include <wx/button.h>
 #include <wx/dialog.h>
+#include <wx/ffile.h>
 #include <wx/filename.h>
 #include <wx/process.h>
 #include <wx/sizer.h>
@@ -43,7 +44,8 @@ namespace
 enum MacPatchRevisionKind
 {
     MacPatchRevisionExactTag = 0,
-    MacPatchRevisionExactCommit = 1
+    MacPatchRevisionExactCommit = 1,
+    MacPatchRevisionArchiveMarker = 2
 };
 
 struct KnownPatch
@@ -91,6 +93,13 @@ const KnownPatch kKnownPatches[] =
         wxT("RenderSystems/Metal/src/OgreMetalWindow.mm"),
         MacPatchRevisionExactCommit,
         wxT("4859016ad2cc956a653dfc4e4a859505696c6509")
+    },
+    {
+        wxT("assimp-5.4.3-ccache-path"),
+        wxT("assimp-5.4.3-ccache-path.patch"),
+        wxT("CMakeLists.txt"),
+        MacPatchRevisionArchiveMarker,
+        wxT("PROJECT(Assimp VERSION 5.4.3)")
     }
 };
 
@@ -159,6 +168,7 @@ bool HasControlCharacters(const wxString& text)
 
 bool SourceRootOk(const wxString& sourceRoot,
                  const wxString& sentinel,
+                 bool requireGit,
                  wxString& normalised,
                  wxString& error)
 {
@@ -199,7 +209,8 @@ bool SourceRootOk(const wxString& sourceRoot,
 
     const wxFileName gitMarker(normalised, wxT(".git"));
 
-    if (!wxDirExists(gitMarker.GetFullPath())
+    if (requireGit
+        && !wxDirExists(gitMarker.GetFullPath())
         && !wxFileExists(gitMarker.GetFullPath()))
     {
         error = wxT("source root is not a Git checkout");
@@ -316,6 +327,31 @@ bool ValidateRevision(const wxString& executable,
                      wxString& versionOutput,
                      wxString& errorOutput)
 {
+    if (patch.revisionKind == MacPatchRevisionArchiveMarker)
+    {
+        wxFFile marker(
+            sourceRoot + wxFILE_SEP_PATH + patch.sentinel,
+            wxT("rb"));
+        wxString text;
+
+        if (!marker.IsOpened() || !marker.ReadAll(&text, wxConvUTF8))
+        {
+            errorOutput = wxT("could not read the archive marker");
+            return false;
+        }
+
+        if (!text.Contains(patch.revision))
+        {
+            errorOutput =
+                wxT("source archive does not contain ")
+                + wxString(patch.revision);
+            return false;
+        }
+
+        versionOutput = patch.revision;
+        return true;
+    }
+
     wxArrayString args;
 
     if (patch.revisionKind == MacPatchRevisionExactTag)
@@ -532,6 +568,7 @@ MacPatchProbe ProbeMacPatch(
     if (!SourceRootOk(
             sourceRoot,
             patch->sentinel,
+            patch->revisionKind != MacPatchRevisionArchiveMarker,
             normalisedSource,
             sourceError))
     {
@@ -578,7 +615,9 @@ MacPatchProbe ProbeMacPatch(
                 ? wxString::Format(
                       patch->revisionKind == MacPatchRevisionExactTag
                           ? wxT("source checkout is not exact tag %s")
-                          : wxT("source checkout is not commit %s"),
+                          : patch->revisionKind == MacPatchRevisionExactCommit
+                              ? wxT("source checkout is not commit %s")
+                              : wxT("source archive does not contain %s"),
                       patch->revision)
                 : versionError;
 

@@ -116,6 +116,8 @@ The selected compiler is the active GNU GCC installation directory. If `gcc.exe`
 
 That root is the Windows counterpart of `~/Library/CodeBlocks`. It is not `%APPDATA%\CodeBlocks`, not the IDE install directory, and not Program Files. The leaf names stay `ogre-source-14.6.3` and `ogre-14.6.3`.
 
+The wizard keeps using the `%LOCALAPPDATA%\codeblocks` path. When that directory is a symlink or junction, file operations follow it, and path comparisons treat the link and its target as the same directory. A target on another drive is accepted. A target under Program Files, or beside `codeblocks.exe`, is still refused.
+
 ### 3.3 Prerequisites
 
 The macOS wizard requires Homebrew formulas `cmake`, `pkgconf`, `sdl2`, and `assimp`. Windows has no Homebrew step. The four roles stay:
@@ -138,6 +140,16 @@ SDL2 and Assimp are reused when the header check already succeeds under the sele
 | Assimp 5.4.3 | `https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.tar.gz` | `%LOCALAPPDATA%\codeblocks\assimp` | `66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb` |
 
 Source leaves are `sdl2-source-2.32.10` and `assimp-source-5.4.3`, each with `build-codeblocks` inside. Configure is `Release` with the install prefix fixed first. SDL2 is built shared, without the test library. Assimp is built shared, with its vendored zlib, and without its tools and tests. pkg-config is limited to the selected MinGW prefix and these install prefixes, so a different MinGW on `PATH` is not linked in.
+
+Assimp 5.4.3 is unpacked from the pinned archive, so that tree has no Git checkout. Before configure, the wizard applies one more entry in the same known-patch table:
+
+| Patch id | `assimp-5.4.3-ccache-path` |
+| --- | --- |
+| Patch file | `src/plugins/scriptedwizard/resources/patches/assimp-5.4.3-ccache-path.patch` |
+| Sentinel | `CMakeLists.txt` |
+| Marker | `PROJECT(Assimp VERSION 5.4.3)` |
+
+The official file launches `ccache` whenever `ccache.exe` is found. The MinGW makefile generator writes that path unquoted, and a path containing a space makes `mingw32-make` stop on the first source file. The patch skips that launcher only when the path contains a space. ccache stays in use when its path has no space. The stored OGRE patch is not edited. A `CMakeLists.txt` newer than `CMakeCache.txt` is configured again.
 
 ### 3.4 Installed layout and the generated project
 
@@ -182,7 +194,7 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 ## 6. Rejected
 
 - A Windows OGRE-Next wizard, or the v4.1 pins and patches.
-- A second OGRE tag, a second patch file, or a Windows edit of the stored patch.
+- A second OGRE tag, or a Windows edit of the stored OGRE patch.
 - Homebrew, MSYS2, or MSVC as the OGRE build.
 - Installing Git.
 - Putting the SDK in `%APPDATA%\CodeBlocks`, beside `codeblocks.exe`, or in Program Files.

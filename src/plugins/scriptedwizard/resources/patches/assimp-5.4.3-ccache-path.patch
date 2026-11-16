@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d45eb22..af8f700 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -50,7 +50,7 @@ option(ASSIMP_BUILD_USE_CCACHE "Use ccache to speed up compilation." on)
+
+ if(ASSIMP_BUILD_USE_CCACHE)
+   find_program(CCACHE_PATH ccache)
+-  if (CCACHE_PATH)
++  if (CCACHE_PATH AND NOT CCACHE_PATH MATCHES " ")
+     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE_PATH})
+     set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_PATH})
+   endif()
