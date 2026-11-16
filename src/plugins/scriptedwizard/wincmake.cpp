@@ -33,6 +33,9 @@
 
 #if defined(__WXMSW__)
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 namespace
 {
 
@@ -110,24 +113,38 @@ wxString LastLine(const wxString& text)
 {
     wxString trimmed = text;
     trimmed.Trim(true).Trim(false);
+    wxArrayString lines;
 
-    const int nl = trimmed.Find(wxT('\n'), true);
-
-    if (nl == wxNOT_FOUND)
+    // The final make line only says Error 2. Keep the recipe error above it.
+    while (!trimmed.empty() && lines.GetCount() < 6)
     {
-        if (trimmed.Length() > 400)
-            return trimmed.Mid(trimmed.Length() - 400);
+        const int nl = trimmed.Find(wxT('\n'), true);
+        wxString line = nl == wxNOT_FOUND ? trimmed : trimmed.Mid(nl + 1);
+        line.Trim(true).Trim(false);
 
-        return trimmed;
+        if (nl == wxNOT_FOUND)
+            trimmed.clear();
+        else
+            trimmed = trimmed.Mid(0, nl);
+
+        if (!line.empty())
+            lines.Insert(line, 0);
     }
 
-    wxString line = trimmed.Mid(nl + 1);
-    line.Trim(true).Trim(false);
+    wxString out;
 
-    if (line.Length() > 400)
-        line = line.Mid(line.Length() - 400);
+    for (size_t i = 0; i < lines.GetCount(); ++i)
+    {
+        if (!out.empty())
+            out += wxT('\n');
 
-    return line;
+        out += lines[i];
+    }
+
+    if (out.Length() > 800)
+        out = out.Mid(out.Length() - 800);
+
+    return out;
 }
 
 wxString StripTrailingSlash(wxString path)
@@ -148,9 +165,68 @@ wxString Canonical(wxString path)
     return path.Lower();
 }
 
+// Follow a directory symlink or junction for the longest prefix that exists,
+// then keep the not-yet-created tail. %LOCALAPPDATA%\codeblocks can point at
+// another drive and still compare equal to the path CMake records.
+wxString ResolvePath(wxString path)
+{
+    path.Replace(wxT("/"), wxT("\\"));
+    path = StripTrailingSlash(path);
+
+    wxString missing;
+
+    while (path.Length() > 3
+           && !wxFileExists(path)
+           && !wxDirExists(path))
+    {
+        const int slash = path.Find(wxT('\\'), true);
+
+        if (slash == wxNOT_FOUND || slash < 2)
+            break;
+
+        missing = path.Mid(slash) + missing;
+        path = path.Mid(0, slash);
+    }
+
+    if (wxFileExists(path) || wxDirExists(path))
+    {
+        const HANDLE handle = CreateFileW(
+            path.wc_str(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            nullptr);
+
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            wchar_t resolved[32768];
+            const DWORD length = GetFinalPathNameByHandleW(
+                handle,
+                resolved,
+                WXSIZEOF(resolved),
+                FILE_NAME_NORMALIZED);
+            CloseHandle(handle);
+
+            if (length > 0 && length < WXSIZEOF(resolved))
+            {
+                path = wxString(resolved, length);
+
+                if (path.StartsWith(wxT("\\\\?\\UNC\\")))
+                    path = wxT("\\\\") + path.Mid(8);
+                else if (path.StartsWith(wxT("\\\\?\\")))
+                    path = path.Mid(4);
+            }
+        }
+    }
+
+    return Canonical(path + missing);
+}
+
 bool SamePath(const wxString& left, const wxString& right)
 {
-    return Canonical(left) == Canonical(right);
+    return ResolvePath(left) == ResolvePath(right);
 }
 
 bool RunVersion(const wxString& executable,
@@ -237,8 +313,8 @@ bool IsDriveRoot(const wxString& path)
 
 bool PathIsUnder(const wxString& path, const wxString& root)
 {
-    const wxString child = Canonical(path);
-    const wxString parent = Canonical(root);
+    const wxString child = ResolvePath(path);
+    const wxString parent = ResolvePath(root);
 
     return child == parent || child.StartsWith(parent + wxT("\\"));
 }
@@ -1405,6 +1481,26 @@ bool CacheVariableEquals(
     return false;
 }
 
+// A CMakeLists.txt newer than CMakeCache.txt means configure has not seen
+// the current source, including a compatibility patch applied after the
+// last configure.
+bool ListsNewerThanCache(const wxString& build)
+{
+    const wxString listsPath = ParentDirectory(build) + wxT("\\CMakeLists.txt");
+    const wxString cachePath = build + wxT("\\CMakeCache.txt");
+
+    if (!wxFileExists(listsPath) || !wxFileExists(cachePath))
+        return false;
+
+    const wxDateTime listsTime = wxFileName(listsPath).GetModificationTime();
+    const wxDateTime cacheTime = wxFileName(cachePath).GetModificationTime();
+
+    if (!listsTime.IsValid() || !cacheTime.IsValid())
+        return false;
+
+    return listsTime > cacheTime;
+}
+
 bool FindOnPath(const wxString& fileName, wxString& found)
 {
     wxString path;
@@ -1808,7 +1904,8 @@ wxString DescribeWinOgreCache(const wxString& buildInput, const wxString& instal
         const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
         ready = !cache.empty()
             && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
-            && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"));
+            && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+            && !ListsNewerThanCache(build);
     }
     else
     {
@@ -1886,7 +1983,8 @@ WinCMakeRunResult ConfigureWinOgre(
     if (!cache.empty()
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
-        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        && !ListsNewerThanCache(build))
     {
         result.success = true;
         result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
@@ -2223,7 +2321,8 @@ WinCMakeRunResult ConfigureWinDep(
     if (!cache.empty()
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
-        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+        && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        && !ListsNewerThanCache(build))
     {
         result.success = true;
         result.output = wxT("CMake cache already matches this prefix, Release, and gcc");

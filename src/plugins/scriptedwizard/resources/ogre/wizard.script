@@ -896,6 +896,29 @@ function OgreWinAcquireLibrary(libraryId, sourceLeaf, installLeaf, url, hash, ma
         }
     }
 
+    if (libraryId.Matches(_T("assimp")))
+    {
+        local explanation = _("Code::Blocks can apply the stored Assimp 5.4.3 compatibility patch to this source tree.\n\nSource:\n") + source + _("\n\nThe official CMake file launches ccache when ccache.exe is found. The MinGW makefile generator does not quote that path. When the path contains a space, mingw32-make stops on the first source file.\n\nThe patch file is applied as stored. ccache stays in use when its path has no space. Declining leaves the official source unchanged.");
+        local report = Wizard.WinPatchApply(_T("assimp-5.4.3-ccache-path"), source, explanation, _("Apply Assimp compatibility patch"));
+
+        if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+        {
+            ShowMessage(_("The Assimp source was left unchanged."));
+            return false;
+        }
+
+        if (!OgreReportField(report, _T("success")).Matches(_T("1")))
+        {
+            local error = OgreReportField(report, _T("error"));
+
+            if (error.IsEmpty())
+                error = OgreReportField(report, _T("output"));
+
+            ShowError(_("The Assimp compatibility patch was not applied.\n\n") + error);
+            return false;
+        }
+    }
+
     if (!OgreReportField(Wizard.WinOgreCache(build, install), _T("ready")).Matches(_T("1")))
     {
         local explanation = _("Code::Blocks will configure this library with CMake.\n\nInstall:\n") + install + _("\n\nBuild type:\nRelease");
