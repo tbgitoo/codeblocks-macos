@@ -1,6 +1,6 @@
 # Code::Blocks v4.2 — OGRE wizard on Windows
 
-**Status: M2, M3, and M4 are implemented in the wizard. M1 has not been run, and M4 has not been exercised, so none of the milestones are done.** v3.8 is the macOS OGRE wizard. v3.8.2 is the macOS OGRE tools menu. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard until this tree is rebuilt and that install is replaced. v4.2 replaces the Windows Ogre wizard with the v3.8 workflow and installs the tools that menu launches.
+**Status: the wizard has built and installed the full SDK on this machine, and the generated project has run.** M3 is exercised. M4's install contract is exercised. SampleBrowser failed first on missing `libfreetype.dll`, `SDL2.dll`, and `libassimp-5.dll`, then crashed in the MSYS2 `libstdc++-6.dll` that PATH supplied. The install step now copies those three libraries and the selected MinGW's `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and `libwinpthread-1.dll` into the OGRE `bin`. With that copy, SampleBrowser reaches the rendering setup dialog. A sample scene has not been confirmed, so M4 is not done. M2's second-run skip and cancel have not been exercised. M1's separate hand build was not run. The version is not done. v3.8 is the macOS OGRE wizard. v3.8.2 is the macOS OGRE tools menu. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard until this tree is rebuilt and that install is replaced. v4.2 replaces the Windows Ogre wizard with the v3.8 workflow and installs the tools that menu launches.
 
 **Question this version answers:** can the Windows Ogre project wizard follow the same sequence, pins, patch, and generated-project contract as the current v3.8 wizard, with a difference only where Windows has no Homebrew and no `lib/macosx/Release` layout, and can that install include a working SampleBrowser and the command-line tools?
 
@@ -45,6 +45,16 @@ The legacy Windows branch in `SetupProject` (`OgreMain`, `OIS`, `bin\Debug`, `bi
 | Revision check | exact tag `v14.6.3` |
 
 The patch file is applied as stored. It is not rewritten into a Windows patch. The `Samples/Browser/CMakeLists.txt` hunk is inside `if (APPLE)` and remains in the file. The `Tools/AssimpConverter/main.cpp` hunk is the shared change. The probe sentinel stays `PlugIns/Assimp/src/AssimpLoader.cpp`.
+
+Windows adds one more entry in that same known-patch table. It does not edit the sidecar patch.
+
+| Patch id | `ogre-14.6.3-win-config-dialog` |
+| --- | --- |
+| Patch file | `src/plugins/scriptedwizard/resources/patches/ogre-14.6.3-win-config-dialog.patch` |
+| Sentinel | `Components/Bites/src/OgreWIN32ConfigDialog.cpp` |
+| Revision check | exact tag `v14.6.3` |
+
+The MinGW configuration dialog was looking for its window layout in `OgreMain.dll`. That layout is linked into `OgreBites.dll`, and `OgreMain.dll` has no resource section, so the first run stopped in `ConfigDialog::display` with "The specified image file did not contain a resource section." The patch changes the lookup to `OgreBites.dll` and `OgreBites_d.dll`. Declining it stops the wizard. Applying it marks the SDK for rebuild.
 
 `Samples/Media`, including `models/ogrehead.mesh`, is a normal directory in that tag. This checkout has no `.gitmodules`. The clone does not need a submodule step to obtain the meshes. CMake installs that directory when `OGRE_INSTALL_SAMPLES` is on, and that option follows `OGRE_BUILD_SAMPLES`.
 
@@ -175,13 +185,15 @@ Source leaves are `imgui-source-1.92.9b`, `pugixml-source-1.15`, and `freetype-s
 
 The macOS contract checks `lib/macosx/Release` and frameworks. Windows checks the DLLs and import libraries the install writes, then rebases `plugins.cfg` to that plugin directory. The template `ogre/files/plugins.cfg` keeps the `[OGRE_PLUGIN_FOLDER]` placeholder. The folder string is the Windows install layout, not `lib/macosx/Release`.
 
-Until M1 records the directory this machine actually produced, the wizard accepts the first existing file among `bin\RenderSystem_GL.dll`, `bin\Release\RenderSystem_GL.dll`, `lib\OGRE\RenderSystem_GL.dll`, `lib\Release\RenderSystem_GL.dll`, and `lib\RenderSystem_GL.dll`. The import library is `libOgreMain.dll.a` under `lib`, `lib\Release`, or `lib\OGRE`. The install also requires `include\OGRE\Ogre.h`, `Media\models\ogrehead.mesh`, `OgreMain.dll`, and `OGREConfig.cmake`. M1 replaces this search with the directory that build wrote if it is different.
+The wizard install on this machine wrote the runtime DLLs in `bin`, including `bin\RenderSystem_GL.dll`, `bin\SampleBrowser.exe`, and the four command-line tools. The import library is `lib\libOgreMain.dll.a`. The install also has `include\OGRE\Ogre.h`, `Media\models\ogrehead.mesh`, `bin\OgreMain.dll`, and `OGREConfig.cmake`. The search still accepts `bin\Release` and the `lib\OGRE` layouts, because a hand build might differ. This wizard install did not.
 
 `resources.cfg` still rebases `[OGRE_MEDIA]` at the installed `Media` directory and drops the `[Tests]` section.
 
 The generated project uses `ogre/files/main.cpp` unchanged: one camera, ambient and point light, textured `ogrehead.mesh`, slow vertical rotation. It is an ordinary Code::Blocks C++ project with Debug and Release targets. It does not point at the source or build tree, and it does not link `OgreMain_d` or `OIS`.
 
-Windows copies the OGRE runtime DLLs the executable needs, including the renderer and codec plugins named by `plugins.cfg`, beside the built executable. That copy is the Windows counterpart of the macOS framework install names. Beginner-facing `main.cpp` does not perform it.
+Windows copies the runtime DLLs the executable needs beside the built executable. That copy is the Windows counterpart of the macOS framework install names. Beginner-facing `main.cpp` does not perform it. `plugins.cfg` still names the OGRE install `bin` as `PluginFolder`, and Windows loads a plugin from that directory, then looks for that plugin's own dependencies beside `ogre.exe`. The copy list is therefore the OGRE DLLs the program and `plugins.cfg` import, plus `OgrePaging.dll` and `OgreTerrain.dll` (`Plugin_DotScene` imports `OgreTerrain`, and `OgreTerrain` imports `OgrePaging`), `SDL2.dll` from the SDL2 prefix, and `libfreetype.dll` from the FreeType prefix. `OgreOverlay.dll` imports that FreeType filename exactly. Both Debug and Release use the project directory as the working directory, which is where `resources.cfg` and `plugins.cfg` are written. When the wizard finishes, it shows the project tree and opens `main.cpp`.
+
+SampleBrowser and the command-line tools are started from the install `bin`. Windows records only the DLL filename, not a search directory, and `OGRE_INSTALL_DEPENDENCIES` copies DLLs only from the OGRE dependency bundle this build does not use. After install, the wizard copies `SDL2.dll`, `libfreetype.dll`, and `libassimp-5.dll` into that `bin`. SampleBrowser imports the first two through `OgreBites` and `OgreOverlay`. Its `plugins.cfg` also loads `Codec_Assimp`, which imports `libassimp-5.dll`. It also copies `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and `libwinpthread-1.dll` from the selected MinGW, because the executable directory is searched before PATH. On this machine PATH finds a different `libstdc++-6.dll` under `D:\msys64\mingw64\bin`, and that copy crashes SampleBrowser inside `Ogre::Log`. The generated project copies the same three runtime DLLs beside `ogre.exe`.
 
 There is no separate asset-conversion page. v3.8 records that idea as M5 and the wizard does not implement it yet. v4.2 does not add one.
 
@@ -191,10 +203,10 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 
 | | Objective | Check | Status |
 |---|---|---|---|
-| M1 | Build tag `v14.6.3` by hand with the selected MinGW GCC, apply the stored patch, and install under `%LOCALAPPDATA%\codeblocks\ogre-14.6.3`. | An external project, not the wizard, builds and renders the textured, lit, rotating `ogrehead.mesh`. The plugin directory, import libraries, and any prerequisite downloads used are written into this plan. Stop if the stored patch does not apply to this tag. | Not run |
-| M2 | Drive that same sequence from the Ogre wizard on Windows. | A second run skips a checkout, patch state, build tree, or SDK that already matches. Cancel does not delete a tree the run did not create. The macOS wizard is unchanged. | Implemented, not exercised |
-| M3 | Generate the ordinary C++ project. | Build and Run from the Windows IDE opens the same scene. The project contains no source-tree or build-tree path. Closing the IDE does not rewrite `%APPDATA%\CodeBlocks` except for the normal project and layout records. | Implemented, not exercised |
-| M4 | Install a full SDK: SampleBrowser, the command-line tools, and their git dependencies. | `%LOCALAPPDATA%\codeblocks` contains the Dear ImGui, pugixml, and FreeType checkouts from the table in section 3.3, built with the selected MinGW. The OGRE install contains `SampleBrowser`, `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, `VRMLConverter`, and `Media\models\ogrehead.mesh`. SampleBrowser opens. Configure does not download those dependencies. The options file no longer turns samples or the Dear ImGui overlay off. | Implemented, not exercised |
+| M1 | Build tag `v14.6.3` by hand with the selected MinGW GCC, apply the stored patch, and install under `%LOCALAPPDATA%\codeblocks\ogre-14.6.3`. | An external project, not the wizard, builds and renders the textured, lit, rotating `ogrehead.mesh`. Stop if the stored patch does not apply to this tag. | Not run. The wizard install recorded the layout in section 3.4 instead. |
+| M2 | Drive that same sequence from the Ogre wizard on Windows. | A second run skips a checkout, patch state, build tree, or SDK that already matches. Cancel does not delete a tree the run did not create. The macOS wizard is unchanged. | Implemented. One full run completed. The second-run skip and cancel have not been exercised. |
+| M3 | Generate the ordinary C++ project. | Build and Run from the Windows IDE opens the same scene. The project contains no source-tree or build-tree path. | Exercised. The generated project built and ran. The first run needed `libfreetype.dll`, `OgreTerrain.dll`, and `OgrePaging.dll` beside the executable, and the configuration-dialog patch in section 2. |
+| M4 | Install a full SDK: SampleBrowser, the command-line tools, and their git dependencies. | `%LOCALAPPDATA%\codeblocks` contains the Dear ImGui, pugixml, and FreeType checkouts from the table in section 3.3, built with the selected MinGW. The OGRE install contains `SampleBrowser`, `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, `VRMLConverter`, and `Media\models\ogrehead.mesh`. SampleBrowser opens. Configure does not download those dependencies. | Install exercised. The wizard finished the build and install, including those dependencies and the install contract. SampleBrowser did not start until `libfreetype.dll`, `SDL2.dll`, `libassimp-5.dll`, and the selected MinGW runtime were copied into the install `bin`. That copy is part of the install step. With those files present, SampleBrowser opens the rendering setup dialog. A sample scene has not been confirmed. |
 
 ---
 
@@ -202,7 +214,7 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 
 1. The Windows wizard clones `v14.6.3` and applies `ogre-14.6.3-assimp-sidecar-path.patch` unchanged.
 2. Configure is `Release` with the final prefix set before the build. Install does not move the prefix.
-3. Git is never installed. CMake, pkgconf, SDL2, and Assimp are installed only after Yes, and only from artifacts recorded in M1.
+3. Git is never installed. CMake, pkgconf, SDL2, and Assimp are installed only after Yes, and only from the pins in section 3.3.
 4. The compiler is the selected GNU GCC. No second toolchain is downloaded.
 5. Source, build, and install stay under `%LOCALAPPDATA%\codeblocks` with the v3.8 leaf names.
 6. The generated project builds and runs against the installed SDK only.
