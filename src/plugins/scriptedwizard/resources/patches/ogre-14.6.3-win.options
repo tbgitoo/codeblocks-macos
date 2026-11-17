@@ -1,0 +1,23 @@
+# Windows configure options for OGRE 14.6.3.
+# Each -D line is passed to CMake. Blank lines and # lines are comments.
+# This is configuration, not a source patch.
+
+# With this option left on, OGRE downloads SDL2, Assimp 6, zlib, freetype,
+# pugixml, and Bullet during configure. This MinGW CMake cannot verify those
+# HTTPS certificates, so the archives are empty and generation stops. SDL2
+# and Assimp 5.4.3 are already on CMAKE_PREFIX_PATH.
+-DOGRE_BUILD_DEPENDENCIES=OFF
+
+# The generated project does not build the Dear ImGui overlay. Leaving this
+# on downloads imgui during configure, and an incomplete download stops
+# generation.
+-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF
+
+# The generated project does not build OGRE's sample browser.
+-DOGRE_BUILD_SAMPLES=OFF
+
+# pkgconf comes from MSYS2, and that prefix also contains Qt. Those Qt
+# headers do not compile with the selected MinGW. The generated project
+# uses SDL2, so Qt is not searched and the Qt window wrapper is not built.
+-DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON
+-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON

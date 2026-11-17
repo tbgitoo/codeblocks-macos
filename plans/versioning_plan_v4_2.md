@@ -1,8 +1,8 @@
 # Code::Blocks v4.2 — OGRE wizard on Windows
 
-**Status: M2 and M3 are implemented in the wizard. M1 has not been run, so none of the milestones are done.** v3.8 is the macOS OGRE wizard. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard until this tree is rebuilt and that install is replaced. v4.2 replaces the Windows Ogre wizard with the v3.8 workflow.
+**Status: M2 and M3 are implemented in the wizard for the library configure. M1 has not been run, and M4, the sample browser and the command-line tools, has not been started. None of the milestones are done.** v3.8 is the macOS OGRE wizard. v3.8.2 is the macOS OGRE tools menu. v4.1 is the separate OGRE-Next wizard and is not part of this version. The Code::Blocks installed at `D:\Program Files\CodeBlocks` still shows the old SVN Ogre wizard until this tree is rebuilt and that install is replaced. v4.2 replaces the Windows Ogre wizard with the v3.8 workflow and installs the tools that menu launches.
 
-**Question this version answers:** can the Windows Ogre project wizard follow the same sequence, pins, patch, and generated-project contract as the current v3.8 wizard, with a difference only where Windows has no Homebrew and no `lib/macosx/Release` layout?
+**Question this version answers:** can the Windows Ogre project wizard follow the same sequence, pins, patch, and generated-project contract as the current v3.8 wizard, with a difference only where Windows has no Homebrew and no `lib/macosx/Release` layout, and can that install include a working SampleBrowser and the command-line tools?
 
 The pin is the one the current wizard script and patch table use, not the earlier `v14.6.2` line still written in `versioning_plan_v3_8.md`.
 
@@ -45,6 +45,8 @@ The legacy Windows branch in `SetupProject` (`OgreMain`, `OIS`, `bin\Debug`, `bi
 | Revision check | exact tag `v14.6.3` |
 
 The patch file is applied as stored. It is not rewritten into a Windows patch. The `Samples/Browser/CMakeLists.txt` hunk is inside `if (APPLE)` and remains in the file. The `Tools/AssimpConverter/main.cpp` hunk is the shared change. The probe sentinel stays `PlugIns/Assimp/src/AssimpLoader.cpp`.
+
+`Samples/Media`, including `models/ogrehead.mesh`, is a normal directory in that tag. This checkout has no `.gitmodules`. The clone does not need a submodule step to obtain the meshes. CMake installs that directory when `OGRE_INSTALL_SAMPLES` is on, and that option follows `OGRE_BUILD_SAMPLES`.
 
 Consent, cancellation, and skip-if-present follow the macOS pages:
 
@@ -151,7 +153,23 @@ Assimp 5.4.3 is unpacked from the pinned archive, so that tree has no Git checko
 
 The official file launches `ccache` whenever `ccache.exe` is found. The MinGW makefile generator writes that path unquoted, and a path containing a space makes `mingw32-make` stop on the first source file. The patch skips that launcher only when the path contains a space. ccache stays in use when its path has no space. The stored OGRE patch is not edited. A `CMakeLists.txt` newer than `CMakeCache.txt` is configured again. A cache counts as configured only when the MinGW `Makefile` was generated.
 
-OGRE configure passes `-DOGRE_BUILD_DEPENDENCIES=OFF`, `-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF`, and `-DOGRE_BUILD_SAMPLES=OFF`. With the dependencies option left on, OGRE downloads SDL2, Assimp 6, zlib, freetype, pugixml, and Bullet during configure. This MinGW CMake cannot verify those HTTPS certificates, so the archives are empty and generation stops. SDL2 and Assimp 5.4.3 are the trees already on `CMAKE_PREFIX_PATH`. The generated project does not build OGRE's sample browser or the Dear ImGui overlay.
+Windows OGRE configure reads `src/plugins/scriptedwizard/resources/patches/ogre-14.6.3-win.options` and passes each `-D` line in that file. Comments in the file are the record of why. These are CMake options, not a source patch, and the stored OGRE patch is not edited. A cache is reused only when it already records every option in that file.
+
+The installed SDK is a full OGRE build. It includes `SampleBrowser` and the command-line tools v3.8.2 uses: `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter`. `OGRE_BUILD_SAMPLES` and `OGRE_BUILD_TOOLS` stay on, so install also copies `Samples/Media`. The generated beginner project is still the rotating head. This version does not add the Windows `Tools -> OGRE` menu.
+
+The options file currently passes `-DOGRE_BUILD_SAMPLES=OFF` and `-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF`. That let a library configure finish, and it is not the build this version accepts. M4 turns both on. `-DOGRE_BUILD_DEPENDENCIES` stays `OFF`. With that option left on, OGRE downloads SDL2, Assimp 6, zlib, freetype, pugixml, and Bullet during configure. This MinGW CMake cannot verify those HTTPS certificates, so the archives are empty and generation stops. The wizard already builds SDL2 2.32.10 and Assimp 5.4.3, and Assimp builds its own zlib. Those stay the copies on `CMAKE_PREFIX_PATH`. OGRE's Assimp 6 download is not repeated. Bullet is not required for these tools.
+
+pkgconf comes from MSYS2, and that prefix also contains Qt. Those Qt headers do not compile with the selected MinGW. SampleBrowser and the generated project use SDL2, so the file keeps `-DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON` and `-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON`.
+
+The dependencies the sample browser and the tools still need are cloned with Git, then built with the selected MinGW GCC. The same consent, reuse, and `%LOCALAPPDATA%\codeblocks` rules as SDL2 and Assimp apply. Configure does not fetch them. Each pin is the tag OGRE 14.6.3's CMake names.
+
+| Library | Repository | Tag | Role |
+|---|---|---|---|
+| Dear ImGui 1.92.9b | `https://github.com/ocornut/imgui.git` | `v1.92.9b` | Overlay and SampleBrowser. The wizard passes `-DIMGUI_DIR` at that checkout. Overlay's CMake looks for `imgui-1.92.9b` and otherwise downloads it. |
+| pugixml 1.15 | `https://github.com/zeux/pugixml.git` | `v1.15` | `OgreXMLConverter` and the DotScene plugin. |
+| FreeType 2.14.3 | `https://gitlab.freedesktop.org/freetype/freetype.git` | `VER-2-14-3` | Dear ImGui text in the overlay. OGRE's downloader uses the Savannah tarball of this same release. |
+
+Source leaves are `imgui-source-1.92.9b`, `pugixml-source-1.15`, and `freetype-source-2.14.3`, each with `build-codeblocks` inside. Install leaves are `imgui`, `pugixml`, and `freetype`. pugixml and FreeType join `CMAKE_PREFIX_PATH`. Dear ImGui is a source tree, not an installed library, because Overlay compiles those sources itself.
 
 ### 3.4 Installed layout and the generated project
 
@@ -176,6 +194,7 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 | M1 | Build tag `v14.6.3` by hand with the selected MinGW GCC, apply the stored patch, and install under `%LOCALAPPDATA%\codeblocks\ogre-14.6.3`. | An external project, not the wizard, builds and renders the textured, lit, rotating `ogrehead.mesh`. The plugin directory, import libraries, and any prerequisite downloads used are written into this plan. Stop if the stored patch does not apply to this tag. | Not run |
 | M2 | Drive that same sequence from the Ogre wizard on Windows. | A second run skips a checkout, patch state, build tree, or SDK that already matches. Cancel does not delete a tree the run did not create. The macOS wizard is unchanged. | Implemented, not exercised |
 | M3 | Generate the ordinary C++ project. | Build and Run from the Windows IDE opens the same scene. The project contains no source-tree or build-tree path. Closing the IDE does not rewrite `%APPDATA%\CodeBlocks` except for the normal project and layout records. | Implemented, not exercised |
+| M4 | Install a full SDK: SampleBrowser, the command-line tools, and their git dependencies. | `%LOCALAPPDATA%\codeblocks` contains the Dear ImGui, pugixml, and FreeType checkouts from the table in section 3.3, built with the selected MinGW. The OGRE install contains `SampleBrowser`, `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, `VRMLConverter`, and `Media\models\ogrehead.mesh`. SampleBrowser opens. Configure does not download those dependencies. The options file no longer turns samples or the Dear ImGui overlay off. | Not started |
 
 ---
 
@@ -190,6 +209,7 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 7. `main.cpp` is the existing v3.8 template.
 8. `macgit`, `maccmake`, `macbrew`, the macOS Ogre pages, and the OGRE-Next wizard are unchanged.
 9. The old `OgreMain` / `OIS` Windows branch is no longer what the Ogre wizard runs.
+10. The install contains a working SampleBrowser and `OgreAssimpConverter`, `OgreMeshUpgrader`, `OgreXMLConverter`, and `VRMLConverter`. Dear ImGui, pugixml, and FreeType were cloned from the pinned tags. OGRE configure did not download them.
 
 ---
 
@@ -202,10 +222,13 @@ There is no separate asset-conversion page. v3.8 records that idea as M5 and the
 - Putting the SDK in `%APPDATA%\CodeBlocks`, beside `codeblocks.exe`, or in Program Files.
 - Leaving the generated project pointed at the source or build tree.
 - Adding the unfinished v3.8 asset-conversion page.
+- A Windows `Tools -> OGRE` menu. v3.8.2 remains the macOS tools menu. This version installs the binaries that menu launches.
+- Leaving samples and the Dear ImGui overlay off in the finished options file.
+- Letting OGRE's CMake download Dear ImGui, pugixml, FreeType, or the other dependency archives during configure.
 - Rebuilding the v4.0 installer as a requirement of this plan. A rebuilt IDE is how the wizard reaches a machine; the installer script is not part of the work.
 
 ---
 
 ## 7. Done when
 
-On Windows, File → New → Project → Ogre project can acquire or reuse OGRE `v14.6.3`, apply the same patch, install it with the selected MinGW GCC, and generate a C++ project whose Build and Run shows the textured rotating head. The macOS wizard still does that on macOS, unchanged.
+On Windows, File → New → Project → Ogre project can acquire or reuse OGRE `v14.6.3`, apply the same patch, install a full SDK with the selected MinGW GCC, and generate a C++ project whose Build and Run shows the textured rotating head. That SDK includes a working SampleBrowser and the command-line tools, with Dear ImGui, pugixml, and FreeType cloned from git. The macOS wizard still does the v3.8 project flow on macOS, unchanged.
