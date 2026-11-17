@@ -1826,7 +1826,30 @@ function OgreWinStageSdkRuntime()
         }
     }
 
-    return true;
+    return OgreWinPreferGl3Plus();
+}
+
+function OgreWinPreferGl3Plus()
+{
+    local path = OgreWinRuntimeDir + wxFILE_SEP_PATH + _T("plugins.cfg");
+
+    if (!IO.FileExists(path))
+        return true;
+
+    // The legacy GL plugin stops at GLSL 1.20. SampleBrowser lists it first, so the
+    // setup dialog saves it, and GLSL 4.00 samples such as Atomic Counters report
+    // "not supported" on a GPU that can run them. GL3Plus stays enabled.
+    local buffer = IO.ReadFileContents(path);
+    buffer.Replace(_T("\n Plugin=RenderSystem_GL\n"), _T("\n# Plugin=RenderSystem_GL\n"));
+    buffer.Replace(_T("\r\n Plugin=RenderSystem_GL\r\n"), _T("\r\n# Plugin=RenderSystem_GL\r\n"));
+    buffer.Replace(_T("\n Plugin=RenderSystem_GLES2\n"), _T("\n# Plugin=RenderSystem_GLES2\n"));
+    buffer.Replace(_T("\r\n Plugin=RenderSystem_GLES2\r\n"), _T("\r\n# Plugin=RenderSystem_GLES2\r\n"));
+
+    if (IO.WriteFileContents(path, buffer))
+        return true;
+
+    ShowError(_("Could not update plugins.cfg so SampleBrowser defaults to OpenGL 3+.\n\n") + path);
+    return false;
 }
 
 function OnLeave_OgreWinInstall(fwd)
