@@ -1520,18 +1520,131 @@ bool GeneratedMakefile(const wxString& build)
     return wxFileExists(build + wxT("\\Makefile"));
 }
 
-// A cache that does not mention the option is accepted. OGRE's failed
-// configure records the option as ON, and that result is not reusable.
-bool CacheOptionAccepts(const wxString& cache,
-                        const wxString& name,
-                        const wxString& expected)
+bool ParseCMakeDefinition(const wxString& line, wxString& name, wxString& value)
 {
-    const wxString prefix = name + wxT(":");
+    if (!line.StartsWith(wxT("-D")))
+        return false;
 
-    if (!cache.Contains(prefix))
-        return true;
+    const int equals = line.Find(wxT('='));
 
-    return CacheVariableEquals(cache, name, expected);
+    if (equals <= 2)
+        return false;
+
+    name = line.Mid(2, equals - 2);
+    value = line.Mid(equals + 1);
+
+    if (name.empty() || value.empty() || value.Contains(wxT(" ")) || value.Contains(wxT("\t")))
+        return false;
+
+    for (size_t i = 0; i < name.length(); ++i)
+    {
+        const wxChar c = name[i];
+        const bool ok = (c >= wxT('A') && c <= wxT('Z'))
+            || (c >= wxT('a') && c <= wxT('z'))
+            || (c >= wxT('0') && c <= wxT('9'))
+            || c == wxT('_');
+
+        if (!ok)
+            return false;
+    }
+
+    return true;
+}
+
+// The Windows OGRE options file lives with the patches. Each -D line is
+// configuration passed to CMake. A cache is current only when it records
+// every one of those values.
+bool LoadOgreWinOptions(wxArrayString& arguments, wxString& error)
+{
+    arguments.Clear();
+
+    wxFileName file = wxFileName::DirName(ConfigManager::GetFolder(sdDataGlobal));
+    file.AppendDir(wxT("templates"));
+    file.AppendDir(wxT("wizard"));
+    file.AppendDir(wxT("patches"));
+    file.SetFullName(wxT("ogre-14.6.3-win.options"));
+    const wxString path = file.GetFullPath();
+
+    if (!wxFileExists(path))
+    {
+        error = wxT("Windows OGRE options file was not found: ") + path;
+        return false;
+    }
+
+    const wxString text = ReadFile(path);
+
+    if (text.empty())
+    {
+        error = wxT("Windows OGRE options file is empty: ") + path;
+        return false;
+    }
+
+    wxString remaining = text;
+    int lineNo = 0;
+
+    while (!remaining.empty())
+    {
+        wxString line = remaining.BeforeFirst(wxT('\n'));
+        remaining = remaining.AfterFirst(wxT('\n'));
+        ++lineNo;
+
+        if (line.EndsWith(wxT("\r")))
+            line.RemoveLast();
+
+        line.Trim(true).Trim(false);
+
+        if (line.empty() || line.StartsWith(wxT("#")))
+            continue;
+
+        wxString name;
+        wxString value;
+
+        if (!ParseCMakeDefinition(line, name, value))
+        {
+            error = wxString::Format(
+                wxT("Windows OGRE options file %s:%d is not a -DNAME=VALUE option"),
+                path,
+                lineNo);
+            return false;
+        }
+
+        for (size_t i = 0; i < arguments.GetCount(); ++i)
+        {
+            wxString existingName;
+            wxString existingValue;
+
+            if (ParseCMakeDefinition(arguments[i], existingName, existingValue) && existingName == name)
+            {
+                error = wxString::Format(wxT("Windows OGRE options file repeats %s"), name);
+                return false;
+            }
+        }
+
+        arguments.Add(line);
+    }
+
+    if (arguments.empty())
+    {
+        error = wxT("Windows OGRE options file contains no options: ") + path;
+        return false;
+    }
+
+    return true;
+}
+
+bool CacheRecordsOptions(const wxString& cache, const wxArrayString& arguments)
+{
+    for (size_t i = 0; i < arguments.GetCount(); ++i)
+    {
+        wxString name;
+        wxString value;
+
+        if (!ParseCMakeDefinition(arguments[i], name, value)
+            || !CacheVariableEquals(cache, name, value))
+            return false;
+    }
+
+    return true;
 }
 
 bool FindOnPath(const wxString& fileName, wxString& found)
@@ -1934,15 +2047,23 @@ wxString DescribeWinOgreCache(const wxString& buildInput, const wxString& instal
     if (NormaliseAbsoluteDirectory(buildInput, build)
         && NormaliseAbsoluteDirectory(installInput, install))
     {
-        const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
-        ready = !cache.empty()
-            && GeneratedMakefile(build)
-            && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
-            && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
-            && !ListsNewerThanCache(build)
-            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_DEPENDENCIES"), wxT("OFF"))
-            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_COMPONENT_OVERLAY_IMGUI"), wxT("OFF"))
-            && CacheOptionAccepts(cache, wxT("OGRE_BUILD_SAMPLES"), wxT("OFF"));
+        wxArrayString optionArgs;
+        wxString optionError;
+
+        if (!LoadOgreWinOptions(optionArgs, optionError))
+        {
+            error = optionError;
+        }
+        else
+        {
+            const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
+            ready = !cache.empty()
+                && GeneratedMakefile(build)
+                && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
+                && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+                && !ListsNewerThanCache(build)
+                && CacheRecordsOptions(cache, optionArgs);
+        }
     }
     else
     {
@@ -2015,6 +2136,14 @@ WinCMakeRunResult ConfigureWinOgre(
         return result;
     }
 
+    wxArrayString optionArgs;
+
+    if (!LoadOgreWinOptions(optionArgs, error))
+    {
+        result.output = error;
+        return result;
+    }
+
     const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
 
     if (!cache.empty()
@@ -2023,9 +2152,7 @@ WinCMakeRunResult ConfigureWinOgre(
         && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
         && !ListsNewerThanCache(build)
         && GeneratedMakefile(build)
-        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_DEPENDENCIES"), wxT("OFF"))
-        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_COMPONENT_OVERLAY_IMGUI"), wxT("OFF"))
-        && CacheOptionAccepts(cache, wxT("OGRE_BUILD_SAMPLES"), wxT("OFF")))
+        && CacheRecordsOptions(cache, optionArgs))
     {
         result.success = true;
         result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
@@ -2084,14 +2211,9 @@ WinCMakeRunResult ConfigureWinOgre(
     args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
     args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
     args.Add(wxT("-DCMAKE_PREFIX_PATH=") + PrefixList(mingwRoot, sdl2Prefix, assimpPrefix));
-    // OGRE otherwise downloads SDL2, Assimp 6, zlib, freetype, pugixml,
-    // Bullet, and imgui during configure. This CMake cannot verify those
-    // HTTPS certificates, so the archives are empty and generation stops.
-    // SDL2 and Assimp 5.4.3 are already on CMAKE_PREFIX_PATH. The generated
-    // project does not need OGRE's sample browser or the imgui overlay.
-    args.Add(wxT("-DOGRE_BUILD_DEPENDENCIES=OFF"));
-    args.Add(wxT("-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF"));
-    args.Add(wxT("-DOGRE_BUILD_SAMPLES=OFF"));
+
+    for (size_t i = 0; i < optionArgs.GetCount(); ++i)
+        args.Add(optionArgs[i]);
 
     const wxString summary = wxString::Format(
         _("CMake is configuring OGRE 14.6.3.\n\nSource:\n%s\n\nBuild:\n%s\n\nInstall:\n%s"),
@@ -2117,10 +2239,11 @@ WinCMakeRunResult ConfigureWinOgre(
     if (written.empty()
         || !CacheVariableIsPath(written, wxT("CMAKE_INSTALL_PREFIX"), install)
         || !CacheVariableIsPath(written, wxT("CMAKE_C_COMPILER"), gcc)
-        || !CacheVariableEquals(written, wxT("CMAKE_BUILD_TYPE"), wxT("Release")))
+        || !CacheVariableEquals(written, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        || !CacheRecordsOptions(written, optionArgs))
     {
         result.success = false;
-        result.output = wxT("CMake finished, but the cache does not record this install prefix, Release, and gcc");
+        result.output = wxT("CMake finished, but the cache does not record this install prefix, Release, gcc, and the Windows options");
     }
 
     return result;
