@@ -575,7 +575,21 @@ CompileTargetBase* Wiz::RunProjectWizard(wxString* pFilename)
     // finally, make sure everything looks ok
     cbProjectManagerUI &ui = Manager::Get()->GetProjectManager()->GetUI();
     ui.RebuildTree();
-    ui.GetTree()->Expand(theproject->GetProjectNode());
+    if (cbTreeCtrl* tree = ui.GetTree())
+    {
+        const wxTreeItemId node = theproject->GetProjectNode();
+        if (node.IsOk())
+            tree->Expand(node);
+    }
+    // The management pane can be hidden. Show it so the new project is visible.
+    ui.SwitchToProjectsPage();
+
+    if (m_LaunchIndex >= 0 && m_Wizards[m_LaunchIndex].script == _T("ogre/wizard.script"))
+    {
+        const wxString mainFile = theproject->GetBasePath() + _T("main.cpp");
+        if (wxFileExists(mainFile))
+            Manager::Get()->GetEditorManager()->Open(mainFile);
+    }
     return theproject;
 }
 

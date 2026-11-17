@@ -24,6 +24,7 @@ OgreMacGitExecutable <- _T("");
 OgreMacGitVersion <- _T("");
 
 OgreMacPatchId <- _T("ogre-14.6.3-assimp-sidecar");
+OgreWinConfigDialogPatchId <- _T("ogre-14.6.3-win-config-dialog");
 OgreMacPatchState <- _T("");
 OgreMacPatchError <- _T("");
 OgreMacRebuildRequired <- false;
@@ -748,6 +749,12 @@ OgreWinSdl2State <- _T("");
 OgreWinSdl2Prefix <- _T("");
 OgreWinAssimpState <- _T("");
 OgreWinAssimpPrefix <- _T("");
+OgreWinImguiState <- _T("");
+OgreWinImguiDir <- _T("");
+OgreWinPugixmlState <- _T("");
+OgreWinPugixmlPrefix <- _T("");
+OgreWinFreetypeState <- _T("");
+OgreWinFreetypePrefix <- _T("");
 OgreWinToolError <- _T("");
 
 OgreWinRoot <- _T("");
@@ -795,6 +802,12 @@ function OgreWinLoadTools()
     OgreWinSdl2Prefix = OgreReportField(report, _T("sdl2_prefix"));
     OgreWinAssimpState = OgreReportField(report, _T("assimp"));
     OgreWinAssimpPrefix = OgreReportField(report, _T("assimp_prefix"));
+    OgreWinImguiState = OgreReportField(report, _T("imgui"));
+    OgreWinImguiDir = OgreReportField(report, _T("imgui_dir"));
+    OgreWinPugixmlState = OgreReportField(report, _T("pugixml"));
+    OgreWinPugixmlPrefix = OgreReportField(report, _T("pugixml_prefix"));
+    OgreWinFreetypeState = OgreReportField(report, _T("freetype"));
+    OgreWinFreetypePrefix = OgreReportField(report, _T("freetype_prefix"));
     OgreWinToolError = OgreReportField(report, _T("error"));
 }
 
@@ -814,21 +827,33 @@ function OgreWinToolBlockReason()
     if (!OgreWinAssimpState.Matches(_T("works")))
         return _("Assimp is not installed under the selected MinGW prefix or %LOCALAPPDATA%\\codeblocks\\assimp.");
 
+    if (!OgreWinImguiState.Matches(_T("works")))
+        return _("Dear ImGui v1.92.9b is not cloned under %LOCALAPPDATA%\\codeblocks\\imgui-source-1.92.9b.");
+
+    if (!OgreWinPugixmlState.Matches(_T("works")))
+        return _("pugixml is not installed under the selected MinGW prefix or %LOCALAPPDATA%\\codeblocks\\pugixml.");
+
+    if (!OgreWinFreetypeState.Matches(_T("works")))
+        return _("FreeType is not installed under the selected MinGW prefix or %LOCALAPPDATA%\\codeblocks\\freetype.");
+
     return _T("");
 }
 
 function OgreWinToolPageText(reason)
 {
-    local text = _("The Windows OGRE workflow builds official OGRE v14.6.3 with the selected MinGW GCC.\n\nRequired tools:\n    gcc, g++, and mingw32-make from the active GNU GCC\n    CMake\n    pkgconf\n    SDL2 headers\n    Assimp headers\n\n");
+    local text = _("The Windows OGRE workflow builds official OGRE v14.6.3 with the selected MinGW GCC.\n\nRequired tools:\n    gcc, g++, and mingw32-make from the active GNU GCC\n    CMake\n    pkgconf\n    SDL2 headers\n    Assimp headers\n    Dear ImGui v1.92.9b\n    pugixml 1.15\n    FreeType 2.14.3\n\n");
     text += OgreWinCompilerState.Matches(_T("works")) ? _("Compiler\n    ") + OgreWinGcc + _("\n\n") : _("Compiler\n    Not usable\n\n");
     text += OgreWinPkgconfState.Matches(_T("works")) ? _("pkgconf\n    ") + OgreWinPkgconfExe + _("\n\n") : _("pkgconf\n    Not found\n\n");
     text += OgreWinSdl2State.Matches(_T("works")) ? _("SDL2\n    ") + OgreWinSdl2Prefix + _("\n\n") : _("SDL2\n    Not found\n\n");
     text += OgreWinAssimpState.Matches(_T("works")) ? _("Assimp\n    ") + OgreWinAssimpPrefix + _("\n\n") : _("Assimp\n    Not found\n\n");
+    text += OgreWinImguiState.Matches(_T("works")) ? _("Dear ImGui\n    ") + OgreWinImguiDir + _("\n\n") : _("Dear ImGui\n    Not found\n\n");
+    text += OgreWinPugixmlState.Matches(_T("works")) ? _("pugixml\n    ") + OgreWinPugixmlPrefix + _("\n\n") : _("pugixml\n    Not found\n\n");
+    text += OgreWinFreetypeState.Matches(_T("works")) ? _("FreeType\n    ") + OgreWinFreetypePrefix + _("\n\n") : _("FreeType\n    Not found\n\n");
     if (!reason.IsEmpty())
         text += reason + _("\n\n");
     if (!OgreWinToolError.IsEmpty())
         text += OgreWinToolError + _("\n\n");
-    text += _("Press Next to download and build the next missing library with the selected MinGW GCC.\nAn existing tree under %LOCALAPPDATA%\\codeblocks is reused.\nCMake, pkgconf, and the compiler are not downloaded.\n");
+    text += _("Press Next to acquire the next missing library with the selected MinGW GCC.\nSDL2 and Assimp are downloaded. Dear ImGui, pugixml, and FreeType are cloned with Git.\nAn existing tree under %LOCALAPPDATA%\\codeblocks is reused.\nCMake, pkgconf, the compiler, and Git are not downloaded.\n");
     return text;
 }
 
@@ -840,6 +865,18 @@ OgreWinAssimpUrl <- _T("https://github.com/assimp/assimp/archive/refs/tags/v5.4.
 OgreWinAssimpHash <- _T("66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb");
 OgreWinAssimpSourceLeaf <- _T("assimp-source-5.4.3");
 OgreWinAssimpInstallLeaf <- _T("assimp");
+OgreWinImguiUrl <- _T("https://github.com/ocornut/imgui.git");
+OgreWinImguiTag <- _T("v1.92.9b");
+OgreWinImguiSourceLeaf <- _T("imgui-source-1.92.9b");
+OgreWinImguiInstallLeaf <- _T("imgui");
+OgreWinPugixmlUrl <- _T("https://github.com/zeux/pugixml.git");
+OgreWinPugixmlTag <- _T("v1.15");
+OgreWinPugixmlSourceLeaf <- _T("pugixml-source-1.15");
+OgreWinPugixmlInstallLeaf <- _T("pugixml");
+OgreWinFreetypeUrl <- _T("https://gitlab.freedesktop.org/freetype/freetype.git");
+OgreWinFreetypeTag <- _T("VER-2-14-3");
+OgreWinFreetypeSourceLeaf <- _T("freetype-source-2.14.3");
+OgreWinFreetypeInstallLeaf <- _T("freetype");
 
 function OgreWinRunFailed(report, title)
 {
@@ -861,7 +898,16 @@ function OgreWinRunFailed(report, title)
 
 function OgreWinLibraryInstalled(install, header)
 {
-    return IO.FileExists(install + wxFILE_SEP_PATH + header);
+    local sep = wxFILE_SEP_PATH;
+
+    if (IO.FileExists(install + sep + header))
+        return true;
+
+    if (header.Find(_T("ft2build.h")) >= 0)
+        return IO.FileExists(install + sep + _T("include") + sep + _T("ft2build.h"))
+            || IO.FileExists(install + sep + _T("include") + sep + _T("freetype2") + sep + _T("ft2build.h"));
+
+    return false;
 }
 
 function OgreWinAcquireLibrary(libraryId, sourceLeaf, installLeaf, url, hash, markers, header, downloadLabel, configureLabel)
@@ -950,6 +996,53 @@ function OgreWinAcquireLibrary(libraryId, sourceLeaf, installLeaf, url, hash, ma
     return true;
 }
 
+function OgreWinEnsureGitSource(source, url, tag, sentinel, label)
+{
+    local sep = wxFILE_SEP_PATH;
+
+    if (IO.FileExists(source + sep + sentinel))
+        return true;
+
+    local explanation = _("Code::Blocks will clone the pinned tag with Git.\n\nNothing is cloned until you approve it.\nAn existing source tree is left untouched.\nGit is not installed.");
+    local report = Wizard.WinGitClone(url, tag, source, explanation, label);
+
+    if (!OgreReportField(report, _T("success")).Matches(_T("1")))
+        return OgreWinRunFailed(report, label + _(" did not finish."));
+
+    if (!IO.FileExists(source + sep + sentinel))
+    {
+        ShowError(_("Git finished, but the expected source file was not found.\n\n") + sentinel);
+        return false;
+    }
+
+    return true;
+}
+
+function OgreWinAcquireGitLibrary(libraryId, sourceLeaf, installLeaf, url, tag, sentinel, header, downloadLabel, configureLabel)
+{
+    local paths = Wizard.WinCMakePaths(sourceLeaf, installLeaf);
+
+    if (!OgreReportField(paths, _T("valid")).Matches(_T("1")))
+    {
+        ShowError(OgreReportField(paths, _T("error")));
+        return false;
+    }
+
+    if (!OgreWinEnsureGitSource(OgreReportField(paths, _T("source")), url, tag, sentinel, downloadLabel))
+        return false;
+
+    return OgreWinAcquireLibrary(
+        libraryId,
+        sourceLeaf,
+        installLeaf,
+        _T(""),
+        _T(""),
+        _T(""),
+        header,
+        downloadLabel,
+        configureLabel);
+}
+
 function OnLeave_OgreWinPrerequisites(fwd)
 {
     if (!fwd)
@@ -1001,6 +1094,85 @@ function OnLeave_OgreWinPrerequisites(fwd)
                 _T("include") + wxFILE_SEP_PATH + _T("assimp") + wxFILE_SEP_PATH + _T("Importer.hpp"),
                 _("Download Assimp 5.4.3"),
                 _("Configure Assimp 5.4.3")))
+            return false;
+
+        reason = OgreWinToolBlockReason();
+
+        if (reason.IsEmpty())
+            return true;
+
+        ShowMessage(OgreWinToolPageText(reason));
+        return false;
+    }
+
+    if (!OgreWinImguiState.Matches(_T("works")))
+    {
+        local paths = Wizard.WinCMakePaths(OgreWinImguiSourceLeaf, OgreWinImguiInstallLeaf);
+
+        if (!OgreReportField(paths, _T("valid")).Matches(_T("1")))
+        {
+            ShowError(OgreReportField(paths, _T("error")));
+            return false;
+        }
+
+        if (!OgreWinEnsureGitSource(
+                OgreReportField(paths, _T("source")),
+                OgreWinImguiUrl,
+                OgreWinImguiTag,
+                _T("imgui.h"),
+                _("Clone Dear ImGui 1.92.9b")))
+            return false;
+
+        if (!IO.FileExists(OgreReportField(paths, _T("source")) + wxFILE_SEP_PATH + _T("imgui.cpp")))
+        {
+            ShowError(_("Git finished, but imgui.cpp was not found."));
+            return false;
+        }
+
+        reason = OgreWinToolBlockReason();
+
+        if (reason.IsEmpty())
+            return true;
+
+        ShowMessage(_("Dear ImGui is ready.\n\n") + reason + _("\n\nPress Next to continue."));
+        return false;
+    }
+
+    if (!OgreWinPugixmlState.Matches(_T("works")))
+    {
+        if (!OgreWinAcquireGitLibrary(
+                _T("pugixml"),
+                OgreWinPugixmlSourceLeaf,
+                OgreWinPugixmlInstallLeaf,
+                OgreWinPugixmlUrl,
+                OgreWinPugixmlTag,
+                _T("CMakeLists.txt"),
+                _T("include") + wxFILE_SEP_PATH + _T("pugixml.hpp"),
+                _("Clone pugixml 1.15"),
+                _("Configure pugixml 1.15")))
+            return false;
+
+        reason = OgreWinToolBlockReason();
+
+        if (reason.IsEmpty())
+            return true;
+
+        ShowMessage(_("pugixml is ready.\n\n") + reason + _("\n\nPress Next to continue."));
+        return false;
+    }
+
+    if (!OgreWinFreetypeState.Matches(_T("works")))
+    {
+        if (!OgreWinAcquireGitLibrary(
+                _T("freetype"),
+                OgreWinFreetypeSourceLeaf,
+                OgreWinFreetypeInstallLeaf,
+                OgreWinFreetypeUrl,
+                OgreWinFreetypeTag,
+                _T("CMakeLists.txt"),
+                _T("include") + wxFILE_SEP_PATH + _T("freetype2") + wxFILE_SEP_PATH + _T("ft2build.h"),
+                _("Clone FreeType 2.14.3"),
+                _("Configure FreeType 2.14.3")))
             return false;
 
         reason = OgreWinToolBlockReason();
@@ -1339,10 +1511,52 @@ function OgreWinApplyPatch()
     return false;
 }
 
+function OgreWinApplyConfigDialogPatch()
+{
+    local report = Wizard.WinPatchProbe(OgreWinConfigDialogPatchId, OgreWinSource);
+    local state = OgreReportField(report, _T("state"));
+
+    if (state.Matches(_T("already_applied")))
+        return true;
+
+    if (!state.Matches(_T("applicable")))
+    {
+        ShowError(_("The Windows configuration dialog patch could not be applied.\n\n") + OgreReportField(report, _T("error")));
+        return false;
+    }
+
+    local explanation = _("The MinGW configuration dialog looks for its window layout in OgreMain.dll.\nThat layout is linked into OgreBites.dll, so the dialog cannot open.\n\nThe patch changes the lookup to OgreBites.dll.\n\nSource:\n") + OgreWinSource;
+    report = Wizard.WinPatchApply(OgreWinConfigDialogPatchId, OgreWinSource, explanation, _("Apply Windows configuration dialog patch"));
+
+    if (OgreReportField(report, _T("success")).Matches(_T("1")))
+    {
+        if (OgreReportField(report, _T("launched")).Matches(_T("1")))
+        {
+            OgreWinSetRebuildRequired(true);
+            OgreWinBuildSucceeded = false;
+            OgreWinInstallSucceeded = false;
+        }
+
+        return true;
+    }
+
+    if (OgreReportField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowError(_("The configuration dialog patch was not applied. The generated program cannot open the OGRE configuration window without it."));
+        return false;
+    }
+
+    ShowError(_("The Windows configuration dialog patch was not applied.\n\n") + OgreReportField(report, _T("error")));
+    return false;
+}
+
 function OnLeave_OgreWinPatch(fwd)
 {
     if (!fwd)
         return true;
+
+    if (!OgreWinApplyConfigDialogPatch())
+        return false;
 
     OgreWinPatchProbe();
 
@@ -1724,6 +1938,8 @@ function SetupWinOgreProject(project)
         _T("OgreBites.dll"),
         _T("OgreOverlay.dll"),
         _T("OgreRTShaderSystem.dll"),
+        _T("OgrePaging.dll"),
+        _T("OgreTerrain.dll"),
         _T("OgreMeshLodGenerator.dll"),
         _T("OgreProperty.dll"),
         _T("RenderSystem_GL.dll"),
@@ -1750,12 +1966,17 @@ function SetupWinOgreProject(project)
     if (!OgreWinSdl2Prefix.IsEmpty())
         OgreWinQueueDll(project, OgreWinSdl2Prefix + sep + _T("bin"), _T("SDL2.dll"));
 
+    // OgreOverlay imports this exact filename from the FreeType prefix.
+    if (!OgreWinFreetypePrefix.IsEmpty())
+        OgreWinQueueDll(project, OgreWinFreetypePrefix + sep + _T("bin"), _T("libfreetype.dll"));
+
     local target = project.GetBuildTarget(Wizard.GetDebugName());
 
     if (!IsNull(target))
     {
         target.SetTargetType(ttConsoleOnly);
-        target.SetWorkingDir(Wizard.GetProjectPath());
+        // resources.cfg and plugins.cfg are written beside the project file.
+        target.SetWorkingDir(project.GetBasePath());
         target.SetOutputFilename(target.SuggestOutputFilename());
         DebugSymbolsOn(target, Wizard.GetCompilerID());
     }
@@ -1765,7 +1986,7 @@ function SetupWinOgreProject(project)
     if (!IsNull(target))
     {
         target.SetTargetType(ttExecutable);
-        target.SetWorkingDir(Wizard.GetProjectPath());
+        target.SetWorkingDir(project.GetBasePath());
         target.SetOutputFilename(target.SuggestOutputFilename());
         target.AddCompilerOption(_T("-DNDEBUG"));
         OptimizationsOn(target, Wizard.GetCompilerID());

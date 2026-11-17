@@ -100,6 +100,13 @@ const KnownPatch kKnownPatches[] =
         wxT("CMakeLists.txt"),
         MacPatchRevisionArchiveMarker,
         wxT("PROJECT(Assimp VERSION 5.4.3)")
+    },
+    {
+        wxT("ogre-14.6.3-win-config-dialog"),
+        wxT("ogre-14.6.3-win-config-dialog.patch"),
+        wxT("Components/Bites/src/OgreWIN32ConfigDialog.cpp"),
+        MacPatchRevisionExactTag,
+        wxT("v14.6.3")
     }
 };
 

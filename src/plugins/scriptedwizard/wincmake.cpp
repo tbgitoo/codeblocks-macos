@@ -1825,6 +1825,27 @@ OgreLayout InspectOgreTree(const wxString& root, bool installedContract)
         return layout;
     }
 
+    static const wxChar* toolNames[] = {
+        wxT("SampleBrowser.exe"),
+        wxT("OgreAssimpConverter.exe"),
+        wxT("OgreMeshUpgrader.exe"),
+        wxT("OgreXMLConverter.exe"),
+        wxT("VRMLConverter.exe"),
+        nullptr
+    };
+
+    for (size_t i = 0; toolNames[i] != nullptr; ++i)
+    {
+        const wxString inBin = JoinUnder(normalised, wxString(wxT("bin\\")) + toolNames[i]);
+        const wxString inRelease = JoinUnder(normalised, wxString(wxT("bin\\Release\\")) + toolNames[i]);
+
+        if (!wxFileExists(inBin) && !wxFileExists(inRelease))
+        {
+            layout.error = wxString(toolNames[i]) + wxT(" was not found");
+            return layout;
+        }
+    }
+
     layout.valid = true;
     return layout;
 }
@@ -1877,27 +1898,46 @@ bool AdoptMingwCMake(const wxString& bin)
     return ProbeWinCMake().access == WinCMakeWorks;
 }
 
-wxString PrefixList(const wxString& mingwRoot, const wxString& sdl2, const wxString& assimp)
+void AppendPrefix(wxString& list, const wxString& prefix)
+{
+    if (prefix.empty())
+        return;
+
+    const wxArrayString parts = wxSplit(list, wxT(';'));
+
+    for (size_t i = 0; i < parts.GetCount(); ++i)
+    {
+        if (SamePath(parts[i], prefix))
+            return;
+    }
+
+    if (!list.empty())
+        list += wxT(";");
+
+    list += prefix;
+}
+
+wxString PrefixList(const wxString& mingwRoot, const wxArrayString& extras)
 {
     wxString list = mingwRoot;
 
-    if (!sdl2.empty() && !SamePath(sdl2, mingwRoot))
-        list += wxT(";") + sdl2;
-
-    if (!assimp.empty() && !SamePath(assimp, mingwRoot) && !SamePath(assimp, sdl2))
-        list += wxT(";") + assimp;
+    for (size_t i = 0; i < extras.GetCount(); ++i)
+        AppendPrefix(list, extras[i]);
 
     return list;
 }
 
 wxString PkgConfigLibDir(const wxString& mingwRoot,
-                         const wxString& sdl2,
-                         const wxString& assimp)
+                         const wxArrayString& extras)
 {
     wxString list;
-    const wxString prefixes[] = { mingwRoot, sdl2, assimp };
+    wxArrayString prefixes;
+    prefixes.Add(mingwRoot);
 
-    for (size_t i = 0; i < WXSIZEOF(prefixes); ++i)
+    for (size_t i = 0; i < extras.GetCount(); ++i)
+        prefixes.Add(extras[i]);
+
+    for (size_t i = 0; i < prefixes.GetCount(); ++i)
     {
         if (prefixes[i].empty())
             continue;
@@ -1939,6 +1979,12 @@ wxString DescribeOneTool(const wxString& compilerId, wxString& bin, wxString& mi
                 "sdl2_prefix=\n"
                 "assimp=missing\n"
                 "assimp_prefix=\n"
+                "imgui=missing\n"
+                "imgui_dir=\n"
+                "pugixml=missing\n"
+                "pugixml_prefix=\n"
+                "freetype=missing\n"
+                "freetype_prefix=\n"
                 "error=%s"),
             FirstLine(error));
     }
@@ -1999,6 +2045,59 @@ wxString DescribeOneTool(const wxString& compilerId, wxString& bin, wxString& mi
         assimpState = wxT("works");
     }
 
+    wxString imguiDir;
+    wxString imguiState = wxT("missing");
+
+    if (!localRoot.empty())
+    {
+        const wxString candidate = JoinUnder(localRoot, wxT("imgui-source-1.92.9b"));
+
+        if (wxFileExists(JoinUnder(candidate, wxT("imgui.h")))
+            && wxFileExists(JoinUnder(candidate, wxT("imgui.cpp"))))
+        {
+            imguiDir = candidate;
+            imguiState = wxT("works");
+        }
+    }
+
+    wxString pugixmlPrefix;
+    wxString pugixmlState = wxT("missing");
+
+    if (wxFileExists(JoinUnder(mingwRoot, wxT("include\\pugixml.hpp"))))
+    {
+        pugixmlPrefix = mingwRoot;
+        pugixmlState = wxT("works");
+    }
+    else if (!localRoot.empty()
+             && wxFileExists(JoinUnder(localRoot, wxT("pugixml\\include\\pugixml.hpp"))))
+    {
+        pugixmlPrefix = JoinUnder(localRoot, wxT("pugixml"));
+        pugixmlState = wxT("works");
+    }
+
+    wxString freetypePrefix;
+    wxString freetypeState = wxT("missing");
+    const wxChar* freetypeHeaders[] = {
+        wxT("include\\ft2build.h"),
+        wxT("include\\freetype2\\ft2build.h"),
+        nullptr
+    };
+
+    wxString freetypeHeader;
+
+    if (FirstExistingFile(mingwRoot, freetypeHeaders, freetypeHeader) && !freetypeHeader.empty())
+    {
+        freetypePrefix = mingwRoot;
+        freetypeState = wxT("works");
+    }
+    else if (!localRoot.empty()
+             && FirstExistingFile(JoinUnder(localRoot, wxT("freetype")), freetypeHeaders, freetypeHeader)
+             && !freetypeHeader.empty())
+    {
+        freetypePrefix = JoinUnder(localRoot, wxT("freetype"));
+        freetypeState = wxT("works");
+    }
+
     return wxString::Format(
         wxT("compiler=works\n"
             "gcc=%s\n"
@@ -2013,6 +2112,12 @@ wxString DescribeOneTool(const wxString& compilerId, wxString& bin, wxString& mi
             "sdl2_prefix=%s\n"
             "assimp=%s\n"
             "assimp_prefix=%s\n"
+            "imgui=%s\n"
+            "imgui_dir=%s\n"
+            "pugixml=%s\n"
+            "pugixml_prefix=%s\n"
+            "freetype=%s\n"
+            "freetype_prefix=%s\n"
             "error="),
         gcc,
         gxx,
@@ -2025,7 +2130,13 @@ wxString DescribeOneTool(const wxString& compilerId, wxString& bin, wxString& mi
         sdl2State,
         sdl2Prefix,
         assimpState,
-        assimpPrefix);
+        assimpPrefix,
+        imguiState,
+        imguiDir,
+        pugixmlState,
+        pugixmlPrefix,
+        freetypeState,
+        freetypePrefix);
 }
 
 } // namespace
@@ -2144,41 +2255,85 @@ WinCMakeRunResult ConfigureWinOgre(
         return result;
     }
 
+    wxString ignoredBin;
+    wxString mingwRoot;
+    const wxString tools = DescribeOneTool(compilerId, ignoredBin, mingwRoot);
+    wxString sdl2Prefix;
+    wxString assimpPrefix;
+    wxString pugixmlPrefix;
+    wxString freetypePrefix;
+    wxString imguiDir;
+
+    {
+        const wxString keys[] = {
+            wxT("sdl2_prefix"),
+            wxT("assimp_prefix"),
+            wxT("pugixml_prefix"),
+            wxT("freetype_prefix"),
+            wxT("imgui_dir")
+        };
+        wxString* values[] = {
+            &sdl2Prefix,
+            &assimpPrefix,
+            &pugixmlPrefix,
+            &freetypePrefix,
+            &imguiDir
+        };
+
+        for (size_t i = 0; i < WXSIZEOF(keys); ++i)
+        {
+            const int at = tools.Find(keys[i] + wxT("="));
+
+            if (at == wxNOT_FOUND)
+                continue;
+
+            wxString value = tools.Mid(at + keys[i].Length() + 1);
+            value = value.BeforeFirst(wxT('\n'));
+            value.Trim(true).Trim(false);
+            *values[i] = value;
+        }
+    }
+
+    if (imguiDir.empty()
+        || !wxFileExists(JoinUnder(imguiDir, wxT("imgui.h")))
+        || !wxFileExists(JoinUnder(imguiDir, wxT("imgui.cpp"))))
+    {
+        result.output = wxT("Dear ImGui checkout was not found");
+        return result;
+    }
+
+    if (pugixmlPrefix.empty())
+    {
+        result.output = wxT("pugixml was not found");
+        return result;
+    }
+
+    if (freetypePrefix.empty())
+    {
+        result.output = wxT("FreeType was not found");
+        return result;
+    }
+
+    wxArrayString prefixes;
+    prefixes.Add(sdl2Prefix);
+    prefixes.Add(assimpPrefix);
+    prefixes.Add(pugixmlPrefix);
+    prefixes.Add(freetypePrefix);
+
     const wxString cache = ReadFile(build + wxT("\\CMakeCache.txt"));
 
     if (!cache.empty()
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
         && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        && CacheVariableIsPath(cache, wxT("IMGUI_DIR"), imguiDir)
         && !ListsNewerThanCache(build)
         && GeneratedMakefile(build)
         && CacheRecordsOptions(cache, optionArgs))
     {
         result.success = true;
-        result.output = wxT("CMake cache already matches this prefix, Release, and gcc");
+        result.output = wxT("CMake cache already matches this prefix, Release, gcc, and Dear ImGui");
         return result;
-    }
-
-    wxString ignoredBin;
-    wxString mingwRoot;
-    const wxString tools = DescribeOneTool(compilerId, ignoredBin, mingwRoot);
-    wxString sdl2Prefix;
-    wxString assimpPrefix;
-
-    {
-        const int sdlAt = tools.Find(wxT("sdl2_prefix="));
-        if (sdlAt != wxNOT_FOUND)
-        {
-            sdl2Prefix = tools.Mid(sdlAt + wxString(wxT("sdl2_prefix=")).Length());
-            sdl2Prefix = sdl2Prefix.BeforeFirst(wxT('\n'));
-        }
-
-        const int assimpAt = tools.Find(wxT("assimp_prefix="));
-        if (assimpAt != wxNOT_FOUND)
-        {
-            assimpPrefix = tools.Mid(assimpAt + wxString(wxT("assimp_prefix=")).Length());
-            assimpPrefix = assimpPrefix.BeforeFirst(wxT('\n'));
-        }
     }
 
     wxString pathPrefix = bin;
@@ -2210,7 +2365,8 @@ WinCMakeRunResult ConfigureWinOgre(
     args.Add(wxT("-DCMAKE_C_COMPILER=") + gcc);
     args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
     args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
-    args.Add(wxT("-DCMAKE_PREFIX_PATH=") + PrefixList(mingwRoot, sdl2Prefix, assimpPrefix));
+    args.Add(wxT("-DCMAKE_PREFIX_PATH=") + PrefixList(mingwRoot, prefixes));
+    args.Add(wxT("-DIMGUI_DIR=") + imguiDir);
 
     for (size_t i = 0; i < optionArgs.GetCount(); ++i)
         args.Add(optionArgs[i]);
@@ -2229,7 +2385,7 @@ WinCMakeRunResult ConfigureWinOgre(
         summary,
         explanation,
         confirmLabel,
-        PkgConfigLibDir(mingwRoot, sdl2Prefix, assimpPrefix));
+        PkgConfigLibDir(mingwRoot, prefixes));
 
     if (!result.success)
         return result;
@@ -2240,6 +2396,7 @@ WinCMakeRunResult ConfigureWinOgre(
         || !CacheVariableIsPath(written, wxT("CMAKE_INSTALL_PREFIX"), install)
         || !CacheVariableIsPath(written, wxT("CMAKE_C_COMPILER"), gcc)
         || !CacheVariableEquals(written, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        || !CacheVariableIsPath(written, wxT("IMGUI_DIR"), imguiDir)
         || !CacheRecordsOptions(written, optionArgs))
     {
         result.success = false;
@@ -2369,17 +2526,65 @@ WinCMakeRunResult InstallWinOgre(
 
 bool DepIdOk(const wxString& libraryId)
 {
-    return libraryId == wxT("sdl2") || libraryId == wxT("assimp");
+    return libraryId == wxT("sdl2")
+        || libraryId == wxT("assimp")
+        || libraryId == wxT("pugixml")
+        || libraryId == wxT("freetype");
+}
+
+wxString DepTitle(const wxString& libraryId)
+{
+    if (libraryId == wxT("sdl2"))
+        return _("SDL2 2.32.10");
+
+    if (libraryId == wxT("assimp"))
+        return _("Assimp 5.4.3");
+
+    if (libraryId == wxT("pugixml"))
+        return _("pugixml 1.15");
+
+    if (libraryId == wxT("freetype"))
+        return _("FreeType 2.14.3");
+
+    return libraryId;
+}
+
+bool DepDllPresent(const wxString& install, const wxString& pattern, wxString& error)
+{
+    wxDir bin(JoinUnder(install, wxT("bin")));
+    wxString name;
+
+    if (!bin.IsOpened() || !bin.GetFirst(&name, pattern, wxDIR_FILES))
+    {
+        error = wxT("bin/") + pattern + wxT(" was not found");
+        return false;
+    }
+
+    return true;
 }
 
 bool DepInstalled(const wxString& libraryId, const wxString& install, wxString& error)
 {
-    const wxChar* header = libraryId == wxT("sdl2")
-        ? wxT("include\\SDL2\\SDL.h")
-        : wxT("include\\assimp\\Importer.hpp");
-    const wxChar* importLib = libraryId == wxT("sdl2")
-        ? wxT("lib\\libSDL2.dll.a")
-        : wxT("lib\\libassimp.dll.a");
+    const wxChar* header = wxT("include\\assimp\\Importer.hpp");
+    const wxChar* importLib = wxT("lib\\libassimp.dll.a");
+
+    if (libraryId == wxT("sdl2"))
+    {
+        header = wxT("include\\SDL2\\SDL.h");
+        importLib = wxT("lib\\libSDL2.dll.a");
+    }
+    else if (libraryId == wxT("pugixml"))
+    {
+        header = wxT("include\\pugixml.hpp");
+        importLib = wxT("lib\\libpugixml.a");
+    }
+    else if (libraryId == wxT("freetype"))
+    {
+        header = wxFileExists(JoinUnder(install, wxT("include\\ft2build.h")))
+            ? wxT("include\\ft2build.h")
+            : wxT("include\\freetype2\\ft2build.h");
+        importLib = wxT("lib\\libfreetype.dll.a");
+    }
 
     if (!wxFileExists(JoinUnder(install, header)))
     {
@@ -2393,28 +2598,16 @@ bool DepInstalled(const wxString& libraryId, const wxString& install, wxString& 
         return false;
     }
 
-    if (libraryId == wxT("sdl2"))
-    {
-        if (!wxFileExists(JoinUnder(install, wxT("bin\\SDL2.dll"))))
-        {
-            error = wxT("bin/SDL2.dll was not found");
-            return false;
-        }
-
+    if (libraryId == wxT("pugixml"))
         return true;
-    }
 
-    wxDir bin(JoinUnder(install, wxT("bin")));
-    wxString name;
+    if (libraryId == wxT("sdl2"))
+        return DepDllPresent(install, wxT("SDL2.dll"), error);
 
-    if (!bin.IsOpened()
-        || !bin.GetFirst(&name, wxT("libassimp*.dll"), wxDIR_FILES))
-    {
-        error = wxT("bin/libassimp*.dll was not found");
-        return false;
-    }
+    if (libraryId == wxT("freetype"))
+        return DepDllPresent(install, wxT("*freetype*.dll"), error);
 
-    return true;
+    return DepDllPresent(install, wxT("libassimp*.dll"), error);
 }
 
 wxString IsolatedPkgConfigDir()
@@ -2495,6 +2688,8 @@ WinCMakeRunResult ConfigureWinDep(
         && CacheVariableIsPath(cache, wxT("CMAKE_INSTALL_PREFIX"), install)
         && CacheVariableIsPath(cache, wxT("CMAKE_C_COMPILER"), gcc)
         && CacheVariableEquals(cache, wxT("CMAKE_BUILD_TYPE"), wxT("Release"))
+        && (libraryId != wxT("pugixml")
+            || CacheVariableEquals(cache, wxT("BUILD_SHARED_LIBS"), wxT("OFF")))
         && !ListsNewerThanCache(build))
     {
         result.success = true;
@@ -2503,7 +2698,7 @@ WinCMakeRunResult ConfigureWinDep(
     }
 
     const wxString mingwRoot = ParentDirectory(bin);
-    wxString pkgDir = PkgConfigLibDir(mingwRoot, wxEmptyString, wxEmptyString);
+    wxString pkgDir = PkgConfigLibDir(mingwRoot, wxArrayString());
 
     if (pkgDir.empty())
         pkgDir = IsolatedPkgConfigDir();
@@ -2522,9 +2717,7 @@ WinCMakeRunResult ConfigureWinDep(
     args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
     args.Add(wxT("-DCMAKE_PREFIX_PATH=") + mingwRoot);
 
-    const wxString title = libraryId == wxT("sdl2")
-        ? wxString(_("SDL2 2.32.10"))
-        : wxString(_("Assimp 5.4.3"));
+    const wxString title = DepTitle(libraryId);
 
     if (libraryId == wxT("sdl2"))
     {
@@ -2532,13 +2725,31 @@ WinCMakeRunResult ConfigureWinDep(
         args.Add(wxT("-DSDL_STATIC=OFF"));
         args.Add(wxT("-DSDL_TEST=OFF"));
     }
-    else
+    else if (libraryId == wxT("assimp"))
     {
         args.Add(wxT("-DBUILD_SHARED_LIBS=ON"));
         args.Add(wxT("-DASSIMP_BUILD_ASSIMP_TOOLS=OFF"));
         args.Add(wxT("-DASSIMP_BUILD_TESTS=OFF"));
         args.Add(wxT("-DASSIMP_WARNINGS_AS_ERRORS=OFF"));
         args.Add(wxT("-DASSIMP_BUILD_ZLIB=ON"));
+    }
+    else if (libraryId == wxT("pugixml"))
+    {
+        // The shared target compiles scripts/pugixml_dll.rc. windres then
+        // launches the preprocessor from an unquoted path, and this MinGW
+        // lives under Program Files, so the command stops at the space.
+        // OgreXMLConverter links the static library.
+        args.Add(wxT("-DBUILD_SHARED_LIBS=OFF"));
+        args.Add(wxT("-DPUGIXML_BUILD_TESTS=OFF"));
+    }
+    else
+    {
+        args.Add(wxT("-DBUILD_SHARED_LIBS=ON"));
+        args.Add(wxT("-DFT_DISABLE_ZLIB=ON"));
+        args.Add(wxT("-DFT_DISABLE_BZIP2=ON"));
+        args.Add(wxT("-DFT_DISABLE_PNG=ON"));
+        args.Add(wxT("-DFT_DISABLE_HARFBUZZ=ON"));
+        args.Add(wxT("-DFT_DISABLE_BROTLI=ON"));
     }
 
     const wxString summary = wxString::Format(
@@ -2607,9 +2818,7 @@ WinCMakeRunResult BuildWinDep(
     args.Add(wxT("--parallel"));
     args.Add(wxString::Format(wxT("%d"), jobs));
 
-    const wxString title = libraryId == wxT("sdl2")
-        ? wxString(_("SDL2 2.32.10"))
-        : wxString(_("Assimp 5.4.3"));
+    const wxString title = DepTitle(libraryId);
     const wxString summary = wxString::Format(
         _("CMake is building %s.\n\nBuild:\n%s\n\nParallel jobs: %d"),
         title,
@@ -2666,9 +2875,7 @@ WinCMakeRunResult InstallWinDep(
     args.Add(wxT("--install"));
     args.Add(build);
 
-    const wxString title = libraryId == wxT("sdl2")
-        ? wxString(_("SDL2 2.32.10"))
-        : wxString(_("Assimp 5.4.3"));
+    const wxString title = DepTitle(libraryId);
     const wxString summary = wxString::Format(
         _("CMake is installing %s.\n\nBuild:\n%s\n\nInstall:\n%s"),
         title,
