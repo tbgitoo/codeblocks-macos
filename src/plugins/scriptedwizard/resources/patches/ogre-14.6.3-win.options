@@ -8,13 +8,17 @@
 # and Assimp 5.4.3 are already on CMAKE_PREFIX_PATH.
 -DOGRE_BUILD_DEPENDENCIES=OFF
 
-# The generated project does not build the Dear ImGui overlay. Leaving this
-# on downloads imgui during configure, and an incomplete download stops
-# generation.
--DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=OFF
+# SampleBrowser uses the Dear ImGui overlay. The wizard clones Dear ImGui
+# v1.92.9b and passes that checkout as IMGUI_DIR, so this option does not
+# download imgui during configure.
+-DOGRE_BUILD_COMPONENT_OVERLAY_IMGUI=ON
 
-# The generated project does not build OGRE's sample browser.
--DOGRE_BUILD_SAMPLES=OFF
+# SampleBrowser, and the install of Samples/Media, including ogrehead.mesh.
+-DOGRE_BUILD_SAMPLES=ON
+
+# OgreAssimpConverter, OgreMeshUpgrader, OgreXMLConverter, and VRMLConverter.
+# OgreXMLConverter needs the pugixml checkout on CMAKE_PREFIX_PATH.
+-DOGRE_BUILD_TOOLS=ON
 
 # pkgconf comes from MSYS2, and that prefix also contains Qt. Those Qt
 # headers do not compile with the selected MinGW. The generated project

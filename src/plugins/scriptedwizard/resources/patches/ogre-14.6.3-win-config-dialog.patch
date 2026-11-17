@@ -1,0 +1,16 @@
+diff --git a/Components/Bites/src/OgreWIN32ConfigDialog.cpp b/Components/Bites/src/OgreWIN32ConfigDialog.cpp
+index ec7f30b..87aa02a 100644
+--- a/Components/Bites/src/OgreWIN32ConfigDialog.cpp
++++ b/Components/Bites/src/OgreWIN32ConfigDialog.cpp
+@@ -66,9 +66,9 @@ namespace OgreBites
+                 mImpl->mHInstance = GetModuleHandle( NULL );
+ 			#else
+ 				#if OGRE_DEBUG_MODE == 1
+-        		    mImpl->mHInstance = GetModuleHandle("OgreMain_d.dll");
++        		    mImpl->mHInstance = GetModuleHandle("OgreBites_d.dll");
+ 				#else
+-					mImpl->mHInstance = GetModuleHandle("OgreMain.dll");
++					mImpl->mHInstance = GetModuleHandle("OgreBites.dll");
+ 				#endif
+ 			#endif
+ 		#else
