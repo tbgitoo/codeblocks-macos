@@ -1756,6 +1756,79 @@ function OgreWinInstallOgre()
     return false;
 }
 
+function OgreWinStageSdkRuntime()
+{
+    OgreWinLoadTools();
+
+    if (OgreWinRuntimeDir.IsEmpty() && !OgreWinInstalled())
+        return false;
+
+    local sep = wxFILE_SEP_PATH;
+    local items = [
+        [OgreWinSdl2Prefix, _T("SDL2.dll")],
+        [OgreWinFreetypePrefix, _T("libfreetype.dll")],
+        [OgreWinAssimpPrefix, _T("libassimp-5.dll")]
+    ];
+
+    foreach (i, item in items)
+    {
+        local dir = item[0];
+        local name = item[1];
+
+        if (dir.IsEmpty())
+            continue;
+
+        local src = dir + sep + _T("bin") + sep + name;
+
+        if (!IO.FileExists(src))
+            continue;
+
+        local dst = OgreWinRuntimeDir + sep + name;
+
+        if (IO.FileExists(dst))
+            continue;
+
+        if (!IO.CopyFile(src, dst, true))
+        {
+            ShowError(_("Could not copy ") + name + _(" beside SampleBrowser.\n\nFrom:\n") + src);
+            return false;
+        }
+    }
+
+    // The executable directory is searched before PATH. Another MinGW on PATH,
+    // such as MSYS2, would otherwise supply a different libstdc++.
+    local compilerBin = OgreWinGcc.BeforeLast(sep);
+    local runtime = [
+        _T("libgcc_s_seh-1.dll"),
+        _T("libstdc++-6.dll"),
+        _T("libwinpthread-1.dll")
+    ];
+
+    if (!compilerBin.IsEmpty())
+    {
+        foreach (i, name in runtime)
+        {
+            local src = compilerBin + sep + name;
+
+            if (!IO.FileExists(src))
+                continue;
+
+            local dst = OgreWinRuntimeDir + sep + name;
+
+            if (IO.FileExists(dst))
+                continue;
+
+            if (!IO.CopyFile(src, dst, true))
+            {
+                ShowError(_("Could not copy ") + name + _(" beside SampleBrowser.\n\nFrom:\n") + src);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 function OnLeave_OgreWinInstall(fwd)
 {
     if (!fwd)
@@ -1769,16 +1842,19 @@ function OnLeave_OgreWinInstall(fwd)
             return false;
 
         OgreWinSetRebuildRequired(false);
-        return true;
+        return OgreWinStageSdkRuntime();
     }
 
     if (OgreWinInstallSucceeded || OgreWinInstalled())
     {
         OgreWinInstallSucceeded = true;
-        return true;
+        return OgreWinStageSdkRuntime();
     }
 
-    return OgreWinInstallOgre();
+    if (!OgreWinInstallOgre())
+        return false;
+
+    return OgreWinStageSdkRuntime();
 }
 
 function OgreWinAllReady()
@@ -1969,6 +2045,15 @@ function SetupWinOgreProject(project)
     // OgreOverlay imports this exact filename from the FreeType prefix.
     if (!OgreWinFreetypePrefix.IsEmpty())
         OgreWinQueueDll(project, OgreWinFreetypePrefix + sep + _T("bin"), _T("libfreetype.dll"));
+
+    // Keep the compiler that built OGRE ahead of any other MinGW on PATH.
+    if (!OgreWinGcc.IsEmpty())
+    {
+        local compilerBin = OgreWinGcc.BeforeLast(sep);
+        OgreWinQueueDll(project, compilerBin, _T("libgcc_s_seh-1.dll"));
+        OgreWinQueueDll(project, compilerBin, _T("libstdc++-6.dll"));
+        OgreWinQueueDll(project, compilerBin, _T("libwinpthread-1.dll"));
+    }
 
     local target = project.GetBuildTarget(Wizard.GetDebugName());
 
