@@ -27,6 +27,7 @@ Roadmap for the unofficial Apple Silicon port in this repository. Versions are s
   → v4.0 (installable Windows distribution; NSIS; no bundled compiler)
   → v4.1 (OGRE-Next project wizard on Apple Silicon, separate from the OGRE 1.x wizard)
   → v4.2 (Windows OGRE 1.x wizard: the v3.8 tag, patch, and sequence)
+  → v4.2.1 (upstream only the proven one-file OGRE and Assimp fixes)
 ```
 
 Upstream baseline: Code::Blocks trunk **r14050** / IDE **25.03**. Companion Darwin GDB lives in the sister repo **`binutils-gdb`** (sibling checkout, e.g. `../binutils-gdb`) — never hardcode a developer home path.
@@ -72,6 +73,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.0** | **Released.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. Optional pinned MinGW. Mid-install Cancel stays deferred and is not part of v4.1. | [versioning_plan_v4_0.md](versioning_plan_v4_0.md) |
 | **v4.1** | **M4 done** (tree). M5 is next. OGRE-Next wizard on Apple Silicon: pinned deps and engine, packaged patches including `ogre-apple`, SDK under `~/Library/CodeBlocks`, ordinary C++ project. The OGRE 1.x wizard is unchanged. | [versioning_plan_v4_1.md](versioning_plan_v4_1.md) |
 | **v4.2** | **DONE.** The Windows Ogre wizard builds and installs OGRE `v14.6.3`, the generated project runs, and SampleBrowser runs. The four command-line tools start and wait for a source file; using them on files is v4.2.2. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
+| **v4.2.1** | **Planning.** Two upstream units: the MinGW config dialog names `OgreBites.dll`, and Assimp quotes the ccache path if that form survives the MinGW makefile. The space-skip patch, the wizard, and the DLL copies stay local. | [versioning_plan_v4_2_1.md](versioning_plan_v4_2_1.md) |
 
 ### One-line outcomes
 
@@ -99,6 +101,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. An optional page can add the pinned MinGW. |
 | **v4.1** | File → New → Project → OGRE-Next project on Apple Silicon checks out the pinned dependency and engine revisions, applies the packaged patches, installs the SDK under `~/Library/CodeBlocks`, and Build and Run opens the light-show window. The OGRE 1.x wizard stays separate. |
 | **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head, and SampleBrowser runs. The command-line tools are installed; feeding them files is v4.2.2. The macOS wizard and OGRE-Next stay unchanged. |
+| **v4.2.1** | The MinGW config-dialog lookup is one upstream commit. The Assimp request quotes the ccache path only after a MinGW makefile check shows that a path with a space still launches ccache. The Windows wizard and its space-skip patch stay local. |
 
 ---
 

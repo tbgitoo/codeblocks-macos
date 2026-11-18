@@ -183,15 +183,19 @@ For debugging, there is also a development copy at `%REPO%\src\devel33_64\codebl
 
 # Build the NSIS installer
 
+## Installer build summary
+
 This set of instructions builds a windows installer for distribution.
 
 It uses makensis.exe (from https://nsis.sourceforge.io/Download) to pack the executable and ressources into a setup.exe for automated installation.
+
+## Preconditions
 
 These steps package `%REPO%\src\output33_64` into a Windows setup.exe program. Run these steps only after `update.bat` has finished (see above), and after the four runtime DLLs have been copied into `devel33_64`. `update.bat` copies those DLLs into `output33_64`. The installer does not contain a compiler. Its optional page downloads one while the setup program is running.
 
 Install stock NSIS 3 from https://nsis.sourceforge.io/Download. The default install puts `makensis.exe` in `C:\Program Files (x86)\NSIS\Bin`. The build script looks there, and in `C:\Program Files\NSIS\Bin`, and on `PATH`. This repository does not download NSIS.
 
-`objdump` must still be on `PATH`. The opening block already adds `%MINGW%\bin`, which is where it lives.
+`objdump` must still be on `PATH`. The opening block setting the environment variables (above) already adds `%MINGW%\bin`, which is where `objdump` lives.
 
 ```bat
 cd /d "%REPO%\packaging\windows"
