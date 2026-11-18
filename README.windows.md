@@ -8,7 +8,7 @@ For the general official Windows install, use the official Code::Blocks distribu
 
 ## Pre-packaged Code::Blocks from this source tree
 
-From v4.0, this repository also publishes a Windows installer in the **Releases** section. It may be useful when you want the debugger for a source file that is not part of a Code::Blocks project, or the wizard updates in this tree. The installer contains the IDE. A selected compiler option downloads a pinned MinGW toolchain during setup; clearing that option installs the IDE only.
+From v4.0, this repository also publishes a Windows installer in the **Releases** section (https://github.com/tbgitoo/codeblocks-macos/releases). It may be useful when you want the debugger for a source file that is not part of a Code::Blocks project, or the wizard updates in this tree. The installer contains the IDE. A selected compiler option downloads a pinned MinGW toolchain during setup; clearing that option installs the IDE only.
 
 ## Build from this source tree
 
