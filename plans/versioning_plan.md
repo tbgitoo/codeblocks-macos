@@ -71,7 +71,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.7b** | **In progress.** On Windows the MCS51 wizard detects an existing SDCC install. If none is found, Yes opens the official 4.6.0 x64 page. The wizard does not download or run the installer. Run through `s51.exe` is still open. | [versioning_plan_v3_7b.md](versioning_plan_v3_7b.md) |
 | **v4.0** | **Released.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. Optional pinned MinGW. Mid-install Cancel stays deferred and is not part of v4.1. | [versioning_plan_v4_0.md](versioning_plan_v4_0.md) |
 | **v4.1** | **M4 done** (tree). M5 is next. OGRE-Next wizard on Apple Silicon: pinned deps and engine, packaged patches including `ogre-apple`, SDK under `~/Library/CodeBlocks`, ordinary C++ project. The OGRE 1.x wizard is unchanged. | [versioning_plan_v4_1.md](versioning_plan_v4_1.md) |
-| **v4.2** | **In progress.** The Windows Ogre wizard has built and installed OGRE `v14.6.3` with the v3.8 pin, and the generated project has run. SampleBrowser runs. Atomic Counters needs the OpenGL 3+ renderer; the saved choice was the legacy OpenGL plugin and is now OpenGL 3+. A full sample-list pass has not been done. M2's second run and cancel are still open. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
+| **v4.2** | **DONE.** The Windows Ogre wizard builds and installs OGRE `v14.6.3`, the generated project runs, and SampleBrowser runs. The four command-line tools start and wait for a source file; using them on files is v4.2.2. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
 
 ### One-line outcomes
 
@@ -98,7 +98,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v3.7b** | On Windows, a detected SDCC installation is accepted. Otherwise Yes opens the official 4.6.0 x64 download page, and Next detects again. Run launches `s51.exe`. Keil and IAR are left alone. |
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. An optional page can add the pinned MinGW. |
 | **v4.1** | File → New → Project → OGRE-Next project on Apple Silicon checks out the pinned dependency and engine revisions, applies the packaged patches, installs the SDK under `~/Library/CodeBlocks`, and Build and Run opens the light-show window. The OGRE 1.x wizard stays separate. |
-| **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head. The macOS wizard and OGRE-Next stay unchanged. |
+| **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head, and SampleBrowser runs. The command-line tools are installed; feeding them files is v4.2.2. The macOS wizard and OGRE-Next stay unchanged. |
 
 ---
 

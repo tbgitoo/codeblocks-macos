@@ -102,4 +102,6 @@ debian/libwxsmithlib0-dev/
 debian/libwxsmithlib0/
 debian/wxsmith-dev/
 
+local_paths.txt
+
 
