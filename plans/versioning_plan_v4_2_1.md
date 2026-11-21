@@ -1,18 +1,18 @@
 # Code::Blocks v4.2.1 — upstream status
 
-**Status: Planning.** v4.2 stays the Windows wizard. This version records two submitted upstream fixes and the one OGRE follow-up still to prepare. Acceptance of a pull request is not required for the wizard. A request is one defect, one repository, one commit, taken from clean current upstream. The wizard, its options file, and its DLL copies stay out of every request.
+**Status: Planning.** v4.2 stays the Windows wizard. The config-dialog fix is merged. The Assimp request is open. The GLSupport follow-up is still to prepare. Acceptance of a pull request is not required for the wizard. A request is one defect, one repository, one commit, taken from clean current upstream. The wizard, its options file, and its DLL copies stay out of every request.
 
 ---
 
-## 1. Submitted — OGRE config dialog
+## 1. Merged — OGRE config dialog
 
-[OGRE config-dialog pull request](https://github.com/OGRECave/ogre/pull/3823). The maintainer accepted the root cause. `DialogBox` was given `OgreMain.dll`, which has no resource section. `IDD_DLG_CONFIG` is compiled into `OgreBites`.
+[OGRE PR #3823](https://github.com/OGRECave/ogre/pull/3823) is merged to `master`. `DialogBox` was given `OgreMain.dll`, which has no resource section. `IDD_DLG_CONFIG` is compiled into `OgreBites`.
 
 ```text
 Components/Bites/src/OgreWIN32ConfigDialog.cpp
 ```
 
-The pinned `v14.6.3` patch `ogre-14.6.3-win-config-dialog` only renames the two hard-coded modules to `OgreBites.dll` and `OgreBites_d.dll`. That stored patch stays as it is.
+The pinned `v14.6.3` patch `ogre-14.6.3-win-config-dialog` only renames the two hard-coded modules to `OgreBites.dll` and `OgreBites_d.dll`. That stored patch stays until the wizard pin moves to a release that contains the merge.
 
 The pull request removes the MinGW branch and uses the address lookup for every compiler. MinGW GCC needs the initializer:
 
@@ -21,7 +21,7 @@ static const TCHAR staticVar = 0;
 GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, &staticVar, &mImpl->mHInstance);
 ```
 
-The GLSupport files in section 3 are not added to this request.
+The GLSupport files in section 3 were not part of the merged request.
 
 ---
 
@@ -73,7 +73,7 @@ Also leave the config-dialog file, the resource script, and CMake out. `OgreWin3
 
 ## 5. Local only
 
-These solved a Windows run. They are not added to either submitted request or to the GLSupport follow-up.
+These solved a Windows run. They were not part of the merged config-dialog request, and they are not added to the open Assimp request or the GLSupport follow-up.
 
 | Local choice | Why it stays here |
 |---|---|
@@ -89,7 +89,7 @@ These solved a Windows run. They are not added to either submitted request or to
 ## 6. Status
 
 ```text
-[done]  OGRE config-dialog pull request submitted
+[done]  OGRE config-dialog pull request #3823 merged to master
 [done]  Assimp ccache pull request #7057 submitted
 [done]  OGRE pull request #3788 already open for sidecar paths
 [next]  Prepare and test the OGRE GLSupport follow-up

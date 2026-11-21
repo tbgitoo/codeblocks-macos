@@ -74,8 +74,9 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.0** | **Released.** Installable 64-bit Windows build via stock NSIS. No bundled compiler. Optional pinned MinGW. Mid-install Cancel stays deferred and is not part of v4.1. | [versioning_plan_v4_0.md](versioning_plan_v4_0.md) |
 | **v4.1** | **M4 done** (tree). M5 is next. OGRE-Next wizard on Apple Silicon: pinned deps and engine, packaged patches including `ogre-apple`, SDK under `~/Library/CodeBlocks`, ordinary C++ project. The OGRE 1.x wizard is unchanged. | [versioning_plan_v4_1.md](versioning_plan_v4_1.md) |
 | **v4.2** | **DONE.** The Windows Ogre wizard builds and installs OGRE `v14.6.3`, the generated project runs, and SampleBrowser runs. The four command-line tools start and wait for a source file; using them on files is v4.2.2. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
-| **v4.2.1** | **Planning.** The OGRE config-dialog request is submitted. Assimp PR #7057 quotes the ccache launcher. Next is the GLSupport module-handle request. The wizard and the DLL copies stay local. | [versioning_plan_v4_2_1.md](versioning_plan_v4_2_1.md) |
-| **v4.3** | **Planning.** Function watches fail because the companion GDB refuses to change the program counter. The repair is a signed PC store in `binutils-gdb`. Code::Blocks is unchanged until a direct GDB session evaluates the same expressions. | [versioning_plan_v4_3.md](versioning_plan_v4_3.md) |
+| **v4.2.1** | **Planning.** OGRE PR #3823 is merged. Assimp PR #7057 quotes the ccache launcher. Next is the GLSupport module-handle request. The wizard and the DLL copies stay local. | [versioning_plan_v4_2_1.md](versioning_plan_v4_2_1.md) |
+| **v4.3** | **Planning.** Function watches fail because the companion GDB refuses to change the program counter. The repair is a signed PC store in `binutils-gdb`. Code::Blocks is unchanged until a direct GDB session evaluates the same expressions. | [versioning_plan_v4_3.md]
+
 
 ### One-line outcomes
 
@@ -103,8 +104,9 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.0** | A Windows user installs this IDE from one executable, launches it from the Start Menu, and uninstalls it without losing settings or projects. The compiler stays external. An optional page can add the pinned MinGW. |
 | **v4.1** | File → New → Project → OGRE-Next project on Apple Silicon checks out the pinned dependency and engine revisions, applies the packaged patches, installs the SDK under `~/Library/CodeBlocks`, and Build and Run opens the light-show window. The OGRE 1.x wizard stays separate. |
 | **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head, and SampleBrowser runs. The command-line tools are installed; feeding them files is v4.2.2. The macOS wizard and OGRE-Next stay unchanged. |
-| **v4.2.1** | The MinGW config-dialog request is submitted and uses `GetModuleHandleEx`. Assimp PR #7057 puts literal quotes around the ccache path after plain `"${CCACHE_PATH}"` left the MinGW recipe unquoted. The GLSupport lookups in `OgreWin32Window.cpp` and `OgreWin32GLSupport.cpp` are the remaining OGRE request. The Windows wizard and its space-skip patch stay local. |
+| **v4.2.1** | OGRE PR #3823 is merged and uses `GetModuleHandleEx`. The pinned 14.6.3 rename patch stays until that pin moves. Assimp PR #7057 puts literal quotes around the ccache path. The GLSupport lookups in `OgreWin32Window.cpp` and `OgreWin32GLSupport.cpp` are the remaining OGRE request. The Windows wizard and its space-skip patch stay local. |
 | **v4.3** | A watch that calls a function (`a[0]`, `a.size()`, `add_one(x)`) evaluates in the companion GDB and in the Watches window. The sister repo stores the program counter with Apple's signed setter. Arithmetic and pretty-printed `std::string` watches already work and stay as they are. |
+
 
 ---
 
