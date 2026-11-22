@@ -1,6 +1,6 @@
 # Code::Blocks v4.2.1 — upstream status
 
-**Status: Planning.** v4.2 stays the Windows wizard. The config-dialog fix is merged. The Assimp request is open. The GLSupport follow-up is still to prepare. Acceptance of a pull request is not required for the wizard. A request is one defect, one repository, one commit, taken from clean current upstream. The wizard, its options file, and its DLL copies stay out of every request.
+**Status: Planning.** v4.2 stays the Windows wizard. The config-dialog fix and the GLSupport follow-up are merged. The Assimp request is open. Acceptance of a pull request is not required for the wizard. A request is one defect, one repository, taken from clean current upstream. The wizard, its options file, and its DLL copies stay out of every request.
 
 ---
 
@@ -41,27 +41,27 @@ The request is the third form. Copying that same Code::Blocks MinGW tree to `D:\
 
 ---
 
-## 3. Next — OGRE GLSupport module lookups
+## 3. Merged — OGRE GLSupport module lookups
 
-One follow-up pull request. Two files. Same repository as the config-dialog request, and a different request.
+[OGRE PR #3832](https://github.com/OGRECave/ogre/pull/3832) is merged to `master` as `078e5858e0a614a350d32f8144f8c1c9765a1271`. It is the follow-up to #3823. Two files, two commits:
 
 ```text
-RenderSystems/GLSupport/src/win32/OgreWin32Window.cpp
 RenderSystems/GLSupport/src/win32/OgreWin32GLSupport.cpp
+RenderSystems/GLSupport/src/win32/OgreWin32Window.cpp
 ```
 
-`OgreGLSupport` is a static library linked into `RenderSystem_GL.dll`, `RenderSystem_GL3Plus.dll`, and `RenderSystem_GLES2.dll`. The MinGW lines still name one DLL:
+`OgreGLSupport` is a static library linked into `RenderSystem_GL.dll`, `RenderSystem_GL3Plus.dll`, and `RenderSystem_GLES2.dll`. The MinGW lines named one DLL each:
 
 ```text
-OgreWin32Window.cpp       GetModuleHandle("GLSupport.dll")
 OgreWin32GLSupport.cpp    GetModuleHandle("RenderSystem_GL3Plus.dll")
+OgreWin32Window.cpp       GetModuleHandle("GLSupport.dll")
 ```
 
-There is no `GLSupport.dll`. `RenderSystem_GL3Plus.dll` is the right image only for a default-named GL3Plus plugin. The same object code is linked into the other two plugins, so one filename cannot name the module in every case. `GetModuleHandleEx` with `GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS` returns the module that contains the code. Use `static const TCHAR staticVar = 0`, as in the config-dialog request.
+There is no `GLSupport.dll`, so that lookup returned `NULL`. `RenderSystem_GL3Plus.dll` is the right image only when that plugin is the one executing the code. The merged change uses the same address lookup as #3823, with `static const TCHAR staticVar = 0`.
 
-Leave `RenderSystems/Direct3D9/src/OgreD3D9Plugin.cpp` out. `RenderSystem_Direct3D9.dll` still matches the target that contains that file. A later rename would be safer with the same call. That is not this defect.
+The tested loads did not fail before the change. A wrong or null module handle still registered the dummy window class and still created a 320×240 window. The request corrects the module identity. `RenderSystems/Direct3D9/src/OgreD3D9Plugin.cpp` stayed out: `RenderSystem_Direct3D9.dll` is the module that contains that file. The config-dialog file, the resource script, and CMake stayed out.
 
-Also leave the config-dialog file, the resource script, and CMake out. `OgreWin32EGLWindow.cpp`, `OgreD3D11RenderWindow.cpp`, and `OgreVulkanWindow.cpp` already use the address lookup.
+The wizard pin is still `v14.6.3`, which does not contain this merge. No local patch was added for it.
 
 ---
 
@@ -73,7 +73,7 @@ Also leave the config-dialog file, the resource script, and CMake out. `OgreWin3
 
 ## 5. Local only
 
-These solved a Windows run. They were not part of the merged config-dialog request, and they are not added to the open Assimp request or the GLSupport follow-up.
+These solved a Windows run. They were not part of the merged OGRE requests, and they are not added to the open Assimp request.
 
 | Local choice | Why it stays here |
 |---|---|
@@ -90,9 +90,9 @@ These solved a Windows run. They were not part of the merged config-dialog reque
 
 ```text
 [done]  OGRE config-dialog pull request #3823 merged to master
+[done]  OGRE GLSupport pull request #3832 merged to master
 [done]  Assimp ccache pull request #7057 submitted
 [done]  OGRE pull request #3788 already open for sidecar paths
-[next]  Prepare and test the OGRE GLSupport follow-up
 [later] Retire a local patch only when its dependency pin moves to a release that contains the fix
 ```
 

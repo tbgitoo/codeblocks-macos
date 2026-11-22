@@ -1,184 +1,1108 @@
 OGRE - MinGW module handle in OgreWin32GLSupport.cpp
 
+
+
 STATUS
 
-Reproducer identified, not yet run.
 
-This is a separate follow-up to OGRE PR #3823. Start with OgreWin32GLSupport.cpp only. OgreWin32Window.cpp can be tested separately afterward.
+
+Initial GL-only reproducer completed.
+
+
+
+The GL-only test established that RenderSystem\_GL.dll can execute
+
+Win32GLSupport::initialiseWGL() while RenderSystem\_GL3Plus.dll is absent.
+
+
+
+In that configuration, the current MinGW lookup:
+
+
+
+GetModuleHandle("RenderSystem\_GL3Plus.dll")
+
+
+
+returns NULL, yet the temporary OgreWglDummy window is still created
+
+successfully and WGL/FSAA enumeration completes.
+
+
+
+Therefore NULL alone has not produced an observable failure.
+
+
+
+The next test targets the more significant case where both render-system DLLs
+
+exist and the current code obtains a valid handle to the wrong module.
+
+
+
+This remains a separate follow-up to OGRE PR #3823.
+
+
+
+Start with OgreWin32GLSupport.cpp only.
+
+
+
+OgreWin32Window.cpp can be tested separately afterward.
+
+
+
+
 
 TEST ENVIRONMENT
 
-Use the same MSYS2 MinGW64 environment used for the previous OGRE config-dialog test.
+
+
+Use the same MSYS2 MinGW64 environment used for the previous OGRE tests.
+
+
 
 Run from Command Prompt:
 
-set "MSYS_MINGW=D:\msys64\mingw64" 
-set "PATH=%MSYS_MINGW%\bin;D:\Program Files\CMake\bin;%SystemRoot%\system32;%SystemRoot%"
+
+
+set "MSYS\_MINGW=D:\\msys64\\mingw64"
+
+set "PATH=%MSYS\_MINGW%\\bin;D:\\Program Files\\CMake\\bin;%SystemRoot%\\system32;%SystemRoot%"
+
+
 
 Verify the toolchain:
 
-where gcc 
-where g++ 
-where mingw32-make 
+
+
+where gcc
+
+where g++
+
+where mingw32-make
+
 where windres
 
-gcc --version gcc -dumpmachine
+
+
+gcc --version
+
+gcc -dumpmachine
+
+
 
 Expected compiler:
 
-GCC 15.2.0 target x86_64-w64-mingw32
+
+
+GCC 15.2.0
+
+target x86\_64-w64-mingw32
+
+
+
+
 
 PROBLEM
 
+
+
 OgreWin32GLSupport.cpp contains a MinGW-specific lookup:
 
-GetModuleHandle("RenderSystem_GL3Plus.dll")
 
-This lookup is used while creating the temporary Windows window class OgreWglDummy during OpenGL/WGL initialization.
 
-OgreWin32GLSupport.cpp is compiled into the static helper library OgreGLSupport.
+GetModuleHandle("RenderSystem\_GL3Plus.dll")
 
-That helper library is linked into several render-system DLLs:
 
-RenderSystem_GL.dll RenderSystem_GL3Plus.dll RenderSystem_GLES2.dll
 
-Therefore this code is not necessarily running from RenderSystem_GL3Plus.dll.
+The returned HINSTANCE is used for the temporary OgreWglDummy window class
 
-For example, when RenderSystem_GL.dll is loaded, this copy of OgreWin32GLSupport.cpp is inside RenderSystem_GL.dll, but the MinGW code still asks Windows for:
+created by Win32GLSupport::initialiseWGL():
 
-GetModuleHandle("RenderSystem_GL3Plus.dll")
 
-The hard-coded DLL name is therefore not generally correct.
 
-The mismatch may be latent rather than producing a visible application failure because the returned handle is used only for the temporary OgreWglDummy window.
+dummyClass.hInstance = hinst;
 
-REPRODUCER
 
-The reproducer deliberately builds the legacy OpenGL renderer but not GL3Plus or GLES2.
 
-This creates a particularly clean test:
+RegisterClass(\&dummyClass);
 
-RenderSystem_GL.dll exists. RenderSystem_GL3Plus.dll does not exist.
 
-Configure from the OGRE repository root:
+
+CreateWindow(
+
+&#x20;   dummyText,
+
+&#x20;   dummyText,
+
+&#x20;   WS\_POPUP | WS\_CLIPCHILDREN,
+
+&#x20;   0, 0, 32, 32,
+
+&#x20;   0, 0,
+
+&#x20;   hinst,
+
+&#x20;   0);
+
+
+
+...
+
+
+
+UnregisterClass(dummyText, hinst);
+
+
+
+OgreWin32GLSupport.cpp is compiled into the static helper library
+
+OgreGLSupport.
+
+
+
+That helper is linked into multiple render-system DLLs, including:
+
+
+
+RenderSystem\_GL.dll
+
+RenderSystem\_GL3Plus.dll
+
+RenderSystem\_GLES2.dll
+
+
+
+Therefore the code executing Win32GLSupport::initialiseWGL() is not
+
+necessarily located in RenderSystem\_GL3Plus.dll.
+
+
+
+
+
+ALREADY ESTABLISHED: GL-ONLY CASE
+
+
+
+A previous external test built and loaded:
+
+
+
+RenderSystem\_GL.dll
+
+
+
+without:
+
+
+
+RenderSystem\_GL3Plus.dll
+
+
+
+The host successfully reached Win32GLSupport initialization and reported WGL
+
+FSAA modes:
+
+
+
+FSAA \[ 0] \[ 2] \[ 4] \[ 8] \[16]
+
+
+
+The host also established:
+
+
+
+RenderSystem\_GL.dll: loaded
+
+RenderSystem\_GL3Plus.dll: not loaded
+
+
+
+Therefore the hard-coded lookup in this configuration returns NULL.
+
+
+
+Despite that, WGL initialization succeeds.
+
+
+
+This means that simply demonstrating:
+
+
+
+GetModuleHandle("RenderSystem\_GL3Plus.dll") -> NULL
+
+
+
+is not sufficient to establish an observable defect.
+
+
+
+
+
+NEW REPRODUCER: BOTH DLLs PRESENT
+
+
+
+The next reproducer should build both:
+
+
+
+RenderSystem\_GL.dll
+
+RenderSystem\_GL3Plus.dll
+
+
+
+The important test case is:
+
+
+
+1\. RenderSystem\_GL3Plus.dll is loaded.
+
+2\. RenderSystem\_GL.dll is also loaded.
+
+3\. Win32GLSupport::initialiseWGL() executes from the copy of
+
+&#x20;  OgreWin32GLSupport.cpp linked into RenderSystem\_GL.dll.
+
+4\. The current MinGW code nevertheless obtains:
+
+
+
+&#x20;  GetModuleHandle("RenderSystem\_GL3Plus.dll")
+
+
+
+5\. Because GL3Plus is now loaded, this lookup returns a valid HINSTANCE.
+
+
+
+However, it is the HINSTANCE of:
+
+
+
+RenderSystem\_GL3Plus.dll
+
+
+
+rather than the DLL containing the currently executing copy of
+
+OgreWin32GLSupport.cpp:
+
+
+
+RenderSystem\_GL.dll
+
+
+
+This creates the test condition:
+
+
+
+executing code:
+
+RenderSystem\_GL.dll
+
+
+
+dummyWndProc:
+
+RenderSystem\_GL.dll
+
+
+
+WNDCLASS.hInstance:
+
+RenderSystem\_GL3Plus.dll
+
+
+
+CreateWindow hInstance:
+
+RenderSystem\_GL3Plus.dll
+
+
+
+
+
+BUILD CONFIGURATION
+
+
+
+Configure OGRE with both legacy GL and GL3Plus enabled.
+
+
+
+From the OGRE repository root:
+
+
 
 cmake -S . -B build-glsupport ^
- -G "MinGW Makefiles" ^
- -DCMAKE_BUILD_TYPE=Release ^
- -DCMAKE_MAKE_PROGRAM=mingw32-make.exe ^
- -DCMAKE_C_COMPILER=gcc.exe ^
- -DCMAKE_CXX_COMPILER=g++.exe ^
- -DCMAKE_RC_COMPILER=windres.exe ^
- -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=OFF ^
- -DOGRE_BUILD_RENDERSYSTEM_GLES2=OFF ^
- -DOGRE_BUILD_SAMPLES=OFF ^
- -DOGRE_BUILD_TESTS=OFF ^
- -DOGRE_BUILD_TOOLS=OFF
 
-Build the legacy OpenGL renderer:
+\-G "MinGW Makefiles" ^
 
-cmake --build build-glsupport --target RenderSystem_GL --parallel 4
+\-DCMAKE\_BUILD\_TYPE=Release ^
 
-Verify that the result contains:
+\-DCMAKE\_MAKE\_PROGRAM=mingw32-make.exe ^
 
-build-glsupport\bin\RenderSystem_GL.dll
+\-DCMAKE\_C\_COMPILER=gcc.exe ^
 
-and does not contain:
+\-DCMAKE\_CXX\_COMPILER=g++.exe ^
 
-build-glsupport\bin\RenderSystem_GL3Plus.dll
+\-DCMAKE\_RC\_COMPILER=windres.exe ^
+
+\-DOGRE\_BUILD\_RENDERSYSTEM\_GL3PLUS=ON ^
+
+\-DOGRE\_BUILD\_RENDERSYSTEM\_GLES2=OFF ^
+
+\-DOGRE\_BUILD\_SAMPLES=OFF ^
+
+\-DOGRE\_BUILD\_TESTS=OFF ^
+
+\-DOGRE\_BUILD\_TOOLS=OFF
+
+
+
+Build both render systems:
+
+
+
+cmake --build build-glsupport --target RenderSystem\_GL --parallel 4
+
+
+
+cmake --build build-glsupport --target RenderSystem\_GL3Plus --parallel 4
+
+
+
+Verify:
+
+
+
+build-glsupport\\bin\\RenderSystem\_GL.dll
+
+
+
+exists.
+
+
+
+Verify:
+
+
+
+build-glsupport\\bin\\RenderSystem\_GL3Plus.dll
+
+
+
+exists.
+
+
+
+
 
 TEMPORARY TEST HOST
 
-Create a small temporary host outside the tracked source tree, for example:
 
-build-glsupport\glsupport-ab\
 
-The host should construct Ogre::Root and load only:
+Use the existing disposable external test area:
 
-build-glsupport\bin\RenderSystem_GL.dll
 
-Do not load RenderSystem_GL3Plus.dll.
 
-Loading RenderSystem_GL.dll reaches:
+build-glsupport\\glsupport-ab\\
 
-Win32GLSupport::initialiseWGL()
 
-A/B CHECK
 
-Temporarily add diagnostics inside Win32GLSupport::initialiseWGL().
+Do not add the host to the OGRE source tree.
 
-The diagnostic code is only for the experiment. It must not remain in the proposed patch.
 
-A. CURRENT HARD-CODED LOOKUP
 
-Current MinGW code:
+Do not commit the host.
 
-GetModuleHandle("RenderSystem_GL3Plus.dll")
 
-Use GetModuleFileName() or an equivalent temporary diagnostic to inspect the returned handle.
 
-Because RenderSystem_GL3Plus.dll was deliberately not built or loaded, the expected result is:
+Do not add diagnostic changes to tracked OGRE source.
 
-GetModuleHandle("RenderSystem_GL3Plus.dll") -> NULL
 
-At the same time, the code being executed is inside:
 
-RenderSystem_GL.dll
+The host should construct Ogre::Root and explicitly load both plugins.
 
-B. ADDRESS-BASED LOOKUP
 
-Test:
 
-static const TCHAR staticVar = 0;
+Load RenderSystem\_GL3Plus.dll first.
 
-GetModuleHandleEx( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, &staticVar, &hinst);
 
-Use GetModuleFileName() temporarily to inspect hinst.
+
+Then load RenderSystem\_GL.dll.
+
+
+
+Do not rely on plugins.cfg.
+
+
+
+Report explicitly:
+
+
+
+OgreMain.dll:
+
+loaded/not loaded and path
+
+
+
+RenderSystem\_GL3Plus.dll:
+
+loaded/not loaded and path
+
+
+
+RenderSystem\_GL.dll:
+
+loaded/not loaded and path
+
+
+
+Enumerate the installed render systems afterward.
+
+
+
+
+
+EXTERNAL HANDLE CHECK
+
+
+
+The test host should reproduce the relevant Win32 module queries externally.
+
+
+
+After both DLLs are loaded, call:
+
+
+
+GetModuleHandle("RenderSystem\_GL3Plus.dll")
+
+
+
+and:
+
+
+
+GetModuleHandle("RenderSystem\_GL.dll")
+
+
+
+Use GetModuleFileName() to report the module corresponding to each returned
+
+handle.
+
+
 
 Expected result:
 
-GetModuleHandleEx(address in OgreWin32GLSupport.cpp) -> RenderSystem_GL.dll
 
-EXPECTED RESULT
 
-The experiment should establish:
+GetModuleHandle("RenderSystem\_GL3Plus.dll")
 
-Current hard-coded lookup:
+&#x20;   -> valid handle
 
-RenderSystem_GL3Plus.dll -> NULL
+&#x20;   -> RenderSystem\_GL3Plus.dll
 
-Address-based lookup:
 
-address in OgreWin32GLSupport.cpp -> RenderSystem_GL.dll
 
-This directly demonstrates the problem.
+GetModuleHandle("RenderSystem\_GL.dll")
 
-The code is executing from RenderSystem_GL.dll, but the MinGW-specific lookup assumes that the code belongs to RenderSystem_GL3Plus.dll.
+&#x20;   -> valid handle
 
-A visible crash or rendering failure is not required. The purpose of the test is to determine whether the hard-coded DLL name identifies the module actually containing the code.
+&#x20;   -> RenderSystem\_GL.dll
 
-PROPOSED PATCH
 
-Only after the reproducer confirms the expected result, modify:
 
-RenderSystems/GLSupport/src/win32/OgreWin32GLSupport.cpp
+This establishes that the current hard-coded lookup does not merely produce
 
-Remove the MinGW-specific hard-coded module-name lookup.
+NULL when legacy GL is active.
 
-Use the address-based GetModuleHandleEx implementation for MinGW as well.
+
+
+When GL3Plus is also present, the lookup can produce a valid handle to a
+
+different render-system DLL.
+
+
+
+
+
+ADDRESS-BASED EXTERNAL CHECK
+
+
+
+Obtain an address known to reside inside RenderSystem\_GL.dll, for example an
+
+exported plugin function.
+
+
 
 Use:
 
+
+
+GetModuleHandleEx(
+
+&#x20;   GET\_MODULE\_HANDLE\_EX\_FLAG\_FROM\_ADDRESS |
+
+&#x20;   GET\_MODULE\_HANDLE\_EX\_FLAG\_UNCHANGED\_REFCOUNT,
+
+&#x20;   address\_in\_RenderSystem\_GL,
+
+&#x20;   \&hinst);
+
+
+
+Use GetModuleFileName() to report the resulting module.
+
+
+
+Expected result:
+
+
+
+address in RenderSystem\_GL.dll
+
+&#x20;   -> RenderSystem\_GL.dll
+
+
+
+This does not prove that the exported function has the same address as data in
+
+OgreWin32GLSupport.cpp.
+
+
+
+It demonstrates the Windows FROM\_ADDRESS module-resolution mechanism using an
+
+address known to reside in the same final DLL.
+
+
+
+
+
+WINDOW-CLASS TEST
+
+
+
+Using only the external temporary test code, investigate whether a valid but
+
+incorrect HINSTANCE produces observable differences from the correct module
+
+handle.
+
+
+
+Test at least:
+
+
+
+A. hInstance = NULL
+
+
+
+B. hInstance = RenderSystem\_GL.dll
+
+
+
+C. hInstance = RenderSystem\_GL3Plus.dll while the WNDPROC resides in
+
+&#x20;  RenderSystem\_GL.dll or in a disposable external probe DLL
+
+
+
+For each case, record:
+
+
+
+RegisterClass return value
+
+GetLastError after failure
+
+CreateWindow return value
+
+GetLastError after failure
+
+DestroyWindow result
+
+UnregisterClass result
+
+GetLastError after failure
+
+
+
+Where useful, inspect the registered class using GetClassInfo or
+
+GetClassInfoEx.
+
+
+
+Do not infer a failure from an incorrect module identity alone.
+
+
+
+The purpose is to determine whether Windows exhibits any observable behavioral
+
+difference.
+
+
+
+
+
+SAME-CLASS / TWO-MODULE TEST
+
+
+
+Pay particular attention to the class name:
+
+
+
+OgreWglDummy
+
+
+
+Both copies of OgreWin32GLSupport.cpp use the same class name.
+
+
+
+Investigate the situation where both render-system DLLs are present and the
+
+current MinGW implementation associates both initializations with:
+
+
+
+RenderSystem\_GL3Plus.dll
+
+
+
+even when one initialization originates from RenderSystem\_GL.dll.
+
+
+
+Determine experimentally whether this can cause:
+
+
+
+ERROR\_CLASS\_ALREADY\_EXISTS
+
+
+
+class lookup ambiguity
+
+
+
+registration failure
+
+
+
+CreateWindow failure
+
+
+
+UnregisterClass failure
+
+
+
+one renderer interacting with a class registered by the other renderer
+
+
+
+different behavior depending on plugin initialization order
+
+
+
+Do not describe ERROR\_CLASS\_ALREADY\_EXISTS alone as a race or defect unless it
+
+causes an observable problem in a realistic OGRE call sequence.
+
+
+
+
+
+CONCURRENCY
+
+
+
+A previous investigation did not identify a meaningful OGRE race condition.
+
+
+
+Concurrent attempts to register the same class name can naturally produce
+
+registration contention.
+
+
+
+Do not make concurrency the primary justification for this change.
+
+
+
+Only report a race if an OGRE-reachable sequence produces an observable
+
+incorrect result that depends on timing.
+
+
+
+
+
+SEPARATE CLEANUP ISSUE
+
+
+
+The investigation identified an independent exception-safety issue:
+
+
+
+RegisterClass(\&dummyClass);
+
+
+
+HWND hwnd = CreateWindow(...);
+
+
+
+if (hwnd == NULL)
+
+&#x20;   OGRE\_EXCEPT(...);
+
+
+
+...
+
+
+
+UnregisterClass(dummyText, hinst);
+
+
+
+If RegisterClass succeeds but CreateWindow fails, the exception occurs before
+
+UnregisterClass.
+
+
+
+This can leave OgreWglDummy registered.
+
+
+
+Also, the return values from RegisterClass and UnregisterClass are currently
+
+ignored.
+
+
+
+This is a separate issue.
+
+
+
+Do not include cleanup changes in the module-handle patch unless testing shows
+
+that they are directly required to reproduce the module-handle problem.
+
+
+
+Record this as a possible separate follow-up.
+
+
+
+
+
+A/B SOURCE TEST
+
+
+
+Use the already committed module-handle fix for the source-level A/B test.
+
+
+
+Baseline:
+
+
+
+commit 972cdd1c6
+
+
+
+Fixed:
+
+
+
+branch fix-mingw-glsupport-module-handle
+
+
+
+For A:
+
+
+
+git switch --detach 972cdd1c6
+
+
+
+Rebuild the required render systems and run the same test host.
+
+
+
+For B:
+
+
+
+git switch fix-mingw-glsupport-module-handle
+
+
+
+Rebuild the same render systems and run exactly the same host.
+
+
+
+Do not modify tracked OGRE source during either test.
+
+
+
+
+
+BASELINE IMPLEMENTATION
+
+
+
+The baseline MinGW path uses:
+
+
+
+GetModuleHandle("RenderSystem\_GL3Plus.dll")
+
+
+
+With GL3Plus loaded, the important expected observation is:
+
+
+
+legacy GL code executing from:
+
+RenderSystem\_GL.dll
+
+
+
+hard-coded HINSTANCE:
+
+RenderSystem\_GL3Plus.dll
+
+
+
+
+
+FIXED IMPLEMENTATION
+
+
+
+The proposed implementation removes the MinGW-specific DLL-name lookup and
+
+uses the existing address-based mechanism:
+
+
+
 static const TCHAR staticVar = 0;
 
-The initializer is required because the tested MinGW GCC rejects an uninitialized static const TCHAR.
+
+
+GetModuleHandleEx(
+
+&#x20;   GET\_MODULE\_HANDLE\_EX\_FLAG\_FROM\_ADDRESS |
+
+&#x20;   GET\_MODULE\_HANDLE\_EX\_FLAG\_UNCHANGED\_REFCOUNT,
+
+&#x20;   \&staticVar,
+
+&#x20;   \&hinst);
+
+
+
+For the copy inside RenderSystem\_GL.dll, expected:
+
+
+
+hinst -> RenderSystem\_GL.dll
+
+
+
+For the copy inside RenderSystem\_GL3Plus.dll, expected:
+
+
+
+hinst -> RenderSystem\_GL3Plus.dll
+
+
+
+The initializer:
+
+
+
+= 0
+
+
+
+is required because the tested MinGW GCC rejects the uninitialized:
+
+
+
+static const TCHAR staticVar;
+
+
+
+
+
+SUCCESS CRITERIA
+
+
+
+There are two possible useful outcomes.
+
+
+
+Outcome 1: observable behavioral defect
+
+
+
+The wrong non-NULL module handle causes a reproducible OGRE-relevant problem,
+
+such as:
+
+
+
+registration failure
+
+window-creation failure
+
+class collision
+
+cleanup failure
+
+plugin-order-dependent behavior
+
+or another demonstrated Win32 side effect
+
+
+
+In that case, document the smallest reliable reproducer.
+
+
+
+
+
+Outcome 2: no observable behavioral defect
+
+
+
+Both NULL and incorrect non-NULL module handles are tolerated in the tested
+
+OgreWglDummy lifecycle.
+
+
+
+In that case, do not claim a runtime bug.
+
+
+
+The evidence would instead establish only that:
+
+
+
+the hard-coded lookup can identify the wrong module
+
+
+
+the address-based lookup identifies the actual containing module
+
+
+
+the current behavior happens to tolerate the mismatch
+
+
+
+The PR should then be presented as removal of an incorrect hard-coded
+
+assumption / code cleanup rather than as a fix for an observed failure.
+
+
+
+
+
+PROPOSED PATCH
+
+
+
+The patch is already committed on:
+
+
+
+fix-mingw-glsupport-module-handle
+
+
+
+The intended change is limited to:
+
+
+
+RenderSystems/GLSupport/src/win32/OgreWin32GLSupport.cpp
+
+
+
+Remove the MinGW-specific hard-coded module-name lookup.
+
+
+
+Use the address-based GetModuleHandleEx implementation for MinGW as well.
+
+
+
+Do not expand the patch based on speculative failure modes.
+
+
+
+
 
 OUT OF SCOPE
 
+
+
 Do not change:
 
-OgreWin32Window.cpp OgreD3D9Plugin.cpp OgreWIN32ConfigDialog.cpp CMake files
+
+
+OgreWin32Window.cpp
+
+OgreD3D9Plugin.cpp
+
+OgreWIN32ConfigDialog.cpp
+
+CMake files
+
+RegisterClass/UnregisterClass exception handling
+
+
 
 OgreWin32Window.cpp gets its own reproducer afterward.
 
-Only consider combining OgreWin32Window.cpp and OgreWin32GLSupport.cpp in one pull request after both have been independently tested and shown to have the same underlying module-lookup problem.
+
+
+The RegisterClass/CreateWindow exception-cleanup issue should be investigated
+
+separately.
+
+
+
+Only combine additional changes if independent reproducer evidence shows that
+
+they are genuinely part of the same defect.
+

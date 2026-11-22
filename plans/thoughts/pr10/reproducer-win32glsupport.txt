@@ -1,0 +1,375 @@
+
+# `Win32GLSupport` reproducer
+
+This reproducer exercises `Win32GLSupport::initialiseWGL()` without modifying or instrumenting OGRE source.
+
+Create the temporary test directory:
+
+```text
+build-glsupport/glsupport-ab/
+```
+
+The host links against the already-built `OgreMain` import library and is written to `build-glsupport/bin/`, beside `OgreMain.dll`.
+
+`Ogre::Root` is constructed with empty plugin and configuration filenames so that neither `plugins.cfg` nor `ogre.cfg` is read.
+
+`Root::loadPlugin()` is sufficient for this test: loading a render-system DLL invokes its exported `dllStartPlugin()`, which installs the render system. Construction of the render system constructs `Win32GLSupport`, whose constructor calls `initialiseWGL()` before `loadPlugin()` returns.
+
+## `CMakeLists.txt`
+
+Create:
+
+```text
+build-glsupport/glsupport-ab/CMakeLists.txt
+```
+
+with:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(glsupport_ab CXX)
+
+set(OGRE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(OGRE_BUILD "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+add_executable(glsupport_ab host.cpp)
+target_compile_features(glsupport_ab PRIVATE cxx_std_14)
+target_compile_definitions(glsupport_ab PRIVATE
+    _WIN32_WINNT=0x0501
+    NDEBUG
+    "GLSUPPORT_BIN_DIR=\"${OGRE_BUILD}/bin\"")
+target_include_directories(glsupport_ab PRIVATE
+    "${OGRE_ROOT}/OgreMain/include"
+    "${OGRE_BUILD}/include")
+target_link_libraries(glsupport_ab PRIVATE
+    "${OGRE_BUILD}/lib/libOgreMain.dll.a")
+
+# Sit beside OgreMain.dll. Windows loads that import from the executable directory.
+set_target_properties(glsupport_ab PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${OGRE_BUILD}/bin")
+```
+
+## `host.cpp`
+
+Create:
+
+```text
+build-glsupport/glsupport-ab/host.cpp
+```
+
+with:
+
+```cpp
+#include "OgreRoot.h"
+#include "OgreRenderSystem.h"
+
+#include <windows.h>
+
+#include <iostream>
+#include <string>
+
+static void printModule(const char* name)
+{
+    HMODULE module = GetModuleHandleA(name);
+    std::cout << name << ": ";
+    if (!module)
+    {
+        std::cout << "not loaded" << std::endl;
+        return;
+    }
+
+    char path[MAX_PATH];
+    DWORD length = GetModuleFileNameA(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        std::cout << "loaded, path unavailable" << std::endl;
+    else
+        std::cout << "loaded " << path << std::endl;
+}
+
+static std::string pluginPath(const std::string& name)
+{
+    if (name.find(':') != std::string::npos ||
+        name.find('\\') != std::string::npos ||
+        name.find('/') != std::string::npos)
+        return name;
+
+    return std::string(GLSUPPORT_BIN_DIR) + "/" + name;
+}
+
+static bool printFsaa(Ogre::RenderSystem* renderer)
+{
+    const Ogre::ConfigOptionMap& options = renderer->getConfigOptions();
+    Ogre::ConfigOptionMap::const_iterator fsaa = options.find("FSAA");
+
+    std::cout << "  FSAA";
+
+    if (fsaa == options.end() || fsaa->second.possibleValues.empty())
+    {
+        std::cout << " missing" << std::endl;
+        return false;
+    }
+
+    for (const Ogre::String& value : fsaa->second.possibleValues)
+        std::cout << " [" << value << "]";
+
+    std::cout << std::endl;
+    return true;
+}
+
+// Empty plugin and config names: do not read plugins.cfg or ogre.cfg.
+// Each loadPlugin() constructs that render system, which constructs
+// Win32GLSupport and therefore runs initialiseWGL() before loadPlugin()
+// returns.
+
+int main(int argc, char** argv)
+{
+    std::string firstName =
+        argc >= 2 ? argv[1] : "RenderSystem_GL3Plus.dll";
+    std::string secondName =
+        argc >= 3 ? argv[2] : "RenderSystem_GL.dll";
+
+    const std::string first = pluginPath(firstName);
+    const std::string second = pluginPath(secondName);
+
+    std::cout << "order " << firstName
+              << " then " << secondName << std::endl;
+
+    try
+    {
+        Ogre::Root root("", "", "glsupport-ab.log");
+
+        std::cout << "loading " << first << std::endl;
+        root.loadPlugin(first);
+
+        std::cout << "loading " << second << std::endl;
+        root.loadPlugin(second);
+
+        printModule("OgreMain.dll");
+        printModule("RenderSystem_GL.dll");
+        printModule("RenderSystem_GL3Plus.dll");
+
+        // dllStartPlugin is an export of RenderSystem_GL.dll. It is not
+        // the static variable inside OgreWin32GLSupport.cpp. It only shows
+        // which final DLL contains an address belonging to RenderSystem_GL.dll.
+        HMODULE glModule =
+            GetModuleHandleA("RenderSystem_GL.dll");
+
+        FARPROC pluginEntry =
+            glModule ? GetProcAddress(glModule, "dllStartPlugin") : NULL;
+
+        std::cout << "RenderSystem_GL dllStartPlugin: "
+                  << reinterpret_cast<const void*>(pluginEntry)
+                  <* std::endl;
+
+        HMODULE addre*sModule = NULL;
+
+        if (plugi*Entry &&
+            GetModuleHand*eExA(
+                GET_MODULE_H*NDLE_EX_FLAG_FROM_ADDRESS |
+      *             GET_MODULE_HANDLE_EX_*LAG_UNCHANGED_REFCOUNT,
+          *     reinterpret_cast<LPCSTR>(pluginEntry),
+                &addressModule))
+        {
+            char path[MAX_PATH];
+            DWORD length =
+                GetModuleFileNameA(addressModule, path, MAX_PATH);
+
+            std::cout
+                << "FROM_ADDRESS module: "
+                << (length > 0 && length < MAX_PATH
+                        ? path
+                        : "(path unavailable)")
+                << std::endl;
+        }
+        else
+        {
+            std::cout << "FROM_ADDRESS module: lookup failed"
+                      << std::endl;
+        }
+
+        const Ogre::RenderSystemList& renderers =
+            root.getAvailableRenderers();
+
+        std::cout << "renderers " << renderers.size() << std::endl;
+
+        bool fsaaOk = !renderers.empty();
+
+        for (Ogre::RenderSystem* renderer : renderers)
+        {
+            std::cout << "  " << renderer->getName() << std::endl;
+            fsaaOk = printFsaa(renderer) && fsaaOk;
+        }
+
+        std::cout << "both plugins returned" << std::endl;
+
+        return renderers.size() == 2 && fsaaOk ? 0 : 2;
+    }
+    catch (const Ogre::Exception& e)
+    {
+        std::cerr << "Ogre::Exception: "
+                  << e.getFullDescription()
+                  << std::endl;
+        return 1;
+    }
+}
+```
+
+## Build prerequisites
+
+From the OGRE repository root:
+
+```bat
+set "MSYS_MINGW=D:\msys64\mingw64"
+set "PATH=%MSYS_MINGW%\bin;D:\Program Files\CMake\bin;%SystemRoot%\system32;%SystemRoot%"
+```
+
+The tested toolchain was:
+
+```text
+GCC 15.2.0
+x86_64-w64-mingw32
+```
+
+Configure the build with both render systems enabled if necessary:
+
+```bat
+cmake -S . -B build-glsupport ^
+  -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=ON
+```
+
+Build both:
+
+```bat
+cmake --build build-glsupport --target RenderSystem_GL --parallel 4
+cmake --build build-glsupport --target RenderSystem_GL3Plus --parallel 4
+```
+
+Verify:
+
+```bat
+dir build-glsupport\bin\RenderSystem_GL.dll
+dir build-glsupport\bin\RenderSystem_GL3Plus.dll
+```
+
+## Configure and build the reproducer
+
+```bat
+cmake -S build-glsupport\glsupport-ab ^
+      -B build-glsupport\glsupport-ab\build ^
+      -G "MinGW Makefiles" ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_CXX_COMPILER="%MSYS_MINGW%\bin\g++.exe"
+
+cmake --build build-glsupport\glsupport-ab\build ^
+      --target glsupport_ab ^
+      --parallel 4
+```
+
+The executable is written to:
+
+```text
+build-glsupport\bin\glsupport_ab.exe
+```
+
+## Run GL3Plus first
+
+```bat
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL3Plus.dll RenderSystem_GL.dll
+```
+
+This is the important wrong-valid-handle case.
+
+When the second plugin (`RenderSystem_GL.dll`) constructs its `Win32GLSupport`, the baseline MinGW implementation asks for:
+
+```cpp
+GetModuleHandle("RenderSystem_GL3Plus.dll")
+```
+
+GL3Plus is already loaded, so the lookup identifies `RenderSystem_GL3Plus.dll`, although this copy of the GL support code is in `RenderSystem_GL.dll`.
+
+Expected functional result on the tested system:
+
+```text
+renderers 2
+  OpenGL 3+ Rendering Subsystem
+  FSAA [ 0] [ 2] [ 4] [ 8] [16]
+  OpenGL Rendering Subsystem
+  FSAA [ 0] [ 2] [ 4] [ 8] [16]
+both plugins returned
+```
+
+The process exits with code `0`.
+
+## Run legacy GL first
+
+```bat
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL.dll RenderSystem_GL3Plus.dll
+```
+
+When legacy GL constructs `Win32GLSupport`, GL3Plus is not yet loaded. The baseline hard-coded lookup therefore returns `NULL`.
+
+Expected functional result on the tested system:
+
+```text
+renderers 2
+  OpenGL Rendering Subsystem
+  FSAA [ 0] [ 2] [ 4] [ 8] [16]
+  OpenGL 3+ Rendering Subsystem
+  FSAA [ 0] [ 2] [ 4] [ 8] [16]
+both plugins returned
+```
+
+The process again exits with code `0`.
+
+## A/B procedure
+
+The baseline used for this investigation is:
+
+```text
+972cdd1c6
+```
+
+The first fix commit is:
+
+```text
+5454aa3fb
+```
+
+### Baseline
+
+```bat
+git switch --detach 972cdd1c6
+
+cmake --build build-glsupport --target RenderSystem_GL --parallel 4
+cmake --build build-glsupport --target RenderSystem_GL3Plus --parallel 4
+
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL3Plus.dll RenderSystem_GL.dll
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL.dll RenderSystem_GL3Plus.dll
+```
+
+### Fixed `OgreWin32GLSupport.cpp`
+
+Because `^` is an escape/continuation character in `cmd.exe`, use the explicit commit hash:
+
+```bat
+git switch --detach 5454aa3fb
+
+cmake --build build-glsupport --target RenderSystem_GL --parallel 4
+cmake --build build-glsupport --target RenderSystem_GL3Plus --parallel 4
+
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL3Plus.dll RenderSystem_GL.dll
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL.dll RenderSystem_GL3Plus.dll
+```
+
+The same host binary is used for baseline and fixed runs.
+
+Observed results:
+
+```text
+Baseline, GL3Plus -> GL    both renderers installed, FSAA OK, exit 0
+Baseline, GL -> GL3Plus    both renderers installed, FSAA OK, exit 0
+Fixed,    GL3Plus -> GL    both renderers installed, FSAA OK, exit 0
+Fixed,    GL -> GL3Plus    both renderers installed, FSAA OK, exit 0
+```
+
+The reproducer therefore demonstrates the module-identity mismatch, but does not reproduce a runtime failure.
