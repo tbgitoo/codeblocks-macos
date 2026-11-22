@@ -105,13 +105,60 @@ OgreToolsAvailability LocateOgreTools()
     }
 #endif // __WXOSX__
 
+#ifdef __WXMSW__
+    wxString local;
+
+    if (wxGetEnv(wxT("LOCALAPPDATA"), &local) &&
+        !local.IsEmpty())
+    {
+        wxFileName root = wxFileName::DirName(local);
+        root.AppendDir(wxT("codeblocks"));
+        root.AppendDir(wxT("ogre-14.6.3"));
+
+        result.managedPrefix = root.GetFullPath();
+
+        while (result.managedPrefix.Length() > 3 &&
+               (result.managedPrefix.EndsWith(wxT("\\")) ||
+                result.managedPrefix.EndsWith(wxT("/"))))
+        {
+            result.managedPrefix.RemoveLast();
+        }
+
+        result.toolsDirectory =
+            result.managedPrefix
+            + wxFILE_SEP_PATH + wxT("bin");
+
+        if (wxFileName::DirExists(
+                result.toolsDirectory))
+        {
+            result.assimpConverter =
+                ExistingExecutable(
+                    result.toolsDirectory,
+                    wxT("OgreAssimpConverter.exe"));
+
+            result.sampleBrowser =
+                ExistingExecutable(
+                    result.toolsDirectory,
+                    wxT("SampleBrowser.exe"));
+        }
+        else
+        {
+            result.toolsDirectory.Clear();
+        }
+    }
+#endif // __WXMSW__
+
     // PATH is deliberately lower priority than the managed installation.
     // Only command-line tools use PATH fallback.
     if (result.assimpConverter.IsEmpty())
     {
+#ifdef __WXMSW__
+        const wxChar* converterName = wxT("OgreAssimpConverter.exe");
+#else
+        const wxChar* converterName = wxT("OgreAssimpConverter");
+#endif
         result.assimpConverter =
-            FindExecutableOnPath(
-                wxT("OgreAssimpConverter"));
+            FindExecutableOnPath(converterName);
     }
 
     return result;
