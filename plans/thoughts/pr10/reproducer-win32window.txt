@@ -1,0 +1,457 @@
+`Win32Window` reproducer
+
+`loadPlugin()` does not reach `Win32Window::create()`. The host in this appendix extends the Appendix A program with a third argument, `GL` or `GL3Plus`, then:
+
+1. loads both plugins in the requested order;
+2. selects that render system;
+3. calls `Root::initialise(false)`;
+4. calls `Root::createRenderWindow()` for one 320x240 windowed window titled `OgreWin32Window module-handle test`;
+5. reads the native `HWND` and client size;
+6. destroys the window with `Root::destroyRenderTarget()`.
+
+That call chain is:
+
+```text
+Root::createRenderWindow
+ -> GLRenderSystem::_createRenderWindow
+    or GL3PlusRenderSystem::_createRenderWindow
+ -> Win32GLSupport::newWindow
+ -> Win32Window::create
+```
+
+The lookup inside `create()` is `GetModuleHandle("GLSupport.dll")` on this Release build. The host also prints `GetModuleHandle("GLSupport.dll")`. In the tested shared build that module is not loaded, so the lookup is `NULL` for every order and both renderers.
+
+`dllStartPlugin` is still only an export of the render-system DLL. It is not an address inside `OgreWin32Window.cpp`.
+
+## `host.cpp`
+
+Replace `build-glsupport/glsupport-ab/host.cpp` with:
+
+```cpp
+#include "OgreRoot.h"
+#include "OgreRenderSystem.h"
+#include "OgreRenderWindow.h"
+
+#include <windows.h>
+
+#include <iostream>
+#include <string>
+
+static void printModule(const char* name)
+{
+    HMODULE module = GetModuleHandleA(name);
+    std::cout << name << ": " << static_cast<const void*>(module);
+    if (!module)
+    {
+        std::cout << " not loaded" << std::endl;
+        return;
+    }
+
+    char path[MAX_PATH];
+    DWORD length = GetModuleFileNameA(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        std::cout << " loaded, path unavailable" << std::endl;
+    else
+        std::cout << " loaded " << path << std::endl;
+}
+
+static void printFromAddress(const char* dllName)
+{
+    HMODULE module = GetModuleHandleA(dllName);
+    FARPROC entry = module ? GetProcAddress(module, "dllStartPlugin") : NULL;
+    std::cout << dllName << " dllStartPlugin: " << reinterpret_cast<const void*>(entry) << std::endl;
+    std::cout << dllName << " FROM_ADDRESS: ";
+    HMODULE owner = NULL;
+    if (!entry || !GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(entry),
+            &owner))
+    {
+        std::cout << "lookup failed" << std::endl;
+        return;
+    }
+    char path[MAX_PATH];
+    DWORD length = GetModuleFileNameA(owner, path, MAX_PATH);
+    std::cout << (length > 0 && length < MAX_PATH ? path : "(path unavailable)") << std::endl;
+}
+
+static std::string pluginPath(const std::string& name)
+{
+    if (name.find(':') != std::string::npos || name.find('\\') != std::string::npos || name.find('/') != std::string::npos)
+        return name;
+    return std::string(GLSUPPORT_BIN_DIR) + "/" + name;
+}
+
+static Ogre::RenderSystem* selectRenderer(Ogre::Root& root, const std::string& which)
+{
+    const Ogre::RenderSystemList& renderers = root.getAvailableRenderers();
+    std::cout << "renderers " << renderers.size() << std::endl;
+    Ogre::RenderSystem* selected = NULL;
+    for (Ogre::RenderSystem* renderer : renderers)
+    {
+        const Ogre::String& name = renderer->getName();
+        std::cout << "  " << name << std::endl;
+        const Ogre::ConfigOptionMap& options = renderer->getConfigOptions();
+        Ogre::ConfigOptionMap::const_iterator fsaa = options.find("FSAA");
+        std::cout << "  FSAA";
+        if (fsaa == options.end())
+            std::cout << " missing";
+        else
+        {
+            for (const Ogre::String& value : fsaa->second.possibleValues)
+                std::cout << " [" << value << "]";
+        }
+        std::cout << std::endl;
+
+        if (which == "GL3Plus" && name.find("OpenGL 3+") != Ogre::String::npos)
+            selected = renderer;
+        else if (which == "GL" && name == "OpenGL Rendering Subsystem")
+            selected = renderer;
+    }
+    return selected;
+}
+
+// dllStartPlugin is an export of the render-system DLL. It is not an address
+// inside OgreWin32Window.cpp. FROM_ADDRESS only identifies the final DLL that
+// contains that export.
+
+int main(int argc, char** argv)
+{
+    if (argc < 4)
+    {
+        std::cerr << "usage: glsupport_ab <first.dll> <second.dll> <GL|GL3Plus>" << std::endl;
+        return 2;
+    }
+
+    const std::string firstName = argv[1];
+    const std::string secondName = argv[2];
+    const std::string which = argv[3];
+    std::cout << "order " << firstName << " then " << secondName << std::endl;
+    std::cout << "window renderer " << which << std::endl;
+
+    try
+    {
+        Ogre::Root root("", "", "glsupport-ab.log");
+        std::cout << "loading " << pluginPath(firstName) << std::endl;
+        root.loadPlugin(pluginPath(firstName));
+        std::cout << "loading " << pluginPath(secondName) << std::endl;
+        root.loadPlugin(pluginPath(secondName));
+
+        printModule("OgreMain.dll");
+        printModule("RenderSystem_GL.dll");
+        printModule("RenderSystem_GL3Plus.dll");
+        printModule("GLSupport.dll");
+        printModule("GLSupport_d.dll");
+        printFromAddress("RenderSystem_GL.dll");
+        printFromAddress("RenderSystem_GL3Plus.dll");
+
+        Ogre::RenderSystem* renderer = selectRenderer(root, which);
+        if (!renderer)
+        {
+            std::cerr << "requested renderer not found" << std::endl;
+            return 2;
+        }
+        std::cout << "selected " << renderer->getName() << std::endl;
+        root.setRenderSystem(renderer);
+        Ogre::RenderWindow* autoWindow = root.initialise(false);
+        std::cout << "initialise " << (autoWindow ? "created auto window" : "ok") << std::endl;
+
+        Ogre::NameValuePairList params;
+        params["title"] = "OgreWin32Window module-handle test";
+        Ogre::RenderWindow* window = root.createRenderWindow(
+            "OgreWin32Window module-handle test", 320, 240, false, &params);
+        if (!window)
+        {
+            std::cerr << "createRenderWindow returned null" << std::endl;
+            return 3;
+        }
+
+        HWND hwnd = NULL;
+        window->getCustomAttribute("WINDOW", &hwnd);
+        RECT client;
+        BOOL clientOk = hwnd && GetClientRect(hwnd, &client);
+        std::cout << "window created" << std::endl;
+        std::cout << "HWND " << static_cast<const void*>(hwnd)
+                  << " IsWindow " << (hwnd && IsWindow(hwnd) ? 1 : 0) << std::endl;
+        std::cout << "ogre size " << window->getWidth() << "x" << window->getHeight() << std::endl;
+        if (clientOk)
+            std::cout << "client size " << (client.right - client.left) << "x" << (client.bottom - client.top) << std::endl;
+        else
+            std::cout << "client size unavailable error " << GetLastError() << std::endl;
+
+        root.destroyRenderTarget(window);
+        std::cout << "destroyRenderTarget done IsWindow " << (hwnd && IsWindow(hwnd) ? 1 : 0) << std::endl;
+        std::cout << "window test returned" << std::endl;
+        return 0;
+    }
+    catch (const Ogre::Exception& e)
+    {
+        std::cerr << "Ogre::Exception: " << e.getFullDescription() << std::endl;
+        return 1;
+    }
+}
+```
+
+The `CMakeLists.txt` from Appendix A still builds this executable. Rebuild it after replacing `host.cpp`:
+
+```bat
+cmake --build build-glsupport\glsupport-ab\build --target glsupport_ab --parallel 4
+```
+
+## Four real-window runs
+
+```bat
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL3Plus.dll RenderSystem_GL.dll GL
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL.dll RenderSystem_GL3Plus.dll GL
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL.dll RenderSystem_GL3Plus.dll GL3Plus
+build-glsupport\bin\glsupport_ab.exe RenderSystem_GL3Plus.dll RenderSystem_GL.dll GL3Plus
+```
+
+On the tested system, every run printed:
+
+```text
+GLSupport.dll: 0 not loaded
+GLSupport_d.dll: 0 not loaded
+initialise ok
+window created
+ogre size 320x240
+client size 320x240
+destroyRenderTarget done IsWindow 0
+window test returned
+```
+
+and exited with code `0`. The selected renderer was `OpenGL Rendering Subsystem` for `GL` and `OpenGL 3+ Rendering Subsystem` for `GL3Plus`. Plugin order did not change window creation or destruction.
+
+The same four commands were repeated after replacing the MinGW name lookup in `OgreWin32Window.cpp` with the address-based lookup. Both render-system DLLs were rebuilt first. All four runs again created and destroyed a 320x240 window and exited with code `0`.
+
+## `OgreGLWindow` class probe
+
+`Win32Window::create()` registers class `"OgreGLWindow"` with `CS_OWNDC`, `LoadIcon(NULL, IDI_APPLICATION)`, `LoadCursor(NULL, IDC_ARROW)`, a black brush, and window style `WS_VISIBLE | WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW`. The default procedure is `DefWindowProc`, which lives in `user32.dll`. `hInst` is local and is not stored. `destroy()` calls `DestroyWindow` and does not call `UnregisterClass`.
+
+The external probe repeats one register/create/destroy/unregister cycle for three instance values. It does not use the class name `OgreGLWindow`, so it does not collide with a live OGRE window. It needs a small disposable `probe.dll` only as the unrelated module in case C.
+
+Add these targets beside the host. `probe.cpp`:
+
+```cpp
+#include <windows.h>
+
+extern "C" __declspec(dllexport) LRESULT CALLBACK ProbeWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+```
+
+`win32_report.h` supplies the path, error, and `FROM_ADDRESS` helpers used by `class_ogrewindow.cpp`:
+
+```cpp
+#pragma once
+
+#include <windows.h>
+
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+inline std::string modulePath(HMODULE module)
+{
+    if (!module)
+        return "(null)";
+    char path[MAX_PATH];
+    DWORD length = GetModuleFileNameA(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        return "(path unavailable)";
+    return path;
+}
+
+inline HMODULE moduleFromAddress(const void* address)
+{
+    HMODULE module = NULL;
+    if (!address)
+        return NULL;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(address),
+            &module))
+        return NULL;
+    return module;
+}
+
+inline std::string win32Message(DWORD code)
+{
+    if (code == 0)
+        return "0";
+    char buffer[512];
+    DWORD length = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, code, 0, buffer, sizeof(buffer), NULL);
+    while (length > 0 && (buffer[length - 1] == '\r' || buffer[length - 1] == '\n'))
+        buffer[--length] = '\0';
+    std::ostringstream out;
+    out << code << " (0x" << std::hex << code << std::dec << ")";
+    if (length > 0)
+        out << " " << buffer;
+    return out.str();
+}
+
+inline std::string ptrText(const void* value)
+{
+    std::ostringstream out;
+    out << value;
+    return out.str();
+}
+
+class Report
+{
+public:
+    explicit Report(const std::string& path)
+        : mFile(path.c_str(), std::ios::out | std::ios::trunc)
+    {
+    }
+
+    void line(const std::string& text)
+    {
+        std::cout << text << std::endl;
+        if (mFile)
+            mFile << text << std::endl;
+    }
+
+    void section(const std::string& title)
+    {
+        line("");
+        line("== " + title);
+    }
+
+private:
+    std::ofstream mFile;
+};
+```
+
+`class_ogrewindow.cpp`:
+
+```cpp
+#include "win32_report.h"
+
+#include <cstring>
+#include <string>
+
+namespace
+{
+std::string exeDirectory()
+{
+    char path[MAX_PATH];
+    DWORD length = GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string full(path, length);
+    std::string::size_type slash = full.find_last_of("\\/");
+    return slash == std::string::npos ? "." : full.substr(0, slash);
+}
+
+void oneCycle(Report& report, const char* title, const char* className, HINSTANCE instance)
+{
+    WNDPROC proc = DefWindowProcA;
+    report.section(title);
+    report.line(std::string("class=") + className);
+    report.line("style=CS_OWNDC window=WS_VISIBLE|WS_CLIPCHILDREN|WS_OVERLAPPEDWINDOW");
+    report.line("wndproc=" + ptrText(reinterpret_cast<const void*>(proc))
+        + " wndproc_module=" + modulePath(moduleFromAddress(reinterpret_cast<const void*>(proc))));
+    report.line("hinst=" + ptrText(instance) + " hinst_module=" + modulePath(instance));
+
+    WNDCLASSA windowClass;
+    std::memset(&windowClass, 0, sizeof(windowClass));
+    windowClass.style = CS_OWNDC;
+    windowClass.lpfnWndProc = proc;
+    windowClass.hInstance = instance;
+    windowClass.hIcon = LoadIconA(NULL, IDI_APPLICATION);
+    windowClass.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    windowClass.lpszClassName = className;
+
+    SetLastError(0);
+    ATOM atom = RegisterClassA(&windowClass);
+    report.line(atom ? "RegisterClass ok" : "RegisterClass FAIL error=" + win32Message(GetLastError()));
+
+    SetLastError(0);
+    HWND hwnd = CreateWindowExA(0, className, "OgreWin32Window module-handle test",
+        WS_VISIBLE | WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 320, 240, NULL, NULL, instance, NULL);
+    report.line(hwnd ? "CreateWindowEx ok" : "CreateWindowEx FAIL error=" + win32Message(GetLastError()));
+
+    if (hwnd)
+    {
+        SetLastError(0);
+        report.line(DestroyWindow(hwnd) ? "DestroyWindow ok" : "DestroyWindow FAIL error=" + win32Message(GetLastError()));
+    }
+
+    SetLastError(0);
+    report.line(UnregisterClassA(className, instance)
+        ? "UnregisterClass ok"
+        : "UnregisterClass FAIL error=" + win32Message(GetLastError()));
+}
+}
+
+int main()
+{
+    std::string probePath = exeDirectory() + "\\probe.dll";
+    Report report(exeDirectory() + "\\class-ogrewindow.txt");
+    HMODULE probe = LoadLibraryA(probePath.c_str());
+    if (!probe)
+    {
+        report.line("LoadLibrary probe FAIL error=" + win32Message(GetLastError()));
+        return 2;
+    }
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    report.line("user32=" + modulePath(user32));
+    report.line("probe=" + modulePath(probe));
+    report.line("DefWindowProc is the default OgreWin32Window procedure and lives in user32.dll");
+
+    oneCycle(report, "A. NULL hinst", "OgreAbGLWindowNull", NULL);
+    oneCycle(report, "B. hinst is the module containing DefWindowProc", "OgreAbGLWindowUser", user32);
+    oneCycle(report, "C. hinst is another loaded DLL", "OgreAbGLWindowProbe", probe);
+    report.section("done");
+    return 0;
+}
+```
+
+Add the probe and this executable to the same `CMakeLists.txt`:
+
+```cmake
+add_library(probe SHARED probe.cpp)
+set_target_properties(probe PROPERTIES
+    OUTPUT_NAME "probe"
+    PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+add_executable(class_ogrewindow class_ogrewindow.cpp)
+target_compile_features(class_ogrewindow PRIVATE cxx_std_17)
+target_compile_definitions(class_ogrewindow PRIVATE _WIN32_WINNT=0x0501 WIN32_LEAN_AND_MEAN)
+target_link_libraries(class_ogrewindow PRIVATE user32 kernel32)
+set_target_properties(class_ogrewindow PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(class_ogrewindow probe)
+```
+
+Build and run:
+
+```bat
+cmake --build build-glsupport\glsupport-ab\build --target class_ogrewindow --parallel 4
+build-glsupport\glsupport-ab\build\class_ogrewindow.exe
+```
+
+Observed results:
+
+```text
+A. hInstance NULL
+   RegisterClass, CreateWindowEx, DestroyWindow, and UnregisterClass all succeeded.
+   This is the value the baseline MinGW lookup supplies.
+
+B. hInstance = user32.dll, the module that contains DefWindowProc
+   RegisterClass failed with error 87, "The parameter is incorrect."
+   CreateWindowEx failed with error 1407, "Cannot find window class."
+   UnregisterClass failed with error 1411, "Class does not exist."
+   OGRE does not pass user32.dll as the class instance.
+
+C. hInstance = probe.dll, a different loaded DLL, with DefWindowProc as the procedure
+   RegisterClass, CreateWindowEx, DestroyWindow, and UnregisterClass all succeeded.
+```
+
+Case A agrees with the four OGRE window runs: a `NULL` instance still creates and destroys the window. Case B is not an OGRE result. Case C shows that a valid handle for another DLL also completes this one-window sequence when the procedure is `DefWindowProc`.

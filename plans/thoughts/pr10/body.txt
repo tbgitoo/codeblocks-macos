@@ -1,0 +1,221 @@
+## Summary
+
+Follow-up to #3823 and the discussion of similar MinGW-specific module-handle branches in the Win32 GL support code.
+
+`OgreGLSupport` is a static helper library linked into multiple render-system DLLs. However, two MinGW-specific code paths determine their module instance using hard-coded DLL names:
+
+```cpp
+// OgreWin32GLSupport.cpp
+GetModuleHandle("RenderSystem_GL3Plus.dll")
+
+// OgreWin32Window.cpp
+GetModuleHandle("GLSupport.dll")
+```
+
+Neither assumption reliably identifies the module containing the executing code:
+
+- `OgreWin32GLSupport.cpp` may be executing from `RenderSystem_GL.dll`, while the lookup names `RenderSystem_GL3Plus.dll`.
+- `OgreWin32Window.cpp` asks for `GLSupport.dll`, but `OgreGLSupport` is a static library in this build and no such DLL is produced.
+
+This PR removes both MinGW-specific name lookups and uses the existing address-based module lookup instead:
+
+```cpp
+static const TCHAR staticVar = 0;
+GetModuleHandleEx(
+    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+    &staticVar, &hinst);
+```
+
+This lets Windows identify the module containing each copy of the GL support code rather than assuming a particular DLL name.
+
+The initializer `= 0` is required because GCC 15.2.0 rejects the uninitialized `static const TCHAR` used by the existing non-MinGW path.
+
+The two changes are kept as separate commits because they have independent reproduction paths.
+
+
+## Test environment
+
+Tested with MSYS2 MinGW64:
+
+```text
+GCC 15.2.0
+target: x86_64-w64-mingw32
+```
+
+Both render systems were built:
+
+```bat
+cmake --build build-glsupport --target RenderSystem_GL --parallel 4
+cmake --build build-glsupport --target RenderSystem_GL3Plus --parallel 4
+```
+
+Testing used an external host under `build-glsupport/glsupport-ab/`; no diagnostic instrumentation was added to the OGRE sources.
+
+
+## Commit 1: `OgreWin32GLSupport.cpp`
+
+`Win32GLSupport::initialiseWGL()` creates the temporary `OgreWglDummy` window used for WGL capability probing.
+
+On MinGW, the baseline obtains its `HINSTANCE` using:
+
+```cpp
+GetModuleHandle("RenderSystem_GL3Plus.dll")
+```
+
+The external host loaded `RenderSystem_GL.dll` and `RenderSystem_GL3Plus.dll` in both possible orders.
+
+### GL3Plus -> GL
+
+When GL3Plus is loaded first, initialization of the legacy GL renderer executes the lookup from the copy of `OgreWin32GLSupport.cpp` contained in `RenderSystem_GL.dll`.
+
+The lookup succeeds, but returns the handle for:
+
+```text
+RenderSystem_GL3Plus.dll
+```
+
+Thus the code and `dummyWndProc` are in `RenderSystem_GL.dll`, while the `HINSTANCE` supplied to the temporary window class identifies `RenderSystem_GL3Plus.dll`.
+
+### GL -> GL3Plus
+
+When legacy GL is loaded first, GL3Plus is not yet loaded and the same lookup returns:
+
+```text
+NULL
+```
+
+### Result
+
+Both cases nevertheless succeed.
+
+Both renderers install, WGL initialization completes, both report:
+
+```text
+FSAA [ 0] [ 2] [ 4] [ 8] [16]
+```
+
+and shutdown exits with code `0`.
+
+The fixed version was run with the same two loading orders and behaved identically.
+
+An external `FROM_ADDRESS` check using the exported `dllStartPlugin` address from `RenderSystem_GL.dll` resolves that address to `RenderSystem_GL.dll`.
+
+This does not substitute that export for the local address used by the patch; it independently verifies the address-based module-resolution mechanism for an address known to reside in the final render-system DLL.
+
+
+## Commit 2: `OgreWin32Window.cpp`
+
+`Win32Window::create()` contains a separate MinGW lookup:
+
+```cpp
+GetModuleHandle("GLSupport.dll")
+```
+
+In the tested shared build, `OgreGLSupport` is a static library. `GLSupport.dll` is therefore neither produced nor loaded, and this lookup returns:
+
+```text
+NULL
+```
+
+for both renderers regardless of plugin loading order.
+
+Unlike the first test, `loadPlugin()` alone does not reach this code. The host therefore:
+
+1. loads both plugins;
+2. selects the requested render system;
+3. calls `initialise(false)`;
+4. calls `createRenderWindow()`.
+
+This reaches:
+
+```text
+Root::createRenderWindow
+ -> GLRenderSystem::_createRenderWindow
+    or GL3PlusRenderSystem::_createRenderWindow
+ -> Win32GLSupport::newWindow
+ -> Win32Window::create
+```
+
+Four real-window cases were tested:
+
+```text
+Plugin order       Window renderer     Result
+GL3Plus -> GL      legacy GL           320x240 created/destroyed, exit 0
+GL -> GL3Plus      legacy GL           320x240 created/destroyed, exit 0
+GL -> GL3Plus      GL3Plus             320x240 created/destroyed, exit 0
+GL3Plus -> GL      GL3Plus             320x240 created/destroyed, exit 0
+```
+
+The address-based version was then rebuilt and the identical four tests repeated.
+
+All four again created and destroyed the 320x240 render window successfully and exited with code `0`.
+
+
+## Win32 control checks
+
+The module-handle mismatches were also tested independently of OGRE with small Win32 window-class probes.
+
+For the `OgreWglDummy`-style case, `NULL`, the correct module handle, and a valid handle belonging to another DLL all completed the register/create/destroy/unregister sequence successfully.
+
+For the `OgreGLWindow`-style test, the `NULL` instance used by the baseline also successfully completed the window lifecycle.
+
+These results agree with the OGRE tests: no runtime failure attributable to either incorrect module identity was reproduced.
+
+
+## Result
+
+This PR therefore does **not** claim a reproduced runtime failure.
+
+The reproductions establish instead that both MinGW-specific branches make hard-coded assumptions that do not describe the actual module layout:
+
+```text
+OgreWin32GLSupport.cpp
+  named module: RenderSystem_GL3Plus.dll
+  actual module may be: RenderSystem_GL.dll
+  baseline result: wrong valid handle or NULL
+
+OgreWin32Window.cpp
+  named module: GLSupport.dll
+  actual containing module: render-system DLL
+  baseline result: NULL
+```
+
+The address-based implementation removes those assumptions and identifies the module containing the executing copy of the GL support code.
+
+No behavioral regression was observed in the tested GL and GL3Plus configurations.
+
+
+## Scope
+
+This PR changes only:
+
+```text
+RenderSystems/GLSupport/src/win32/OgreWin32GLSupport.cpp
+RenderSystems/GLSupport/src/win32/OgreWin32Window.cpp
+```
+
+`OgreD3D9Plugin.cpp` is intentionally unchanged: its named DLL corresponds to the target containing that code and was not part of this investigation.
+
+The separately observed `RegisterClass` / `CreateWindow` exception-cleanup behavior is also outside the scope of this PR.
+
+
+
+# Reproduction
+Complete standalone reproduction instructions and source are attached separately:
+
+- reproducer-win32glsupport.txt
+
+exercises Win32GLSupport::initialiseWGL()
+tests both plugin loading orders
+demonstrates the GL3Plus-handle / legacy-GL mismatch
+contains the complete host source and build/run commands
+
+- reproducer-win32window.txt
+
+exercises Win32Window::create() through a real 320x240 render window
+tests both renderers and both plugin loading orders
+demonstrates that GLSupport.dll is absent and the baseline lookup returns NULL
+contains the complete host/probe source and build/run commands
+
+
