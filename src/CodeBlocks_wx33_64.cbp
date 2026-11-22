@@ -643,6 +643,37 @@
 					<Mode after="always" />
 				</ExtraCommands>
 			</Target>
+			<Target title="OGRE Tools">
+				<Option output="devel33_64/share/CodeBlocks/plugins/ogretools" prefix_auto="1" extension_auto="1" />
+				<Option working_dir="devel33_64" />
+				<Option object_output=".objs33_64" />
+				<Option external_deps="devel33_64/libcodeblocks.a;" />
+				<Option type="3" />
+				<Option compiler="gcc" />
+				<Option parameters="--debug-log --no-dde --no-check-associations --multiple-instance --no-splash-screen --verbose -p debug" />
+				<Option host_application="./codeblocks.exe" />
+				<Option run_host_application_in_terminal="0" />
+				<Option projectLinkerOptionsRelation="1" />
+				<Compiler>
+					<Add option="-DBUILDING_PLUGIN" />
+					<Add option="$(#CB_CPP_STD)" />
+					<Add directory="include" />
+				</Compiler>
+				<Linker>
+					<Add option="-Wl,--enable-auto-image-base" />
+					<Add option="-Wl,--add-stdcall-alias" />
+					<Add option="-Wl,--enable-auto-import" />
+					<Add option="-Wl,--no-undefined" />
+					<Add option="-mthreads" />
+					<Add library="codeblocks" />
+					<Add library="wxmsw$(WX_VERSION)$(WX_SUFFIX)" />
+				</Linker>
+				<ExtraCommands>
+					<Add after="cmd /c if not exist devel33_64\share\CodeBlocks mkdir devel33_64\share\CodeBlocks" />
+					<Add after="zip -jq9 devel33_64\share\CodeBlocks\ogretools.zip plugins\ogretools\manifest.xml" />
+					<Mode after="always" />
+				</ExtraCommands>
+			</Target>
 			<Environment>
 				<Variable name="WX_CFG" value="" />
 				<Variable name="WX_SUFFIX" value="u" />
@@ -650,8 +681,8 @@
 			</Environment>
 		</Build>
 		<VirtualTargets>
-			<Add alias="All" targets="tinyXML;AutoRevision;ConsoleRunner;Squirrel;scintilla;sdk;src;Abbreviations;AStyle;Autosave;Compiler depslib;Compiler;Debugger;Code-completion;Class wizard;Default MIME handler;Occurrences Highlighting;Open files list;Projects-workspaces importer;Scripted wizard;To-do;XP look &amp; feel;" />
-			<Add alias="Core app &amp; plugins" targets="sdk;src;Abbreviations;AStyle;Autosave;Compiler depslib;Compiler;Debugger;Code-completion;Class wizard;Default MIME handler;Occurrences Highlighting;Open files list;Projects-workspaces importer;Scripted wizard;To-do;XP look &amp; feel;" />
+			<Add alias="All" targets="tinyXML;AutoRevision;ConsoleRunner;Squirrel;scintilla;sdk;src;Abbreviations;AStyle;Autosave;Compiler depslib;Compiler;Debugger;Code-completion;Class wizard;Default MIME handler;Occurrences Highlighting;Open files list;Projects-workspaces importer;Scripted wizard;To-do;XP look &amp; feel;OGRE Tools;" />
+			<Add alias="Core app &amp; plugins" targets="sdk;src;Abbreviations;AStyle;Autosave;Compiler depslib;Compiler;Debugger;Code-completion;Class wizard;Default MIME handler;Occurrences Highlighting;Open files list;Projects-workspaces importer;Scripted wizard;To-do;XP look &amp; feel;OGRE Tools;" />
 			<Add alias="Third-party libs" targets="tinyXML;AutoRevision;ConsoleRunner;Squirrel;scintilla;Compiler depslib;" />
 		</VirtualTargets>
 		<Compiler>
@@ -2008,6 +2039,27 @@
 		</Unit>
 		<Unit filename="plugins/occurrenceshighlighting/resources/occurrenceshighlightingconfigurationpanel.xrc">
 			<Option target="Occurrences Highlighting" />
+		</Unit>
+		<Unit filename="plugins/ogretools/manifest.xml">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogreimportdlg.cpp">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogreimportdlg.h">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogretools.cpp">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogretools.h">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogretoolslocator.cpp">
+			<Option target="OGRE Tools" />
+		</Unit>
+		<Unit filename="plugins/ogretools/ogretoolslocator.h">
+			<Option target="OGRE Tools" />
 		</Unit>
 		<Unit filename="plugins/openfileslist/manifest.xml">
 			<Option target="Open files list" />
