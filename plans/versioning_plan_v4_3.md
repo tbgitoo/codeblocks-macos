@@ -1,6 +1,6 @@
 # Code::Blocks v4.3 — active GDB watches on Apple Silicon
 
-**Status: M4 done. M5 next.** The companion GDB already evaluates the calls. No Code::Blocks source has yet been modified for v4.3. The remaining change is the Watches display of one GDB reference reply.
+**Status: M5 parser landed. M6 next.** `ParseGDBWatchValue` stores the payload of a validated `(type) @0x<hex>:` reply. The live Watches acceptance in section 8 is still open. The companion GDB repair is unchanged.
 
 **Question this version answers:** why did active GDB watches such as `a[0]` and `a.size()` fail on Apple Silicon, and what minimal changes make those expressions both evaluate and display useful values in Code::Blocks?
 
@@ -17,8 +17,8 @@ Original failure
     -> GDB PC-store repair (A, done)
     -> function watches evaluate (done)
     -> M4 identifies the GDB reference decoration (done)
-    -> M5 strips only that decoration in ParseGDBWatchValue (next)
-    -> M6 final acceptance
+    -> M5 strips only that decoration in ParseGDBWatchValue (landed)
+    -> M6 final acceptance (next)
 ```
 
 ---
@@ -234,8 +234,8 @@ a[0] == '-'   true
 | M2 | Repair the PC store in the companion GDB. | `780135ca580` writes one PC through `arm_thread_state64_set_pc_fptr`. Direct calls return `5`, `3`, `6`, `45 '-'`, and `true`. Darwin run: 85 passes, 0 failures. | **DONE** |
 | M3 | Evaluate an active call from Code::Blocks. | The staged GDB evaluates function watches in the IDE. | **DONE** |
 | M4 | Localize the raw reference notation. | `output a[0]` itself returns `(type &) @0x...: 45 '-'`. `ParseGDBWatchValue` stores that non-aggregate reply unchanged. The libc++ text originates in GDB. Code::Blocks keeps the decoration. Python is not required for the scalar payload. | **DONE** |
-| M5 | Strip a validated GDB reference decoration. | `ParseGDBWatchValue` stores `45 '-'` for the section 3 reply. Section 5 cases pass. The section 6 cells match. | **NEXT** |
-| M6 | Final v4.3 acceptance. | Section 8. No further implementation. | pending |
+| M5 | Strip a validated GDB reference decoration. | `ParseGDBWatchValue` stores `45 '-'` for the section 3 reply. The section 5 cases are in `SUITE(GDBWatchParser)`. A direct parser run of those cases, the existing aggregate, and `0x60d088 "test_test_test2"` matched. The live Watches window is M6. | **DONE** |
+| M6 | Final v4.3 acceptance. | Section 8. No further implementation. | **NEXT** |
 
 ---
 

@@ -766,6 +766,48 @@ void PrepareFortranOutput(wxString& outStr)
     outStr.Replace(")","}");
 }
 
+static bool IsHexDigit(wxUniChar c)
+{
+    return (c >= wxT('0') && c <= wxT('9'))
+        || (c >= wxT('a') && c <= wxT('f'))
+        || (c >= wxT('A') && c <= wxT('F'));
+}
+
+/* A GDB reference value is "(<type>) @0x<hex>: <payload>".
+   The type text is not parsed. On a match, value becomes the payload
+   with only its leading whitespace removed. */
+static bool TakeGdbReferencePayload(wxString &value)
+{
+    wxString text = value;
+    text.Trim(true);
+    text.Trim(false);
+    if (text.empty() || text[0] != wxT('('))
+        return false;
+
+    const wxString marker = wxT(") @0x");
+    wxString::size_type search = 0;
+    while (search < text.length())
+    {
+        const wxString::size_type pos = text.find(marker, search);
+        if (pos == wxString::npos)
+            return false;
+
+        wxString::size_type i = pos + marker.length();
+        const wxString::size_type hexStart = i;
+        while (i < text.length() && IsHexDigit(text[i]))
+            ++i;
+        if (i > hexStart && i < text.length() && text[i] == wxT(':'))
+        {
+            wxString payload = text.substr(i + 1);
+            payload.Trim(false);
+            value = payload;
+            return true;
+        }
+        search = pos + 1;
+    }
+    return false;
+}
+
 bool ParseGDBWatchValue(cb::shared_ptr<GDBWatch> watch, wxString const &inputValue)
 {
     if(inputValue.empty())
@@ -778,6 +820,11 @@ bool ParseGDBWatchValue(cb::shared_ptr<GDBWatch> watch, wxString const &inputVal
 
     if (g_DebugLanguage == dl_Fortran)
         PrepareFortranOutput(value);
+
+    /* Before the brace search. A payload that is itself {...} would otherwise
+       keep the "(type) @0x...:" text as the parent value. */
+    if (TakeGdbReferencePayload(value))
+        return ParseGDBWatchValue(watch, value);
 
     // Try to find the first brace.
     // If the watch is for a reference the brace is not at position = 0
