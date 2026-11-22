@@ -623,6 +623,13 @@ TEST(GdbReferenceLibcxxChar)
     CHECK_EQUAL(wxT("a=45 '-'"), *w);
 }
 
+TEST(GdbReferenceMinGWChar)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(__gnu_cxx::__alloc_traits<std::allocator<char>, char>::value_type &) @0x5ffda0: 50 '2'")));
+    CHECK_EQUAL(wxT("a=50 '2'"), *w);
+}
+
 TEST(GdbReferenceLeavesScalar)
 {
     cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
