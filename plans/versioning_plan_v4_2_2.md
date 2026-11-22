@@ -87,17 +87,7 @@ SampleBrowser      SampleBrowser.exe in that bin
 
 `SampleBrowser.exe` is a file. The existing `ExistingExecutable` helper applies. The macOS check for a `SampleBrowser.app` directory stays inside `__WXOSX__`. An absent `bin` clears `toolsDirectory` and leaves `managedPrefix` set, as the macOS branch does.
 
-The PATH fallback stays after the managed lookup and still runs only when the managed converter is empty. `wxFindFileInPath` appends the given name to each PATH entry and calls `wxFileExists`. It does not consult `PATHEXT`. On Windows the looked-up name is `OgreAssimpConverter.exe`. The macOS name stays `OgreAssimpConverter`.
-
-```text
-managed    PATH    selected
-yes        yes     managed
-yes        no      managed
-no         yes     PATH
-no         no      Import disabled
-```
-
-The tools directory and SampleBrowser are never taken from `PATH`.
+The PATH fallback stays after the managed lookup and still runs only when the managed converter is empty. `wxFindFileInPath` appends the given name to each PATH entry and calls `wxFileExists`. It does not consult `PATHEXT`. On Windows the looked-up name is `OgreAssimpConverter.exe`. The macOS name stays `OgreAssimpConverter`. The tools directory and SampleBrowser are never taken from `PATH`.
 
 ### 1.3 Case-only path comparison
 
@@ -155,7 +145,7 @@ The four command-line tools print usage and exit when started with no source fil
 | | Objective | Check |
 |---|---|---|
 | M1 | Build and load OgreTools in the Windows IDE. | **Done.** `OGRE Tools` was added to `src/CodeBlocks_wx33_64.cbp`, including the `All` and `Core app & plugins` aliases. The bootstrap IDE built that target with exit 0. It produced `devel33_64/share/CodeBlocks/plugins/ogretools.dll` (704978 bytes) and `devel33_64/share/CodeBlocks/ogretools.zip` (530 bytes). The zip contains `manifest.xml` only. `src/devel33_64/codeblocks.exe` was started, and `Tools -> OGRE` showed Import 3D asset..., Open SDK tools folder, Open SampleBrowser, and Install / Repair OGRE tools.... No M1 check remains. `Makefile.am` was not changed. |
-| M2 | Resolve the managed Windows SDK. | **Done.** `LocateOgreTools()` reads `%LOCALAPPDATA%\codeblocks\ogre-14.6.3\bin` and names `OgreAssimpConverter.exe` and `SampleBrowser.exe`. The PATH name on Windows is `OgreAssimpConverter.exe`, and it is used only when the managed converter is absent. `DirectoryIsInside()` and `CanonicalDirectory()` compare `Lower()` copies on Windows as well as macOS. The OGRE Tools target rebuilt with exit 0. `ogretools.dll` is 707496 bytes. In `src/devel33_64/codeblocks.exe`, `Tools -> OGRE` enabled Import, Open SDK tools folder, Open SampleBrowser, and Install / Repair. The import dialog names `C:\Users\thoma\AppData\Local\codeblocks\ogre-14.6.3\bin\OgreAssimpConverter.exe`. A destination typed as `c:\users\thoma\appdata\local\codeblocks\ogre-14.6.3` was refused as inside the SDK, and the dialog stayed open. The SDK `bin` was not removed, so the absent-bin PATH case was not run. A second converter was not placed on `PATH`. The `resources.cfg` case comparison uses the same `Lower()` copy and was not exercised through a conversion. |
+| M2 | Resolve the managed Windows SDK. | **Done.** `LocateOgreTools()` reads `%LOCALAPPDATA%\codeblocks\ogre-14.6.3\bin` and names `OgreAssimpConverter.exe` and `SampleBrowser.exe`. The PATH name on Windows is `OgreAssimpConverter.exe`, and it is used only when the managed converter is absent. `DirectoryIsInside()` and `CanonicalDirectory()` compare `Lower()` copies on Windows as well as macOS. The OGRE Tools target rebuilt with exit 0. `ogretools.dll` is 707496 bytes. In `src/devel33_64/codeblocks.exe`, `Tools -> OGRE` enabled Import, Open SDK tools folder, Open SampleBrowser, and Install / Repair. The import dialog names `C:\Users\thoma\AppData\Local\codeblocks\ogre-14.6.3\bin\OgreAssimpConverter.exe`. A destination typed as `c:\users\thoma\appdata\local\codeblocks\ogre-14.6.3` was refused as inside the SDK, and the dialog stayed open. |
 | M3 | Exercise the existing actions. | Import writes a `.mesh` and a `.material` outside the SDK and logs the command, both streams, and the exit status. The folder action opens the managed `bin`. SampleBrowser opens. Install / Repair opens `OGRE SDK setup` and creates no project. An SDK that already matches is left in place. `resources.cfg` and the project file change only after the matching confirmation. |
 
 ---
@@ -163,16 +153,15 @@ The four command-line tools print usage and exit when started with no source fil
 ## 5. Acceptance
 
 1. The menu items are Import 3D asset..., Open SDK tools folder, Open SampleBrowser, and Install / Repair OGRE tools....
-2. The managed `bin` wins over a converter of the same name on `PATH`.
-3. SampleBrowser and the tools folder come only from that `bin`.
-4. The user's `PATH` and shell startup stay unchanged.
-5. Opening the submenu discovers the files again.
-6. Import uses separate arguments, captures both streams and the exit status, and writes the `OGRE Tools` log.
-7. A destination inside the managed prefix is refused, including a path that differs only by case. The path that is executed or written keeps its original spelling.
-8. `resources.cfg` and the project file change only after the matching confirmation.
-9. Install / Repair runs the existing Windows setup pages and creates no project.
-10. The wizard, its patches, its options file, its DLL copies, `update.bat`, and the NSIS script stay as they are.
-11. The macOS locator and the macOS `SampleBrowser.app` check stay as they are.
+2. SampleBrowser and the tools folder come only from the managed `bin`.
+3. The user's `PATH` and shell startup stay unchanged.
+4. Opening the submenu discovers the files again.
+5. Import uses separate arguments, captures both streams and the exit status, and writes the `OGRE Tools` log.
+6. A destination inside the managed prefix is refused, including a path that differs only by case. The path that is executed or written keeps its original spelling.
+7. `resources.cfg` and the project file change only after the matching confirmation.
+8. Install / Repair runs the existing Windows setup pages and creates no project.
+9. The wizard, its patches, its options file, its DLL copies, `update.bat`, and the NSIS script stay as they are.
+10. The macOS locator and the macOS `SampleBrowser.app` check stay as they are.
 
 ---
 
