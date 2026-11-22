@@ -176,6 +176,8 @@ Each new test follows `TEST(Simple)`: one `GDBWatch`, `CHECK(ParseGDBWatchValue(
 
 Case 1 is the primary generic case. Case 2 exists to show the match does not depend on `std::__1`. After the decoration is removed, `{value = 7}` is the same kind of aggregate `TEST(SimpleMembers)` already parses (`a = 5` becomes child `a=5`, parent value empty). Do not store the braces as a scalar, and do not invent a second aggregate grammar. Do not add a Windows case whose type is `std::__cxx11` unless a real MinGW reply has been recorded.
 
+The recorded MinGW `output a[0]` reply is the same form. Its type text is `__gnu_cxx::__alloc_traits<std::allocator<char>, char>::value_type &`, and its payload is `50 '2'`. `TEST(GdbReferenceMinGWChar)` stores that reply. The parser is unchanged.
+
 Case 10 is the current `TEST(SimpleMembers)` result. Re-run that test. Keep the other tests in `SUITE(GDBWatchParser)` passing, including the existing non-aggregate `0x60d088 "test_test_test2"`.
 
 ### Windows / MinGW non-regression
@@ -186,7 +188,13 @@ A live Windows smoke test is not a blocker for the Apple Silicon repair. Do not 
 
 ### A different MinGW reply
 
-If MinGW GDB later shows a different reference syntax, do not widen M5 by guessing another grammar. Record the actual reply first. A second syntax is a separate, evidence-based change. M5 stays:
+The MinGW reply recorded from the Watches window is:
+
+```text
+(__gnu_cxx::__alloc_traits<std::allocator<char>, char>::value_type &) @0x5ffda0: 50 '2'
+```
+
+That matches the form above. The cell should show `50 '2'`. The `output33_64` debugger plugin dated 2026-11-18 did not contain this parser, so the raw line was what that IDE displayed. If MinGW GDB later shows a different reference syntax, do not widen M5 by guessing another grammar. Record the actual reply first. A second syntax is a separate, evidence-based change. M5 stays:
 
 ```text
 (<type>) @0x<hex-address>: <payload>
