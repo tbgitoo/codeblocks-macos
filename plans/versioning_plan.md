@@ -77,7 +77,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.2** | **DONE.** The Windows Ogre wizard builds and installs OGRE `v14.6.3`, the generated project runs, and SampleBrowser runs. The four command-line tools start and wait for a source file; using them on files is v4.2.2. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
 | **v4.2.1** | **Planning.** OGRE PRs #3823 and #3832 are merged. Assimp PR #7057 quotes the ccache launcher. The wizard and the DLL copies stay local. | [versioning_plan_v4_2_1.md](versioning_plan_v4_2_1.md) |
 | **v4.2.2** | **Planning.** Windows `Tools -> OGRE` for the v4.2 SDK: Import, the tools folder, SampleBrowser, and Install / Repair. The macOS menu is unchanged. | [versioning_plan_v4_2_2.md](versioning_plan_v4_2_2.md) |
-| **v4.3** | **M5 done** (parser). A validated GDB `(type) @0x<hex>:` reply stores the payload. `a[0]` becomes `45 '-'`. Live Watches acceptance is M6. | [versioning_plan_v4_3.md](versioning_plan_v4_3.md) |
+| **v4.3** | **DONE** on Apple Silicon. The rebuilt app shows `a[0]` as the character payload, and expression watches refresh when the program advances. Windows smoke was not run. | [versioning_plan_v4_3.md](versioning_plan_v4_3.md) |
 
 
 ### One-line outcomes
@@ -108,7 +108,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head, and SampleBrowser runs. The command-line tools are installed; feeding them files is v4.2.2. The macOS wizard and OGRE-Next stay unchanged. |
 | **v4.2.1** | OGRE PRs #3823 and #3832 are merged and use `GetModuleHandleEx` for the config dialog and the two GLSupport lookups. The pinned 14.6.3 rename patch stays until that pin moves. Assimp PR #7057 puts literal quotes around the ccache path. The Windows wizard and its space-skip patch stay local. |
 | **v4.2.2** | `Tools -> OGRE` on Windows imports a 3D asset, opens the installed tools folder, launches SampleBrowser, and repairs the SDK without creating a project. The same four actions as v3.8.2. The managed `bin` is the v4.2 install. |
-| **v4.3** | A function watch evaluates, and a GDB reference reply shows its payload (`45 '-'` for `a[0]`) instead of the `(type) @0x...:` decoration. The companion GDB repair is `780135ca580`. The live Watches acceptance is M6. |
+| **v4.3** | A function watch evaluates, the Watches value is the GDB payload (`49 '1'` on the rebuilt app), and the expression refreshes when the program advances. The companion GDB repair is `780135ca580`. |
 
 
 ---
