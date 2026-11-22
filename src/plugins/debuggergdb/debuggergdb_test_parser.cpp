@@ -601,5 +601,69 @@ TEST(Python3dVectorInfiniteLoop)
     CHECK_EQUAL(wxT("s= {double=-3.18,vector=(x=5.7, y=2.9, z=-8.4) {x=5.7,y=2.9,z=-8.4}}"), *w);
 }
 
+TEST(GdbReferenceScalar)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(const int &) @0x1234: 10")));
+    CHECK_EQUAL(wxT("a=10"), *w);
+}
+
+TEST(GdbReferenceAggregatePayload)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("w")));
+    CHECK(ParseGDBWatchValue(w, wxT("(Foo &) @0xABCDEF: {value = 7}")));
+    CHECK_EQUAL(wxT("w= {value=7}"), *w);
+}
+
+TEST(GdbReferenceLibcxxChar)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(const std::__1::basic_string<char, std::__1::char_traits<char>, ")
+                                wxT("std::__1::allocator<char> >::value_type &) @0x16fdfd450: 45 '-'")));
+    CHECK_EQUAL(wxT("a=45 '-'"), *w);
+}
+
+TEST(GdbReferenceLeavesScalar)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("10")));
+    CHECK_EQUAL(wxT("a=10"), *w);
+}
+
+TEST(GdbReferenceLeavesBool)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("true")));
+    CHECK_EQUAL(wxT("a=true"), *w);
+}
+
+TEST(GdbReferenceLeavesColonText)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("error at main.cpp:42")));
+    CHECK_EQUAL(wxT("a=error at main.cpp:42"), *w);
+}
+
+TEST(GdbReferenceRejectsBadAddress)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(const int &) @not-an-address: 10")));
+    CHECK_EQUAL(wxT("a=(const int &) @not-an-address: 10"), *w);
+}
+
+TEST(GdbReferenceRejectsBadHex)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(const int &) @0x12ZZ: 10")));
+    CHECK_EQUAL(wxT("a=(const int &) @0x12ZZ: 10"), *w);
+}
+
+TEST(GdbReferenceRejectsIncomplete)
+{
+    cb::shared_ptr<GDBWatch> w(new GDBWatch(wxT("a")));
+    CHECK(ParseGDBWatchValue(w, wxT("(const int &) @0x1234")));
+    CHECK_EQUAL(wxT("a=(const int &) @0x1234"), *w);
+}
+
 } // SUITE(GDBWatchParser)
 
