@@ -77,7 +77,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.2** | **DONE.** The Windows Ogre wizard builds and installs OGRE `v14.6.3`, the generated project runs, and SampleBrowser runs. The four command-line tools start and wait for a source file; using them on files is v4.2.2. OGRE-Next stays macOS-only. | [versioning_plan_v4_2.md](versioning_plan_v4_2.md) |
 | **v4.2.1** | **Planning.** OGRE PRs #3823 and #3832 are merged. Assimp PR #7057 quotes the ccache launcher. The wizard and the DLL copies stay local. | [versioning_plan_v4_2_1.md](versioning_plan_v4_2_1.md) |
 | **v4.2.2** | **Planning.** Windows `Tools -> OGRE` for the v4.2 SDK: Import, the tools folder, SampleBrowser, and Install / Repair. The macOS menu is unchanged. | [versioning_plan_v4_2_2.md](versioning_plan_v4_2_2.md) |
-| **v4.3** | **Planning.** Function watches fail because the companion GDB refuses to change the program counter. The repair is a signed PC store in `binutils-gdb`. Code::Blocks is unchanged until a direct GDB session evaluates the same expressions. | [versioning_plan_v4_3.md]
+| **v4.3** | **M2 done** in `binutils-gdb` `780135ca580`. A single program-counter store uses `arm_thread_state64_set_pc_fptr` and does not sign the address. Function watches evaluate in Code::Blocks; the watch text is still the raw GDB reply. Beginner formatting is open. | [versioning_plan_v4_3.md](versioning_plan_v4_3.md) |
 
 
 ### One-line outcomes
@@ -108,7 +108,7 @@ GDB is not generally on PATH on macOS. Through v1.1 the user must install/config
 | **v4.2** | File → New → Project → Ogre project on Windows follows the v3.8 sequence for OGRE `v14.6.3` and the same patch. Build and Run shows the textured rotating head, and SampleBrowser runs. The command-line tools are installed; feeding them files is v4.2.2. The macOS wizard and OGRE-Next stay unchanged. |
 | **v4.2.1** | OGRE PRs #3823 and #3832 are merged and use `GetModuleHandleEx` for the config dialog and the two GLSupport lookups. The pinned 14.6.3 rename patch stays until that pin moves. Assimp PR #7057 puts literal quotes around the ccache path. The Windows wizard and its space-skip patch stay local. |
 | **v4.2.2** | `Tools -> OGRE` on Windows imports a 3D asset, opens the installed tools folder, launches SampleBrowser, and repairs the SDK without creating a project. The same four actions as v3.8.2. The managed `bin` is the v4.2 install. |
-| **v4.3** | A watch that calls a function (`a[0]`, `a.size()`, `add_one(x)`) evaluates in the companion GDB and in the Watches window. The sister repo stores the program counter with Apple's signed setter. Arithmetic and pretty-printed `std::string` watches already work and stay as they are. |
+| **v4.3** | A watch that calls a function evaluates in Code::Blocks after the companion GDB stores the program counter (`780135ca580`, `arm_thread_state64_set_pc_fptr`, unsigned on this arm64 build). The watch still shows GDB's raw reply. Pretty-printed `std::string` and arithmetic watches were already fine. |
 
 
 ---
