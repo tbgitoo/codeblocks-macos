@@ -75,7 +75,7 @@ namespace
         if (dir.IsEmpty() || base.IsEmpty())
             return false;
 
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXMSW__)
         return dir.Lower().StartsWith(base.Lower());
 #else
         return dir.StartsWith(base);
@@ -346,7 +346,7 @@ namespace
         while (full.EndsWith(wxFILE_SEP_PATH) && full.length() > 1)
             full.RemoveLast();
 
-#ifdef __WXOSX__
+#if defined(__WXOSX__) || defined(__WXMSW__)
         return full.Lower();
 #else
         return full;
