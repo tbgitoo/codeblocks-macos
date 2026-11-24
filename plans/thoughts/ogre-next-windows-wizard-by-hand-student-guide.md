@@ -6,7 +6,7 @@ The wizard performs the work: it downloads the pinned sources, configures and bu
 
 ## Steps:
 
-Do these in order. Each one ends with something you can see in `File -> New -> Project -> OGRE-Next project`. Stop there before the next section.
+Do these in order. Check each step in Code::Blocks with `File -> New -> Project -> OGRE-Next project`.
 
 ```text
 1. The menu entry appears
@@ -30,24 +30,24 @@ SDL2             5d249570393f7a37e037abf22cd6012a4cc56a71
 OGRE-Next        4859016ad2cc956a653dfc4e4a859505696c6509
 ```
 
-Pass the MinGW selected in Code::Blocks to CMake. On this machine it is:
+The compiler for ogre-next building lives here
 
 ```text
 D:\Program Files\CodeBlocks\MinGW
 ```
 
-Use this install root:
+We are going to instruct the wizard to put downloaed and compiled files here
 
 ```text
 %LOCALAPPDATA%\codeblocks
 ```
 
-`CodeBlocksRoot()` in `wincmake.cpp` already constructs that root. Building it from `LOCALAPPDATA` makes the wizard work for the currently logged user.
+%LOCALAPPDATA% here means `C:\Users\<you>\AppData`. This makes that the wizard works for the currently logged user.
 
 
 ## 0. Use the OGRE-Next and Windows-specific helpers
 
-The main file is (from repository root):
+Our main wizard file to be updated is the Squirrel file:
 
 ```text
 src/plugins/scriptedwizard/resources/ogre-next/wizard.script
@@ -68,9 +68,7 @@ ogre-next-deps-mingw.patch
 ogre-next-v3-0-mingw.patch
 ```
 
-Those are the patches derived from your manual work.
-
-`WinPatchProbe` and `WinPatchApply` already know them, although the use the `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` as ID's, without the `.patch` extension. Don't touch the apple patches, otherwise we break the Mac installation `ogre-next-deps-apple` and `ogre-apple` patches continue to serve the Mac wizard.
+Those are the patches we got from manual testing. We will them apply here with `WinPatchApply` using `ogre-next-deps-mingw` and `ogre-next-v3-0-mingw` as ID's, without the `.patch` extension. Don't touch the apple patches in `src/plugins/scriptedwizard/resources/patches`, otherwise we break the Mac installation.
 
 
 ## 1. `src/plugins/scriptedwizard/resources/config.script` - make the wizard appear on Windows
@@ -88,16 +86,20 @@ if (PLATFORM == PLATFORM_MAC || PLATFORM == PLATFORM_MSW)
     RegisterWizard(wizProject, _T("ogre-next"), _("OGRE-Next project"), _("2D/3D Graphics"));
 ```
 
-After copying the wizard resources and restarting Code::Blocks, this registration makes the following entry appear on Windows:
+This is squirrel syntax: almost c++, but some things like the strings are different.
+
+The aim is to make this appear in Code::Blocks on Windows.
 
 ```text
 File -> New -> Project -> OGRE-Next project
 ```
-## 2. How to look
+## 2. Time to check
 
-Every later section ends with Look. Use one of these two procedures, then open the wizard and stop at the page that section names. Press Cancel. Finish stays unused until section 12.
+This is supposed to build the whole IDE. If it fails, use `README.windows.md`. Good luck. 
 
-The first time, from the repository root, build the whole IDE. If this fails, use `README.windows.md`.
+- Quit Code::Blocks if already open.
+- Open a command prompt window, with Windows key + R, then enter cmd, hit enter. 
+- In the black command prompt window, navigate to the root of the repo using `C:` or `D:`for drive letters, `cd + <dirname>` to change directories, and `cd ..` to move up a directory.
 
 ```bat
 cd /d src
@@ -105,34 +107,18 @@ set "PATH=D:\Program Files\CodeBlocks\MinGW\bin;%PATH%"
 start /wait "" "D:\Program Files\CodeBlocks\codeblocks.exe" --no-splash-screen --no-dde --multiple-instance --build --target=All CodeBlocks_wx33_64.cbp
 update.bat 33_64
 cd ..
-src\output33_64\codeblocks.exe
 ```
+- Wait until that is done.
+- Start `src\output33_64\codeblocks.exe` again.
 
-After that tree exists, a C++ change is only the Scripted wizard target. Quit `output33_64\codeblocks.exe` first. From `src`:
+- In the running Code::Blocks application:
 
-```bat
-set "PATH=D:\Program Files\CodeBlocks\MinGW\bin;%PATH%"
-start /wait "" "D:\Program Files\CodeBlocks\codeblocks.exe" --no-splash-screen --no-dde --multiple-instance --build --target="Scripted wizard" CodeBlocks_wx33_64.cbp
-copy /Y devel33_64\share\CodeBlocks\plugins\scriptedwizard.dll output33_64\share\CodeBlocks\plugins\scriptedwizard.dll
-xcopy /Y /S plugins\scriptedwizard\resources\* output33_64\share\CodeBlocks\templates\wizard\
-```
-
-`%ERRORLEVEL%` from the build is `0` when the target compiled. Start `src\output33_64\codeblocks.exe` again.
-
-A wizard-script change does not need that build. Quit the exe, and from `src` copy the scripts only:
-
-```bat
-xcopy /Y /S plugins\scriptedwizard\resources\* output33_64\share\CodeBlocks\templates\wizard\
-```
-
-Start `src\output33_64\codeblocks.exe` again. The running IDE reads the wizard from `output33_64`.
-
-Look for section 1: `File -> New -> Project` lists `OGRE-Next project`. Clicking it still opens the Mac pages, which is the next section's job.
+`File -> New -> Project` lists `OGRE-Next project`. Clicking it opens the mac pages, because we haven't changed the actual wizard. Indeed, we haven't touched `src/plugins/scriptedwizard/resources/ogre-next/wizard.script`, we've only enabled it.
 
 
-## 3. Welcome page, before any new C++
+## 3. Welcome page
 
-Open `src/plugins/scriptedwizard/resources/ogre-next/wizard.script`. At the top, the comment says `macOS only.` Change that to `macOS and Windows.`
+Now we are going for the actual Wizard. Open `src/plugins/scriptedwizard/resources/ogre-next/wizard.script`. At the top, the comment says `macOS only.` Change that to `macOS and Windows.`
 
 At the top of `BeginWizard()`, before `local intro`, insert:
 
@@ -144,17 +130,19 @@ if (PLATFORM == PLATFORM_MSW)
 }
 ```
 
-Windows then returns before the Mac code looks for Homebrew and `Library/CodeBlocks`.
+Windows then returns before the Mac code wanders off into mac world.
 
-Above `BeginWizard()`, add this function. It is the whole Windows wizard for now:
+Above `BeginWizard()`, add this function. For now, that's our wizard:
 
 ```javascript
 function BeginWinOgreNext()
 {
-    local intro = _("Welcome to the OGRE-Next project wizard.\n\nThis creates an ordinary C++ project for OGRE-Next 3.0.0.\n\nThe download, patch, build, and install pages come in the next steps.\n\nPress Cancel.");
+    local intro = _("Welcome to the OGRE-Next project wizard.\n\nThis creates a C++ project for OGRE-Next 3.0.0.\n\nI'm not doing anything useful yet. Your wizard truly\n\nPress Cancel.");
     Wizard.AddInfoPage(_T("OgreNextWinIntro"), intro);
 }
 ```
+
+There's a second place where the Wizard tries to run Mac stuff. We need to prevent it from doing so.
 
 At the top of `SetupProject()`, before `if (!OgreNextAllReady())`, insert:
 
@@ -166,16 +154,16 @@ if (PLATFORM == PLATFORM_MSW)
 }
 ```
 
-Finish must not run the Mac framework setup. Section 12 replaces this guard with the real Windows project.
-
-Look, using the script copy in section 2: `File -> New -> Project -> OGRE-Next project` shows the welcome text. Press Cancel.
+Time to look. Apply the build recipe in Section 2 and take a look at `File -> New -> Project -> OGRE-Next project`. It shows the welcome text. Press Cancel.
 
 
 ## 4. wingit.h and wingit.cpp: Enable the wizard to drive git for ogre-next 
 
-We are talking here about the folder `src/plugins/scriptedwizard` and some files residing in that folder.
+The wizard will do what you did manually before. The first step is to teach it to use git for downloading ogre-next-deps and ogre-next.
 
-The use of git by the wizard is nearly the same on mac and windows, except adjustment for folder locations. So we can copy over most of the necessary functions with a few specific modifications.
+Navigate to `src/plugins/scriptedwizard`. We will modify files in that folder.
+
+We are copying over functions from the mac code to Windows, and then modify them to work under that Operating System.
  
 ### Declaration
 
