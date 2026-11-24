@@ -159,11 +159,11 @@ Time to look. Apply the build recipe in Section 2 and take a look at `File -> Ne
 
 ## 4. wingit.h and wingit.cpp: Enable the wizard to drive git for ogre-next 
 
-The wizard will do what you did manually before. The first step is to teach it to use git for downloading ogre-next-deps and ogre-next.
+The wizard will do what we did manually before. The first step is to teach it to use git for downloading ogre-next-deps and ogre-next.
 
 Navigate to `src/plugins/scriptedwizard`. We will modify files in that folder.
 
-We are copying over functions from the mac code to Windows, and then modify them to work under that Operating System.
+The next step is copying over git-related functions and adapting them for Windows.
  
 ### Declaration
 
@@ -174,7 +174,7 @@ Get the mac stuff that we will adapt to windows:
    `#if defined(__WXMSW__)`
    , and place them after `FormatWinGitClone`. 
    
-Rename those functions declarations:
+Rename those function declarations:
 
 `MacGitAcquireResult`   -> `WinGitAcquireResult`
 `AcquireMacGitSource`   -> `AcquireWinOgreNext`
@@ -185,8 +185,9 @@ Leave the fields and the comments as they are. The functions have no body {}. No
 
 ### Table and checkout commands
 
-From macgit.cpp, copy: 
+From `macgit.cpp`, copy implementations: 
 
+```text
 struct KnownGitSource and kKnownSources (lines 699–727)
 FindKnownSource
 StripTrailingSeparator
@@ -195,14 +196,13 @@ RunGitSync
 RevParseHead
 EnsureParentDirectory
 CheckoutCommands
+```
 
-Paste them into the anonymous namespace of wingit.cpp.
+Paste them into the anonymous namespace of `wingit.cpp`.
 
-Note: that anonymous namespace is like the `use namespace std`. Except for it's anonymous, so nobody can call it from the outside and things remain private within `wingit.cpp`
+Note: that anonymous namespace is like the 'using namespace std'. Except for it's anonymous, meaning whatever is init is reachable only from `wingit.cpp`
 
-Folder location edit.
-
-KnownSourceDestination in macgit.cpp starts from wxGetHomeDir() and appends Library, then CodeBlocks, then source.leaf. This is different in Windows because the directory are different. So in `wincmake.cpp`:
+The function `KnownSourceDestination` in `macgit.cpp` starts from wxGetHomeDir() and appends Library, then CodeBlocks, then source.leaf. The Windows procedure is different. So in `wincmake.cpp` replace the lines of the block from `wxGetHomeDir` through appending `source.leaf` by the following code: 
 
 ```cpp
 wxString local;
@@ -216,7 +216,7 @@ dest.AppendDir(source.leaf);
 Keep the Normalize and StripTrailingSeparator calls that follow in the Mac function.
 
 ### The acquire functions
-Go back to `macgit.cpp`and copy `AcquireMacGitSource` (from line 1100) and `FormatMacGitAcquire` (from line 1289) to the bottom of `wingit.cpp`, above `#endif // __WXMSW__`. 
+Go back to `macgit.cpp`and copy `AcquireMacGitSource` (from line 1100) and `FormatMacGitAcquire` (from line 1289) to the bottom of `wingit.cpp`, but still above `#endif // __WXMSW__`. 
 
 Rename the types and the two functions as in the header (like they are in `wingit.h`). Then change only these calls inside the copied acquire function:
 
@@ -230,16 +230,16 @@ MacGitCloneDialog -> WinGitCloneDialog
 
 A class, in c++ is a collection of both functions and variables (called members).
 
-Go to macgit.cpp, and find the class MacGitCloneDialog. Within that class, locate the StartCommands and LaunchStep functions, and copy them over into WinGitCloneDialog (in wingit.cpp; we are in .cpp, don't forget the function body {}).
-Go back to macgit.cpp,  look for the class members  m_commands, m_step, and m_retired and copy them over to the corresponding WinGitCloneDialog class in wingit.cpp. Class members are like regular variables and have a type, for instance `std::vector<wxArrayString> m_commands;` Don't forget the type! And as they are members, they need to be inside the class, but not inside a function.
+Go to `macgit.cpp`, and find the class MacGitCloneDialog. Within that class, locate the StartCommands and LaunchStep functions, and copy them over into WinGitCloneDialog (in `wingit.cpp`; as we are in .cpp, don't forget the function body {}).
+Go back to `macgit.cpp`,  look for the class members  `m_commands`, `m_step`, and `m_retired` and copy them over to the corresponding `WinGitCloneDialog` class in wingit.cpp. Class members are like regular variables and have a type, for instance `std::vector<wxArrayString> m_commands;` Don't forget the type, nor the semi-colon. Also, these are class members, so they need to be inside the class, but not inside a function.
 
-Next, go back to macgit.cpp and find the WinGitCloneDialog::OnProcessEnd function. Copy the body of this function, that is only the stuff between { and }. Go back to wingit.cpp and replace the body of the onProcessEnd function with the one coming from macgit.cpp
+Next, go back to `macgit.cpp` and find the `WinGitCloneDialog::OnProcessEnd` function. Copy the body of this function, that is only the stuff between { and }. Go back to `wingit.cpp` and replace the body of the `onProcessEnd` function with the one coming from `macgit.cpp`
 
-The wizard still shows only the welcome page. The binding is the next heading in this same section.
+
 
 ### Squirrel binding
 
-Squirrel is a separate language, and a brigde called "bindings" is needed for it to use our cpp functions. Those bindings live in `wiz.cpp`, which is located in `src/plugins/scriptedwizard`. For now, these are still cpp edits, not squirrel
+That c++ work doesn't change the wizard yet. Squirrel binding is needed to use these functions. Those bindings live in `wiz.cpp`, which is located in `src/plugins/scriptedwizard`.
 
 Open `wiz.cpp` and find the function `Wiz_MacGitAcquire` (lines 2074–2097). Copy the entire function. Find the function definition for `Wiz_WinGitClone` that is something like `SQInteger Wiz_WinGitClone(HSQUIRRELVM v){ ... }`. Just after the body {} of `Wiz_WinGitClone`, paste the `Wiz_MacGitAcquire` function definition. Rename the pasted function to `Wiz_WinOgreNextAcquire`. Also, inside the function body of `Wiz_WinOgreNextAcquire`, there are calls to the mac functions `AcquireMacGitSource` and  `FormatMacGitAcquire`. Change those calls to `AcquireWinOgreNext` respectively `FormatWinGitAcquire`. Attention, one calls is quite unusual because it passes the function name instead of calling it directly. If you want to make it easy on people doing debugging, you change the error message string "Wiz::MacGitAcquire" to "Wiz::WinOgreNextAcquire"), but if you don't it will work but remain a trap.
 
@@ -255,10 +255,10 @@ Concretely, a good idea would be to open a new ogre-next section in the Windows 
 BindMethod(v, _SC("WinOgreInstall"), Wiz_WinOgreInstall, _SC("Wiz::WinOgreInstall"));
 ```
 
-Look, using the C++ steps in section 2: the IDE starts, and `OGRE-Next project` still shows only the welcome page. `Wizard.WinOgreNextAcquire` exists, and no page calls it yet.
+Check whether everything compiles, using steps in section 2. You want succesful compilation here. In the IDE nothing changes yet, we only made functions available but haven't changed the Wizard itself yet.
 
 
-## 5. Download pages
+## 5. Teach the wizard to do git repo download
 
 Open `wizard.script` again. Copy these functions and paste the copies just above `BeginWinOgreNext`. Rename each copy and change the call inside it.
 
@@ -276,13 +276,11 @@ OgreNextCheckoutReady      -> OgreNextWinCheckoutReady
     Wizard.MacGitAcquire           -> Wizard.WinOgreNextAcquire
 ```
 
-In `OgreNextWinResolvePaths`, leave the leaf names and the `ogredeps` join. `WinCMakePaths` already reads `%LOCALAPPDATA%\codeblocks`. The join already builds `<deps source>/build-codeblocks/ogredeps`. `OgreNextJoin` inserts `/`, and the later file checks accept that slash.
-
 Copy `OnLeave_OgreNextAcquireDeps` to `OnLeave_OgreNextWinAcquireDeps`. In the copy, `OgreNextCheckoutReady` becomes `OgreNextWinCheckoutReady` and `OgreNextAcquire` becomes `OgreNextWinAcquire`.
 
 Copy `OnLeave_OgreNextAcquireEngine` to `OnLeave_OgreNextWinAcquireEngine` and make the same two renames.
 
-In `BeginWinOgreNext`, after the welcome `AddInfoPage`, add the path check, the Git stop, and the two download pages. A missing Git shows one page and returns. The wizard does not install Git.
+In `BeginWinOgreNext`, after the welcome `AddInfoPage` add:
 
 ```javascript
 local reason = OgreNextWinResolvePaths();
@@ -314,30 +312,16 @@ if (!OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
 }
 ```
 
-Code::Blocks calls `OnLeave_` plus the page id, so `OgreNextWinAcquireDeps` matches `OnLeave_OgreNextWinAcquireDeps`. Dependencies come before the engine. The engine page is reached only after the dependency checkout returns `success=1`.
+Check, using the script copy in section 2. If everything went well, the welcome page is followed by a download page. Next starts Git. Cancel on the Git question leaves the destination uncreated. 
 
-Look, using the script copy in section 2: the welcome page is followed by a download page. Next starts Git. Cancel on the Git question leaves the destination uncreated. After both checkouts, opening the wizard again skips both download pages.
+Check also whether in C:/Users/<current user>/AppData/CodeBlocks we have the ogre-next-deps and ogre-next source downloaded.
 
-
-## 6. Patch: the C++ is already there
-
-Open `src/plugins/scriptedwizard/macpatch.cpp`. In `kKnownPatches`, find:
-
-```text
-ogre-next-deps-mingw
-ogre-next-v3-0-mingw
-```
-
-Leave those entries. Leave `ogre-next-deps-apple` and `ogre-apple` as well. The Mac wizard still applies those two.
-
-Open `wiz.cpp` and find `Wiz_WinPatchProbe` and `Wiz_WinPatchApply`. They already call the shared patch functions, and `BindMethod` already publishes `Wizard.WinPatchProbe` and `Wizard.WinPatchApply`. Do not add a second binding.
-
-Look: nothing new in the wizard yet. The next section is the page that calls these two functions.
+If you feel like it, update the welcome message so the wizard doesn't say anymore that it doesn't do anything ...
 
 
-## 7. Patch pages
+## 6. Teach the Wizard to apply
 
-Copy these functions and paste them above `BeginWinOgreNext`.
+Copy these functions and paste them above `BeginWinOgreNext`. Rename the new copies:
 
 ```text
 OgreNextPatchState         -> OgreNextWinPatchState
@@ -377,14 +361,14 @@ if (!OgreNextWinPatchState(_T("ogre-next-v3-0-mingw"), OgreNextEngineSource).Mat
 }
 ```
 
-Look, using the script copy in section 2: after each download page comes a patch page. Next shows the patch and asks. Declining leaves the checkout unchanged. A second run skips a patch whose state is `already_applied`.
+Check using the build instructions in section 2: after each download page comes a patch page.
 
 
-## 8. `wincmake.h` and `wincmake.cpp` - configure and build
+## 7. `wincmake.h` and `wincmake.cpp` - configure and build
 
 We are still operating in `src/plugins/scriptedwizard`. The method is still the same: get useful code from the mac implementation and transform it into the Windows code by applying Operating-System specific edits.
 
-Open `maccmake.h`. Copy the declaration of `RunMacCMakeOgreNext` (lines 117–126). Paste it into `wincmake.h`, still inside `#if defined(__WXMSW__)`, after the declaration of `InstallWinOgre`.
+Open `maccmake.h`. Copy the declaration of the function `RunMacCMakeOgreNext`  (lines 117–126). Paste it into `wincmake.h`, still inside `#if defined(__WXMSW__)`, after the declaration of `InstallWinOgre`.
 
 Rename:
 
