@@ -104,4 +104,6 @@ debian/wxsmith-dev/
 
 local_paths.txt
 
+src/tools/DebugConsoleHold/cb_debug_console_hold
+
 
