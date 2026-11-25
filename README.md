@@ -29,9 +29,11 @@ tree. Building the 64-bit IDE from source is described in
 
 ## Linux users
 
-For Linux and the official Code::Blocks project, please visit:
+For a general Linux install, use the official Code::Blocks distribution:
 
 [Official Code::Blocks website](https://www.codeblocks.org)
+
+This repository can also build a `.tar.xz` of `.deb` packages for Debian and Ubuntu. The steps are in [README.debian.md](README.debian.md).
 
 The upstream Code::Blocks source repository is:
 
