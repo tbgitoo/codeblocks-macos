@@ -640,7 +640,7 @@ wxArrayString ParseManager::GetAllPathsByFilename(const wxString& filename)
 
     wxDir dir(fn.GetPath());
     if (!dir.IsOpened())
-        return wxArrayString();
+        return dirs;
 
     wxArrayString files;
     ParseManagerHelper::ParserDirTraverser traverser(wxEmptyString, files);
@@ -1416,13 +1416,13 @@ wxArrayString ParseManager::ParseProjectSearchDirs(const cbProject &project)
 {
 
     const TiXmlNode *extensionNode = project.GetExtensionsNode();
+    wxArrayString pdirs;
     if (!extensionNode)
-        return wxArrayString();
+        return pdirs;
     const TiXmlElement* elem = extensionNode->ToElement();
     if (!elem)
-        return wxArrayString();
+        return pdirs;
 
-    wxArrayString pdirs;
     const TiXmlElement* CCConf = elem->FirstChildElement("clangd_client");
     if (CCConf)
     {
@@ -1471,15 +1471,22 @@ void ParseManager::SetProjectSearchDirs(cbProject &project, const wxArrayString 
     }
 }
 // ----------------------------------------------------------------------------
-void ParseManager::CreateClassBrowser()
+void ParseManager::CreateClassBrowserIfEnabled()
 // ----------------------------------------------------------------------------
 {
     ConfigManager* cfg = Manager::Get()->GetConfigManager("clangd_client");
     if (m_ClassBrowser || !cfg->ReadBool(_T("/use_symbols_browser"), false))
         return;
+    CreateClassBrowser();
+}
 
+// ----------------------------------------------------------------------------
+void ParseManager::CreateClassBrowser()
+// ----------------------------------------------------------------------------
+{
     TRACE(_T("ParseManager::CreateClassBrowser: Enter"));
 
+    ConfigManager* cfg = Manager::Get()->GetConfigManager("clangd_client");
     m_ClassBrowserIsFloating = cfg->ReadBool(_T("/as_floating_window"), false);
 
     if (m_ClassBrowserIsFloating)

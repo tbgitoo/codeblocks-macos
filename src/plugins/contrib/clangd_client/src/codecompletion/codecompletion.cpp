@@ -708,7 +708,7 @@ void ClgdCompletion::OnAttach()
     cbAssert(GetParseManager() != nullptr);
     GetParseManager()->SetNextHandler(this);
 
-    GetParseManager()->CreateClassBrowser();
+    GetParseManager()->CreateClassBrowserIfEnabled();
 
     // hook to editors
     // both ccmanager and cc have hooks, but they don't conflict. ccmanager are mainly
@@ -1261,12 +1261,13 @@ void ClgdCompletion::OnPluginAttached(CodeBlocksEvent& event)
                              "RESTART Code::Blocks to avoid crashes and effects of incompatibilities.");
             cbMessageBox(msg, _("ERROR"), wxOK, GetTopWxWindow());
         }
+        //wxString msg = info ? info->title : wxString(_("<Unknown plugin>"));
         //Manager::Get()->GetLogManager()->DebugLog(F(_T("%s plugin activated"), msg.wx_str())); // **Debugging**
-        if ( info->name.Lower() == "clangd_client" )
-        {
+        //if ( info->name.Lower() == "clangd_client" )
+        //{
             // This means that legacy CodeCompletion should be disabled.
             // But there's no way to do that from here.
-        }
+        //}
     }
 }
 // ----------------------------------------------------------------------------
@@ -1907,6 +1908,16 @@ void ClgdCompletion::LSP_DoAutocomplete(const CCToken& token, cbEditor* ed)
 void ClgdCompletion::EditorEventHook(cbEditor* editor, wxScintillaEvent& event)
 // ----------------------------------------------------------------------------
 {
+    bool bInsertedOrDeleted = ((event.GetModificationType() & wxSCI_MOD_INSERTTEXT)
+                               || (event.GetModificationType() & wxSCI_MOD_DELETETEXT));
+    bool bUpdateUi = (event.GetEventType() == wxEVT_SCI_UPDATEUI);
+
+    if (!bInsertedOrDeleted && !bUpdateUi)
+    {
+        event.Skip();
+        return;
+    }
+
     if (!IsAttached() || !m_InitDone)
     {
         event.Skip();
@@ -1922,30 +1933,10 @@ void ClgdCompletion::EditorEventHook(cbEditor* editor, wxScintillaEvent& event)
 
     cbStyledTextCtrl* control = editor->GetControl();
 
-    if      (event.GetEventType() == wxEVT_SCI_CHARADDED)
-    {   TRACE(_T("wxEVT_SCI_CHARADDED")); }
-    else if (event.GetEventType() == wxEVT_SCI_CHANGE)
-    {   TRACE(_T("wxEVT_SCI_CHANGE")); }
-    else if (event.GetEventType() == wxEVT_SCI_MODIFIED)
-    {   TRACE(_T("wxEVT_SCI_MODIFIED")); }
-    else if (event.GetEventType() == wxEVT_SCI_AUTOCOMP_SELECTION)
-    {   TRACE(_T("wxEVT_SCI_AUTOCOMP_SELECTION")); }
-    else if (event.GetEventType() == wxEVT_SCI_AUTOCOMP_CANCELLED)
-    {   TRACE(_T("wxEVT_SCI_AUTOCOMP_CANCELLED")); }
-
-    // if the user is modifying the editor, then CC should try to reparse the editor's content
-    // and update the token tree.
-    if (   GetParseManager()->GetParser().Options().whileTyping
-        && (   (event.GetModificationType() & wxSCI_MOD_INSERTTEXT)
-            || (event.GetModificationType() & wxSCI_MOD_DELETETEXT) ) )
-    {
-       // m_NeedReparse = true;
-    }
     // ----------------------------------------------------------------------------
     // Support for LSP code completion calls with keyboard dwell time (ph 2021/01/31)
     // ----------------------------------------------------------------------------
-    if (   ((event.GetModificationType() & wxSCI_MOD_INSERTTEXT)
-            || (event.GetModificationType() & wxSCI_MOD_DELETETEXT))
+    if ( bInsertedOrDeleted
             and (GetLSPClient(editor))
         )
     {
@@ -1974,7 +1965,7 @@ void ClgdCompletion::EditorEventHook(cbEditor* editor, wxScintillaEvent& event)
         }
         // wxEVT_SCI_UPDATEUI will be sent on caret's motion, but we are only interested in the
         // cases where line number is changed. Then we need to update the CC's toolbar.
-        if (event.GetEventType() == wxEVT_SCI_UPDATEUI)
+        if (bUpdateUi)
         {
             m_ToolbarNeedRefresh = true;
             TRACE(_T("CodeCompletion::EditorEventHook: Starting m_TimerToolbar."));
@@ -3498,9 +3489,7 @@ wxString ClgdCompletion::GetFilenameFromLSP_Response(wxCommandEvent& event)
 
     if (URI.empty()) return wxString();
     wxFileName fnFilename = fileUtils.FilePathFromURI(URI);
-    wxString filename = fnFilename.GetFullPath();
-    if (filename.Length()) return filename;
-    return wxString();
+    return fnFilename.GetFullPath();
 }
 // ----------------------------------------------------------------------------
 void ClgdCompletion::OnLSP_Event(wxCommandEvent& event)
@@ -3860,7 +3849,7 @@ void ClgdCompletion::CleanUpLSPLogs()
     // The index file contains log names for recent log files we want to keep for awhile.
     // They are usually the last active log files and will be removed from the index when
     // new logs are created.
-    wxString logIndexFilename(wxFileName::GetTempDir() + wxFILE_SEP_PATH + "CBclangd_LogsIndex.txt");
+    wxString logIndexFilename(wxFileName::GetTempDir() + wxFILE_SEP_PATH + wxString("CBclangd_LogsIndex.txt"));
     if ( wxFileExists(logIndexFilename))
     switch (1)
     {
@@ -3878,7 +3867,7 @@ void ClgdCompletion::CleanUpLSPLogs()
         wxString tempDirName = wxFileName::GetTempDir();
         wxArrayString logFilesVec;
 
-        wxString logFilename = wxFindFirstFile(tempDirName + wxFILE_SEP_PATH + "CBclangd_*-*.log", wxFILE);
+        wxString logFilename = wxFindFirstFile(tempDirName + wxFILE_SEP_PATH + wxString("CBclangd_*-*.log"), wxFILE);
         while(logFilename.Length())
         {
             logFilesVec.Add(logFilename);
@@ -5696,7 +5685,7 @@ wxString ClgdCompletion::GetTargetsOutFilename(cbProject* pProject)
             if (tgtIdx == -1)
             {
                 //-Log(_("canceled"));
-                return wxString();
+                return buildOutputFile;
             }
             pTarget = pProject->GetBuildTarget(tgtIdx);
             activeBuildTarget = (pTarget ? pTarget->GetTitle() : wxString(wxEmptyString));
@@ -5710,7 +5699,7 @@ wxString ClgdCompletion::GetTargetsOutFilename(cbProject* pProject)
             //cbMessageBox(_("The selected target is only running pre/post build step commands\n"
             //               "Can't debug such a target..."), _("Information"), wxICON_INFORMATION);
             //Log(_("aborted"));
-            return wxString();
+            return buildOutputFile;
         }
         //-if (target) Log(target->GetTitle());
 
@@ -5718,12 +5707,7 @@ wxString ClgdCompletion::GetTargetsOutFilename(cbProject* pProject)
             buildOutputFile = pTarget->GetOutputFilename();
     }
 
-    if (buildOutputFile.Length())
-    {
-        return buildOutputFile;
-    }
-
-    return wxString();
+    return buildOutputFile;
 
 }
 // ----------------------------------------------------------------------------

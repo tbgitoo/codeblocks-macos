@@ -21,10 +21,9 @@
 			</object>
 			<object class="sizeritem">
 				<object class="wxStaticText" name="lblBuildTimestamp">
-					<label></label>
-					<style>wxALIGN_RIGHT</style>
+					<label>BuildTimestampFiller</label>
 				</object>
-				<flag>wxLEFT|wxRIGHT|wxEXPAND</flag>
+				<flag>wxLEFT|wxRIGHT|wxALIGN_CENTER_HORIZONTAL</flag>
 				<border>8</border>
 			</object>
 			<object class="sizeritem">

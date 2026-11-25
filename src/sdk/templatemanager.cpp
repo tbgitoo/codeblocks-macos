@@ -61,7 +61,7 @@ void TemplateManager::BuildToolsMenu(cb_unused wxMenu* menu)
 void TemplateManager::LoadUserTemplates()
 {
     m_UserTemplates.Clear();
-    wxString baseDir = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + "UserTemplates";
+    wxString baseDir = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + wxString("UserTemplates");
 
     if (!wxDirExists(baseDir)) // avoid warnings in debug builds
         return;
@@ -156,7 +156,7 @@ cbProject* TemplateManager::NewProjectFromUserTemplate(NewFromTemplateDlg& dlg, 
 
     wxBusyCursor busy;
 
-    wxString templ = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + "UserTemplates";
+    wxString templ = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + wxString("UserTemplates");
     templ << sep << dlg.GetSelectedUserTemplate();
     if (!wxDirExists(templ))
     {
@@ -174,11 +174,12 @@ cbProject* TemplateManager::NewProjectFromUserTemplate(NewFromTemplateDlg& dlg, 
     {
         wxFileName dstname(files[i]);
         dstname.MakeRelativeTo(templ + sep);
-        wxString src = files[i];
-        wxString dst = path + sep + dstname.GetFullPath();
+        const wxString src = files[i];
+        const wxString dst = path + sep + dstname.GetFullPath();
+        const wxString dstDir = wxFileName(dst).GetPath();
 //        Manager::Get()->GetLogManager()->DebugLog("dst=%s, dstname=%s", dst.c_str(), dstname.GetFullPath().c_str());
-        if (!CreateDirRecursively(dst))
-            Manager::Get()->GetLogManager()->DebugLog("Failed creating directory for " + dst);
+        if (!CreateDirRecursively(dstDir))
+            Manager::Get()->GetLogManager()->DebugLog("Failed creating directory for " + dstDir);
         if (wxCopyFile(src, dst, true))
         {
             if (FileTypeOf(dst) == ftCodeBlocksProject)
@@ -251,7 +252,7 @@ void TemplateManager::SaveUserTemplate(cbProject* prj)
     }
 
     // create destination dir
-    wxString templ = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + "UserTemplates";
+    wxString templ = ConfigManager::GetConfigFolder() + wxFILE_SEP_PATH + wxString("UserTemplates");
     if (!CreateDirRecursively(templ, 0755))
     {
         cbMessageBox(_("Couldn't create directory for user templates:\n") + templ, _("Error"), wxICON_ERROR);
@@ -297,11 +298,12 @@ void TemplateManager::SaveUserTemplate(cbProject* prj)
 
     for (FilesList::iterator it = prj->GetFilesList().begin(); it != prj->GetFilesList().end(); ++it)
     {
-        wxString src = (*it)->file.GetFullPath();
-        wxString dst = templ + (*it)->relativeToCommonTopLevelPath;
+        const wxString src = (*it)->file.GetFullPath();
+        const wxString dst = templ + (*it)->relativeToCommonTopLevelPath;
         Manager::Get()->GetLogManager()->DebugLog(wxString::Format("Copying %s to %s", src, dst));
-        if (!CreateDirRecursively(dst))
-            Manager::Get()->GetLogManager()->DebugLog("Failed creating directory for " + dst);
+        const wxString dstDir = wxFileName(dst).GetPath();
+        if (!CreateDirRecursively(dstDir))
+            Manager::Get()->GetLogManager()->DebugLog("Failed creating directory for " + dstDir);
         if (wxCopyFile(src, dst, true))
             ++count;
         else
