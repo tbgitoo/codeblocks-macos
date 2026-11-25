@@ -358,7 +358,9 @@ void CodeSnippetsWindow::InitDlg()
     wxBoxSizer* searchCtrlSizer = new wxBoxSizer(wxHORIZONTAL);
 
     wxString initSeachStr = _("For help, right click root item");
-    m_SearchSnippetCtrl = new wxTextCtrl(this, idSearchSnippetCtrl, initSeachStr, wxDefaultPosition, wxDefaultSize, 0);
+    // wxGTK emits EVT_TEXT from the constructor when the initial value is
+    // non-empty. OnSearch uses the tree, which is created below.
+    m_SearchSnippetCtrl = new wxTextCtrl(this, idSearchSnippetCtrl, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0);
     searchCtrlSizer->Add(m_SearchSnippetCtrl, 1, wxBOTTOM|wxLEFT|wxTOP, 5);
 
     m_SearchCfgBtn = new wxButton(this, idSearchCfgBtn, _T(">"), wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
@@ -384,6 +386,8 @@ void CodeSnippetsWindow::InitDlg()
     // Add root item
     SnippetTreeItemData* rootData = new SnippetTreeItemData(SnippetTreeItemData::TYPE_ROOT);
     GetSnippetsTreeCtrl()->AddRoot(_("All snippets"), 0, -1, rootData);
+    // ChangeValue does not emit EVT_TEXT, so the hint is not run as a search.
+    m_SearchSnippetCtrl->ChangeValue(initSeachStr);
     GetConfig()->pSnippetsSearchCtrl = m_SearchSnippetCtrl;
 }
 // ----------------------------------------------------------------------------
@@ -440,6 +444,10 @@ void CodeSnippetsWindow::OnSearchCfg(wxCommandEvent& /*event*/)
 void CodeSnippetsWindow::OnSearch(wxCommandEvent& /*event*/)
 // ----------------------------------------------------------------------------
 {
+    // Construction can deliver EVT_TEXT before the tree and its root exist.
+    if (not m_SnippetsTreeCtrl || not GetSnippetsTreeCtrl()->GetRootItem().IsOk())
+        return;
+
     // when search window is emtpy, reset the root item name
     if (m_SearchSnippetCtrl->GetValue().IsEmpty())
     {
