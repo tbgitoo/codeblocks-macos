@@ -32,7 +32,7 @@ Verified on Windows against Arduino CLI 0.31.0 (commit 940c9457, 2023-02-22) at 
 - **Upload.** On that Mega, `arduino-cli compile --build-path build --libraries libraries` from `HardwareBlink` (FQBN and port only in `sketch.yaml`, no `-b`) exited 0: 1544 bytes, platform `arduino:avr` 1.8.6. `arduino-cli upload --input-dir build` then exited 0 and did not change the hex, elf, or `compile_commands.json` hashes. A following `upload -v` ran only `avrdude` (`-patmega2560 -cwiring -PCOM3`), wrote those same 1544 bytes, reported signature `0x1e9801`, and did not invoke `avr-g++`, `gcc`, or `g++`. A second upload of `HardwareHello` (1992 bytes) likewise left the hex hash unchanged. The LED timing itself was not visible from this session, so that part of acceptance is still open. The earlier COM255 failure remains the missing-port error, not a hardware flash.
 - **Monitor.** `arduino-cli monitor -p COM3 -c baudrate=9600` in a real console printed `baudrate=9600`, `Connected to COM3! Press CTRL-C to exit.`, and then `Hello from Code::Blocks` repeatedly. The same command with stdout redirected printed `not running in a terminal` and exited at once, so it never held the port. One Ctrl+C ended a live session with status `-1073741510` in about 30 ms, and the port could be opened again immediately. A later Ctrl+C call did not end that process; it was then force-stopped. macOS was not exercised.
 - **Interactive serial.** The same live console is bidirectional. A round-trip sketch printed `READY`, and typing `TEST123` followed by Enter produced `RX: TEST123` at both 9600 and 115200. Enter sent `0x0D` then `0x0A` (CRLF). `monitor --help` has no line-ending flag, and `monitor -p COM3 --describe` has no line-ending setting. The advertised `baudrate` values on this port are `300, 600, 750, 1200, 2400, 4800, 9600, 19200, 31250, 38400, 57600, 74880, 115200, 230400, 250000, 460800, 500000, 921600, 1000000, 2000000`, default `9600`. This is not source-level debugging.
-- **Code::Blocks monitor path.** A build target is the wrong host: the build runner captures the process and holds the build until it exits. `IO::Execute` (`src/sdk/scripting/bindings/sc_io.cpp`) is synchronous and collects output. `ProgramConsole` is the Run/Debug console, and a commands-only target has no host application. The existing interactive launcher is Tools+, `cbTool::LAUNCH_NEW_CONSOLE_WINDOW` (`src/include/cbtool.h`), executed by `ToolsManager::Execute` (`src/sdk/toolsmanager.cpp`) through `cb_console_runner`. It allows one tool process, and nothing in the script bindings reads `sketch.yaml` into that tool. The smallest addition, not implemented in this pass, is one script binding that creates or replaces a single Tools+ entry named `Arduino Serial Monitor`. At launch it reads `default_port` and asks for a baud rate. No new process class and no docked serial window.
+- **Code::Blocks monitor path.** A build target is the wrong host: the build runner captures the process and holds the build until it exits. `IO::Execute` (`src/sdk/scripting/bindings/sc_io.cpp`) is synchronous and collects output. `ProgramConsole` is the Run/Debug console, and a commands-only target has no host application. The existing interactive launcher is Tools+, `cbTool::LAUNCH_NEW_CONSOLE_WINDOW` (`src/include/cbtool.h`), executed by `ToolsManager::Execute` (`src/sdk/toolsmanager.cpp`) through `cb_console_runner`. It allows one tool process, and nothing in the script bindings reads `sketch.yaml` into that tool. That runner cannot separate bytes read from the board from bytes the user typed, and it cannot be told to record after launch. The selected host, not implemented in this pass, is a Code::Blocks monitor pane. It opens the `port.address` from `arduino-cli board list --format json` and does not read `default_port` as the only address.
 - **Source-presence gate.** `ProjectHasDebuggeeSources()` is a debuggee-identity check: an empty project must not Debug or Run a leftover binary. `CompilerGCC::DoBuild()` also uses it, so Build, Rebuild, and Clean never reach the custom command when the project has no `ftSource` unit. Batch mode with no editor fails one step earlier, in `PrepareBuildOrRunRouting`, and does not emit `cbEVT_COMPILER_FINISHED`. No existing project or target flag skips this. The general fix is an opt-in project property, `AllowBuildWithoutSources`, described in section 1. It is not implemented yet. `.ino` is not added to `FileTypeOf()`.
 - **Ask-rebuild and Upload through Code::Blocks.** An empty target-level ask-rebuild command falls through to `$make -q` and was observed as `arduino-cli.exe -q -f Makefile Build`. One Code::Blocks `--target=Upload` run refreshed `compile_commands.json`. Direct CLI upload of the Mega sketches did not. That Code::Blocks repeat is still pending: it needs `AllowBuildWithoutSources`, and a dummy `.cpp` is not added to force it. The wizard is not started until the plain Upload target is shown not to compile.
 
@@ -150,9 +150,9 @@ Clean of a zero-unit project with the flag set still runs the configured clean c
 EDITOR                 Code::Blocks
 BUILD                  arduino-cli compile          custom-build target
 LIBRARY RESOLUTION     arduino-cli                  --libraries libraries
-BOARD DISCOVERY        arduino-cli board list       wizard, once, at creation
+BOARD DISCOVERY        arduino-cli board list       wizard at creation; again before Upload and Monitor
 UPLOAD                 arduino-cli upload           custom-build target
-SERIAL                 arduino-cli monitor          bidirectional Tools+ console, not a build
+SERIAL MONITOR         Code::Blocks                 opens the resolved port.address
 SIMULATION             not v4.4                     v4.5
 DEBUGGING              not v4.4
 
@@ -166,9 +166,9 @@ AllowBuildWithoutSources
     does not remove the compiler-profile requirement
 ```
 
-FQBN, port, and a live board are three different facts. The saved FQBN is what compilation uses, including when nothing is plugged in. The port is what Upload and Monitor need. Detection fills those fields when a board is present. It is not a prerequisite for Build.
+The FQBN is persistent build configuration. The port is runtime connection state. `default_fqbn` in `sketch.yaml` is what compilation uses, including when nothing is plugged in. `default_port` is the port remembered at creation, not a promise that the OS will keep that address. Build and Clean do not rediscover. Upload and Serial Monitor run `arduino-cli board list --format json` immediately before they open hardware. Nothing watches USB in the background.
 
-Arduino CLI owns compilation, linking, library resolution, board discovery, upload, and the serial session. Code::Blocks does not add library `.cpp` files to `DirectCommands`, restore GCC `CompileObject` or `LinkExe` templates, select `avr-gcc`, copy library sources into the sketch root, install libraries globally, add a build driver, or edit core to make this path easier.
+Arduino CLI owns compilation, linking, library resolution, board discovery, and upload. Code::Blocks owns the live serial session: it opens the `port.address` Arduino CLI just returned. Code::Blocks does not add library `.cpp` files to `DirectCommands`, restore GCC `CompileObject` or `LinkExe` templates, select `avr-gcc`, copy library sources into the sketch root, install libraries globally, add a build driver, or edit core to make this path easier.
 
 On macOS, Homebrew can install the `arduino-cli` formula through the existing Homebrew wizard helpers. Code::Blocks does not install Homebrew. On Windows, the wizard calls `AutoDetectCompiler("arduino-cli")` and stops when the tool is absent. This version does not download Arduino CLI on Windows.
 
@@ -251,7 +251,7 @@ logging            default, which is full
 
 Full logging selects `mcBuild` rather than `mcSilentBuild`. The silent command is still set, to the same compile line, so a later logging change does not append `> $(CMD_NULL)` and hide the diagnostics.
 
-The profile does not gain board, port, library, monitor, baud, or simulator settings. The port stays in `sketch.yaml`. The baud rate is chosen when the monitor is launched. Libraries stay in the project `libraries\` directory.
+The profile does not gain board, port, library, monitor, baud, or simulator settings. `default_fqbn` and the remembered `default_port` stay in `sketch.yaml`. The baud rate is chosen when the monitor is launched, after the current port has been resolved. Libraries stay in the project `libraries\` directory.
 
 During a build, `SwitchCompiler("arduino-cli")` calls `SetupEnvironment()`, which prepends `<master>/bin` to `PATH`. The Windows proof install has no `bin` directory there. The custom command can still be the bare name `arduino-cli` when the executable is already on `PATH`, which it was for the proof.
 
@@ -259,7 +259,7 @@ During a build, `SwitchCompiler("arduino-cli")` calls `SetupEnvironment()`, whic
 
 ## 4. Commands the wizard writes
 
-`sketch.yaml` is the board and port. On CLI 0.31.0, `default_fqbn` is enough for `arduino-cli compile` and `default_port` is enough for `arduino-cli upload`. Neither command in the project passes `-b` or `-p`. A sketch that has no `sketch.yaml` fails with `Missing FQBN` until `-b` is passed; that is why the file is required, not why the file is insufficient.
+`sketch.yaml` holds the FQBN and a remembered port. On CLI 0.31.0, `default_fqbn` is enough for `arduino-cli compile`, so Build passes neither `-b` nor `-p`. A sketch that has no `sketch.yaml` fails with `Missing FQBN` until `-b` is passed. `default_port` is a preference. Upload and Monitor do not treat it as the only address that will ever work. `upload --help` names `-p` as the upload port address and says the command does not compile the sketch. The examples on that help line are `COM3` and `/dev/ttyACM2`, the same flag for either form. The value passed at runtime is whatever `port.address` the resolver returned.
 
 ```yaml
 default_fqbn: arduino:avr:uno
@@ -284,11 +284,13 @@ Checked on this CLI, from the sketch directory:
 - Without `--libraries`, a `libraries` directory sitting in the sketch is not discovered on 0.31.0. The flag is required.
 - A second compile with `--build-path build` inside the sketch did not copy `build\` into `build\sketch\build`. The active build path is excluded. Other directories that happen to sit in the sketch, including an older build directory with a different name, are copied into `build\sketch\`. Clean removes `build\` so those copies do not accumulate. `libraries\` is user content and is not a build directory.
 
-The Upload command is:
+The stored Upload command does not embed a port address:
 
 ```text
-arduino-cli upload --input-dir build
+arduino-cli upload --input-dir build -p $(ARDUINO_PORT)
 ```
+
+`GetMakeCommandFor` runs `ReplaceMacros`, which uppercases the macro name and then reads that environment variable (`src/sdk/macrosmanager.cpp`). The resolver sets `ARDUINO_PORT` to the current `port.address` and only then builds the Upload target. It does not call `SetMakeCommandFor` for the resolved address, because that marks the project modified and would save a concrete port into the `.cbp`. It does not rewrite `default_port` or `default_fqbn`. `-b` is omitted, so the FQBN stays the one in `sketch.yaml`. The direct proof that upload does not recompile used the command without `-p`, while `sketch.yaml` already named the live port. Adding `-p` does not add a compile; the help text says upload does not compile. Building the Upload target without the resolver is not the supported path.
 
 `arduino-cli upload --help` on 0.31.0 says the command does not compile the sketch. The help text has `--input-dir` and no `--libraries`. From `HardwareBlink`, with `default_fqbn: arduino:avr:mega` and `default_port: COM3` and no `-b` or `-p`, `upload --input-dir build` exited 0. The hex, elf, and `compile_commands.json` hashes were the same before and after. `upload -v` showed only `avrdude` writing `build/HardwareBlink.ino.hex` (1544 bytes) to an ATmega2560 on COM3. It did not run `avr-g++`, `gcc`, or `g++`. A second upload of the already compiled `HardwareHello` hex behaved the same way. `--libraries` is not added to Upload. The quiet command captures no stdout or stderr on success; `-v` is what shows avrdude. An earlier run against COM255 failed with `ser_open()` and did not flash anything.
 
@@ -297,13 +299,13 @@ Both targets are `ttCommandsOnly`. Run is not upload. Upload is a second build t
 | Target | Member of virtual target All | Build command | Clean |
 |---|---|---|---|
 | Build | yes | `arduino-cli compile --build-path build --libraries libraries` | remove the `build` directory |
-| Upload | no | `arduino-cli upload --input-dir build` | remove the `build` directory |
+| Upload | no | `arduino-cli upload --input-dir build -p $(ARDUINO_PORT)` | remove the `build` directory |
 
 `includeInTargetAll` is not a usable persistence mechanism. `projectloader.cpp` still reads it for pre-1.5 projects, and the call that would write it is commented out. The wizard calls `DefineVirtualBuildTarget("All", ["Build"])` and does not call `SetIncludeInTargetAll`.
 
 `mcAskRebuildNeeded` has to be empty on the project as well as on the target. `GetMakeCommandFor()` uses the target command only when it is non-empty; otherwise it uses the project command. A new project still has the `CompileTargetBase` default `$make -q -f $makefile $target`. With MAKE set to `arduino-cli.exe`, that default becomes `arduino-cli.exe -q -f Makefile Build`, which the proof build log actually ran before the real compile. An empty target element does not override it. The wizard writes a project-level `MakeCommands` block whose `AskRebuildNeeded` command is empty, and the same empty command on both targets. `bsTargetBuild` then logs that the ask command is empty and runs the build command. `arduino-cli` does its own incremental work inside `build/`.
 
-Clean is not `arduino-cli compile --clean`, because that flag cleans and then compiles. Clean removes only this project's `build` directory. It does not remove `libraries\`.
+Clean is not `arduino-cli compile --clean`, because that flag cleans and then compiles. Clean removes only this project's `build` directory. It does not remove `libraries\` or `serial-logs\`.
 
 ```text
 macOS and other Unix    rm -rf build
@@ -358,27 +360,67 @@ port.hardware_id
 ```
 
    This board produced one port object and one `matching_boards` entry. The parser reads `port.address` and `matching_boards[].fqbn` / `name`. It does not invent fields that were absent.
-   - No board: the array is empty, as on the earlier run. The project is still created. FQBN stays `arduino:avr:uno`. `default_port` is omitted. Build works. Upload and Monitor do not, until the user writes a port into `sketch.yaml`.
+   - No board: the array is empty, as on the earlier run. The project is still created. FQBN stays `arduino:avr:uno`. `default_port` is omitted. Build works. A later Upload or Monitor resolves whatever is connected then. The user does not have to type a port into `sketch.yaml` for that.
    - One port and one `matching_boards` entry with an FQBN: write that FQBN and `port.address`. The connected board is `arduino:avr:mega`, not `arduino:avr:uno`.
    - One port and no usable FQBN: not observed on this board. The port would be written, and the FQBN would stay `arduino:avr:uno` for the user to edit.
    - Several port objects, or several `matching_boards` entries on one port: not observed. The page still uses `Wizard.AddGenericSingleChoiceListPage` (or `FillContainerWithChoices`) and lists `port — board name`. No new selector widget and no new C++.
 6. The compiler page is `Wizard.AddCompilerPage(_T("arduino-cli"), _T("arduino-cli"), false, false)`. One profile, and the configuration checkboxes hidden. `GetWantDebug()` and `GetWantRelease()` are then false, so `RunProjectWizard` creates a single `default` target instead of Debug and Release. `Wizard.SetCompilerDefault()` ignores its argument and restores the IDE default, so it is not used to select this profile.
 
-The Arduino Serial Monitor is a bidirectional interactive terminal, not a display of `Serial.print` alone and not source-level debugging. The user sees sketch output and types commands that the running sketch receives. It is not a third build target. After the project exists, the user starts it from Tools+. The launch option stays "new console window", the working directory stays the project, and the command is:
+Before Upload or Serial Monitor, one script runs `arduino-cli board list --format json` with the project's Arduino CLI. It reads `default_fqbn` and the remembered `default_port`. It returns a `port.address` string and does not interpret it as a Windows COM name. A Windows move from `COM3` to `COM5`, or a macOS move from one `/dev/cu.usbmodem…` path to another, is the same case: the remembered address is gone and the list has a new one. Discovery is not repeated for Build or Clean, and nothing polls in the background.
+
+`port.properties.serialNumber` and `port.hardware_id` are not used. On the one captured Mega they were the same string, `8513332303635110F1F1`. `vid` `0x2341` and `pid` `0x0042` name the USB product, not that board. One sample does not show that either field is always present, unique, or still there after the address changes. v4.4 does not store a hardware-identity table.
+
+Resolution, in order:
+
+- Remembered port is in the list and one of its `matching_boards` entries has the project's FQBN. Use that `port.address`.
+- Remembered port is in the list but its FQBN is different. Stop. Name both FQBNs. Do not upload, and do not change `default_fqbn`. A Mega binary is not an Uno binary. Pointing the project at the other board is a separate edit, followed by a new Build.
+- Remembered port is absent, and exactly one listed board has the project's FQBN. Use that `port.address` for this operation. Leave `sketch.yaml` unchanged. The log says the remembered address was absent and names the one that was used.
+- Several listed boards have the project's FQBN. The user picks one `port.address — name` line. The binding does not choose.
+- The list is empty. Build is unaffected. Upload stops with a clear message. A disconnected monitor does not connect. A monitor that was connected for this Upload stays disconnected after the restore attempt fails.
+- A listed port has no FQBN. Do not invent one and do not select it automatically. Monitor needs only a port, and Upload still needs the project's saved FQBN because `-b` is omitted. If the user explicitly picks that `port.address`, this operation uses it. The saved FQBN is still the project's build identity, not a claim about that port.
+
+The Arduino Serial Monitor is a Code::Blocks pane. It is not a build target, not Tools+, and not `arduino-cli monitor`. The user sees bytes read from the port and sends commands through a separate write. Baud rate and line ending are choices on the pane. The baud list still comes from `arduino-cli monitor -p <port.address> --describe`. On this Mega the default is `9600` and the list includes `115200`. Neither value is written into the compiler profile, the Build target, the Upload target, or `sketch.yaml`. The line ending is None, LF, CR, or CRLF, appended only to a Send. A typed character is firmware input and does not toggle recording.
+
+Connect runs the same resolver as Upload, then opens that `port.address`. Disconnect closes the handle. The pane does not scan COM ports, WMI, IOKit, or `/dev`.
+
+On CLI 0.31.0, Enter in `arduino-cli monitor` sent CRLF. That session is not the v4.4 host. The pane's line-ending choice replaces it. The earlier measurement still stands: while some other process held COM3, avrdude reported `ser_open(): can't open device "\\.\COM3": Access is denied.` The pane therefore closes its own handle before Upload. This Mega did not change COM number across an upload. v4.4 does not treat that as true for every board, and it rediscovers after upload because a reset can move the address. It does not watch USB in the background.
+
+The pane has three states:
+
+- Disconnected.
+- Connected, recording off.
+- Connected, recording on, file N.
+
+Upload is the user's authorization to interrupt a connected monitor. There is no extra confirmation. If the monitor is disconnected, Upload resolves the port and uploads. If it is connected, Upload does this:
+
+1. Remember the baud rate, the line ending, that the monitor was connected, and whether recording was on.
+2. If recording is on, flush and close file N. Do not append to it later.
+3. Close the serial handle. The pane is disconnected for the duration of the upload.
+4. Rediscover with `arduino-cli board list --format json`. One matching FQBN selects that `port.address`, including when the address changed. Several matches ask the user which board. No match stops the upload. A different FQBN on the remembered port stops the upload. `default_fqbn` is not changed.
+5. Upload the existing artifact with `-p` set to the address just resolved. Upload does not compile.
+6. Rediscover again. The same rules apply. A port that moved is the one used for reconnect.
+7. Reconnect at the remembered baud and line ending.
+8. If recording was on and reconnect succeeded, exclusive-create a new file and record into that file only. File N stays closed.
+
+A failed upload is reported on its own. Reconnect is still attempted. If reconnect fails, the pane stays disconnected. If recording had been on, it stays off and file N stays closed. If reconnect succeeds but the new file cannot be created, the pane stays connected, the error is shown, and recording stays off. The pane never shows recording on unless a file is open.
+
+Ambiguous hardware uses the same rule before the upload and again before reconnect. The user picks one `port.address — name` line. Cancelling that pick does not guess and does not upload or reconnect. The project FQBN stays as saved.
+
+### Recording an interval
+
+Recording starts off. Each off-to-on transition exclusive-creates a new file and only then shows recording on. On-to-off flushes and closes that file and leaves the port open. Disconnect, and the close that Upload performs, do the same flush and close. An interval with no bytes still keeps its empty file. An existing file is never resumed, overwritten, or appended. Pre-upload bytes and post-upload bytes are different files. The post-upload file contains only bytes read after the monitor has reconnected.
+
+The file is the bytes returned by the serial read, written unchanged. Bytes passed to the serial write are not recorded. Status text is not recorded. The display may substitute a glyph for a byte it cannot render. The file still contains that byte, including a NUL and a partial last line.
+
+Files go in `<project>/serial-logs/`. Clean and DistClean do not remove that directory. The name is:
 
 ```text
-arduino-cli monitor -p <port> -c baudrate=<rate>
+serial-YYYYMMDD-HHMMSS-fff-<port>-<baud>.txt
 ```
 
-`<port>` is `default_port` in `sketch.yaml`. `<rate>` is chosen at launch from the `baudrate` values `arduino-cli monitor -p <port> --describe` prints for that port. On this Mega the default is `9600` and the list includes `115200`. CLI 0.31.0 does not store a monitor baud rate in `sketch.yaml`, and `monitor --help` does not offer one. Baud rate is not written into the `arduino-cli` compiler profile, the Build target, or the Upload target.
+`/` and `\` and `:` in the port address become `-`. If the name exists, a counter is added. No metadata is written into the text. A sidecar `<same-name>.json` holds the start time, the end time, the path, the port, the baud rate, and the FQBN.
 
-The built-in tool entry cannot ask by itself. `ToolsManager::Execute` (`src/sdk/toolsmanager.cpp`) expands macros in the saved command and parameters, then starts `cb_console_runner`. The tool is stored in the IDE config, not in the `.cbp`, so one saved parameter string cannot hold a different port for each project. `edit_tool.xrc` is a free-text parameters field. `$(#...)` user variables are global path sets. The contrib ToolsPlus `$inputstr{}` prompt belongs to a different plugin and is not this host. `Wizard.AddGenericSingleChoiceListPage` is a list, and it runs only inside a wizard.
-
-The binding that already has to fill the port at launch therefore also asks for the rate. The existing scripted prompt is `wxGetTextFromUser` (`src/sdk/scripting/bindings/sc_globals.cpp`). The binding offers the describe list, defaults to that port's advertised default, and refuses a value that is not in the list. It does not add a serial window. `IO::Execute` still cannot host the session: that call waits and captures output, and a redirected monitor exits with `not running in a terminal`.
-
-On this CLI, Enter in the live console sends CRLF (`0x0D` `0x0A`). There is no line-ending configuration. v4.4 does not insert a conversion layer. A sketch that ends a command on either byte will see the command and then an empty command; a sketch that reads until LF only will see a trailing CR. That is the wire format, recorded from `SerialRoundTrip`.
-
-Port ownership was measured on this Mega. While `arduino-cli monitor` held COM3, `arduino-cli upload -v --input-dir build` failed and the monitor kept running. avrdude reported `ser_open(): can't open device "\\.\COM3": Access is denied.` The CLI ended with `Failed uploading: uploading error: exit status 1`. It did not take the port. After the monitor process exited, the same `upload --input-dir build` exited 0, and `board list` still showed COM3 with `arduino:avr:mega`. A new monitor could open that port within a few milliseconds of a Ctrl+C exit. Upload and opening the monitor did not change the COM number in samples taken immediately and three seconds later. This is a USB-serial Mega (VID `0x2341`, PID `0x0042`), not a native-USB board, so v4.4 does not treat that stability as true for every board and does not watch the port continuously. The workflow is: close the monitor console, upload, start the monitor again. The user writes a new COM name into `sketch.yaml` if a later board comes back as a different port.
+The v4.4 target is that behavior at 9600 and 115200. The describe list goes up to 2000000, and that rate is not a promise. The two-interval check and the upload-boundary check are not run. They wait until the pane exists.
 
 `SetupProject` then:
 
@@ -396,7 +438,7 @@ The sketch template is the usual empty `setup` / `loop`. `*.ino` is added to the
 
 `SetAllowBuildWithoutSources` is the generic `cbProject` method from Change 1, bound beside `SetMakefileCustom`. There is no Arduino-specific binding. v4.4 does not add a Project-settings checkbox. A hand-written project sets the same attribute in the `.cbp`, or calls the method from the scripting console.
 
-The rest of project creation uses bindings that already exist: `SetMakefileCustom`, `SetMakeCommandFor`, `SetCompilerID`, `SetTargetType`, `AddBuildTarget`, `RenameBuildTarget`, `DefineVirtualBuildTarget`, `AddGenericSingleChoiceListPage`, `FillContainerWithChoices`, `AutoDetectCompiler`, the Homebrew helpers, and `IO.ExecuteAndGetOutput`. The monitor tool binding is separate and is not added until this plan is reviewed.
+The rest of project creation uses bindings that already exist: `SetMakefileCustom`, `SetMakeCommandFor`, `SetCompilerID`, `SetTargetType`, `AddBuildTarget`, `RenameBuildTarget`, `DefineVirtualBuildTarget`, `AddGenericSingleChoiceListPage`, `FillContainerWithChoices`, `AutoDetectCompiler`, the Homebrew helpers, and `IO.ExecuteAndGetOutput`. The monitor pane is separate and is not added until this plan is reviewed.
 
 ---
 
@@ -412,7 +454,8 @@ The rest of project creation uses bindings that already exist: `SetMakefileCusto
 | `src/sdk/resources/lexers/lexer_cpp.xml` | Adds `*.ino` to the C/C++ file mask. |
 | `src/include/cbproject.h`, `src/sdk/cbproject.cpp`, `src/sdk/projectloader.cpp` | `SetAllowBuildWithoutSources` / `GetAllowBuildWithoutSources`, saved as `allow_build_without_sources` only when true. Change 1. |
 | `src/plugins/compilergcc/compilergcc.cpp` | `PrepareBuildOrRunRouting` and `DoBuild` consult the flag. Run, Debug, and `ProjectHasDebuggeeSources()` do not. Change 1. |
-| `src/sdk/scripting/bindings/scriptbindings.cpp` | `SetAllowBuildWithoutSources` and `GetAllowBuildWithoutSources` on `cbProject`. Change 1. The monitor tool binding stays a separate, still-unreviewed addition. |
+| `src/sdk/scripting/bindings/scriptbindings.cpp` | `SetAllowBuildWithoutSources` and `GetAllowBuildWithoutSources` on `cbProject`. Change 1. The monitor binding stays a separate addition. |
+| Serial monitor pane, Windows and POSIX port backends | Opens the resolved `port.address`. Incoming bytes, Send, baud, line ending, and one recording file per interval. Not started. |
 
 `DirectCommands`, `Compiler::IsValid`, `CompileFileDefault`, `FileTypeOf`, `ProjectHasDebuggeeSources`, and `GetMakeCommandFor` remain unchanged.
 
@@ -434,8 +477,8 @@ Order is fixed: prove the build, prove libraries, then the wizard, then a real b
 | M5 | Detect a connected AVR board and obtain a usable port and, when the CLI gives one, an FQBN. | Passed at the CLI for one board: COM3, `Arduino Mega or Mega 2560`, `arduino:avr:mega`. The default and 5s JSON documents match. Zero boards was the earlier `[]`. Several boards were not observed. The wizard page is not written yet. |
 | M6 | Build the sketch and the project-local library only through Arduino CLI, including with the board unplugged. | The unplugged compile passed (`sketch.yaml` FQBN, no `-b`). |
 | M7 | Upload Blink to a physical board and watch it run. A blink period different from the previous sketch is the observation. | Flash passed: `upload --input-dir build` wrote the existing 1544-byte hex through avrdude to the Mega and did not recompile. The LED was not visible from this session, so the timing is not accepted yet. |
-| M8 | Bidirectional Arduino Serial Monitor at a chosen baud rate, through the Tools+ console. | CLI half passed on the Mega. `READY`, then `TEST123`, then `RX: TEST123`, at 9600 and at 115200. Enter sent CRLF. The Tools+ entry is not implemented, so that host is not accepted yet. |
-| M9 | Clean removes `build\` only. The existing AVR GCC wizard and profile still behave as before. | Clean passed on the proof project. The AVR wizard was not re-run in this pass. |
+| M8 | Code::Blocks serial pane: bidirectional, chosen baud and line ending, interval files, and Upload that releases and reacquires the port. | Round trip passed on the Mega through `arduino-cli monitor`: `READY`, `TEST123`, `RX: TEST123`, at 9600 and 115200. Enter on that CLI sent CRLF. The pane, the incoming-only files, and the upload boundary are not implemented. |
+| M9 | Clean removes `build\` only. `libraries\` and `serial-logs\` stay. The existing AVR GCC wizard and profile still behave as before. | Clean passed on the proof project for `build\` and `libraries\`. `serial-logs\` did not exist yet. The AVR wizard was not re-run. |
 
 ---
 
@@ -455,14 +498,31 @@ v4.4 is accepted when a real AVR board has been through this workflow. Items alr
 10. With the board unplugged, Build still compiles for the FQBN in `sketch.yaml`. Shown: no `-b` on the command, platform `arduino:avr` 1.8.6.
 11. A physically connected Arduino is detected with `arduino-cli board list --format json`. Shown: one object, COM3, `Arduino Mega or Mega 2560`, `arduino:avr:mega`. The earlier empty machine returned `[]`.
 12. Port and FQBN stay separate. Zero boards leave the port empty and the FQBN at `arduino:avr:uno`. One recognised board fills both from the CLI. Shown: the Mega kept `arduino:avr:mega`. Several boards were not observed; they still use the existing single-choice wizard page.
-13. A Blink sketch compiles and uploads to a physical board. The command is `arduino-cli upload --input-dir build`. Shown: compile 1544 bytes, avrdude wrote that hex, hashes unchanged. The LED was not visible here.
+13. A Blink sketch compiles and uploads to a physical board. Shown without `-p`, while `sketch.yaml` named the live port: compile 1544 bytes, avrdude wrote that hex, hashes unchanged. The runtime Upload command adds `-p` with the resolved `port.address` and still does not compile. The LED was not visible here.
 14. The board's LED period is one that was not already running, so the new binary is the thing being observed. Not shown. The sketch is 200 ms on, 1800 ms off, on `LED_BUILTIN`.
-15. Arduino CLI serial acceptance, shown on the Mega at COM3. A sketch starts Serial, the live `arduino-cli monitor` console shows `READY`, the user types `TEST123`, and the board returns `RX: TEST123`. Shown at 9600 and, after recompiling the sketch at 115200, at `baudrate=115200`. Enter sent `54 45 53 54 31 32 33 0D 0A` (CRLF). The CLI cannot configure that ending. The earlier one-way `Hello from Code::Blocks` session also ran. This item does not use Tools+.
-16. Tools+ acceptance, not shown. The same `READY` / `TEST123` / `RX: TEST123` test at 9600 and 115200 runs through the Tools+ console, the baud rate is chosen from the `monitor --describe` list rather than fixed at 9600, closing the console releases COM3, and Upload can then take the port. The one-way Hello line is not this acceptance test.
-17. With the monitor open, Upload is refused until that console is closed, then the monitor is started again. Shown on COM3: `Access is denied` while the monitor ran; after it exited, upload succeeded and the port stayed COM3.
+15. Serial round trip, shown on the Mega at COM3 through `arduino-cli monitor`. A sketch prints `READY`, the user types `TEST123`, and the board returns `RX: TEST123`, at 9600 and at 115200. Enter on that CLI sent `54 45 53 54 31 32 33 0D 0A`. The v4.4 pane replaces that fixed ending with None, LF, CR, or CRLF. The pane itself is not shown yet.
+16. The pane connects to the resolver's `port.address`, at a baud taken from `monitor --describe`. Incoming bytes stay visible. Send writes only the command plus the selected ending. Not run.
+17. Upload while the pane is connected does not ask the user to disconnect. It closes the handle, uploads the existing artifact, rediscovers, and reconnects at the same baud and line ending. Shown only as the reason: avrdude got `Access is denied` while another process held COM3. The automatic release and reconnect are not run.
 18. Clean and DistClean remove `build\` and do not delete `libraries\`, including `library.properties`. Shown on the StepperDriver proof.
 19. Upload does not pass `--libraries` and does not compile sketch or library sources through `DirectCommands`.
 20. The existing AVR GCC wizard and the `avr-gcc` profile still build an AVR project as they do today.
+21. Remembered port still listed, and its FQBN matches the project: Upload and Monitor use that `port.address`.
+22. Remembered port absent, exactly one listed board matches the saved FQBN: the operation uses that new `port.address` and does not rewrite `sketch.yaml`.
+23. Several listed boards match the saved FQBN: the user selects one. The binding does not guess.
+24. Remembered port is present with a different FQBN: no upload, and `default_fqbn` is not changed.
+25. No board listed: Build still runs. Upload stops with a clear message. Monitor does not start.
+26. The value passed to `-p` is the CLI's `port.address`. The resolver has no COM-port or `/dev` scan of its own.
+27. That Upload still sends the existing artifact and does not compile.
+28. The pane stays bidirectional with recording off and with recording on. Baud still comes from `monitor --describe`.
+29. Recording starts off. Off to on exclusive-creates a new file under `serial-logs\`. On to off flushes and closes it and leaves the port open. A second interval is a different file. Existing files are not overwritten. Not run.
+30. Each file contains only bytes read from the port during that interval. Typed commands are not in the file. The display may render a byte the file still stores unchanged. A sidecar holds the times, port, baud, and FQBN. Clean does not delete `serial-logs\`.
+31. If the file cannot be created or a write fails, recording stays or returns off, the error is visible, and the connection stays up when the port is still open. Disconnect flushes an open file. No source-level debugging is claimed.
+32. Upload while connected, recording off: the pane disconnects, upload runs, rediscovery runs again, and the pane reconnects with the previous baud and line ending. No confirmation dialog. Not run.
+33. Upload while connected, recording on: file N is flushed and closed, upload runs, the pane reconnects, and recording resumes in a new exclusive-created file. File N is not reopened or appended. Not run.
+34. Those two files are distinct. The second contains only bytes received after reconnection.
+35. A failed upload is reported on its own, and the pane still attempts to reconnect. If reconnect fails, the pane stays disconnected and recording stays off. If reconnect works but the new file fails, the pane stays connected and recording stays off.
+36. A port address that changes across the upload is the address used to reconnect, when exactly one listed board has the project's FQBN.
+37. Several matching boards ask the user which one. The upload does not guess, and it does not change `default_fqbn`.
 
 ---
 
@@ -476,12 +536,18 @@ v4.4 is accepted when a real AVR board has been through this workflow. Items alr
 - Treating compiler id `null`, a `ttCommandsOnly` target, or `IsMakefileCustom()` as a substitute for `AllowBuildWithoutSources`. Those settings do not skip the source-presence gate. Build still requires `IsValid()` on a real executable.
 - Adding `.ino` to `FileTypeOf()`, or generating a source file that exists only so `ProjectHasDebuggeeSources()` returns true.
 - Changing `ProjectHasDebuggeeSources()` itself. That function still answers "may Run or Debug treat this project as a debuggee?" The build override is a separate question.
-- A new build driver, a new plugin, or a change to `DirectCommands`, `Compiler::IsValid`, `CompileFileDefault`, `FileTypeOf`, `ProjectHasDebuggeeSources`, or `GetMakeCommandFor`. The only `CompilerGCC` edit is the two `AllowBuildWithoutSources` checks.
+- A new build driver, or a change to `DirectCommands`, `Compiler::IsValid`, `CompileFileDefault`, `FileTypeOf`, `ProjectHasDebuggeeSources`, or `GetMakeCommandFor`. The only `CompilerGCC` edit is the two `AllowBuildWithoutSources` checks. The serial pane is not a build driver.
 - Teaching Compile-current-file to honour `mcCompileFile`.
 - Changing the diagnostic parser so a library path matches. The existing regex already matched the Windows lines from this CLI. A future mismatch is another regex in `options_arduino-cli.xml`, not a parser edit made to force this test.
 - Automatic Arduino include-path discovery for code completion. Headers under `libraries\` are a build concern for the CLI. Code completion is separate and is not part of v4.4 unless the existing project-file mechanism can show the files with no core change.
 - Embedding the Arduino board database. The wizard may list only the boards `arduino-cli board list` just returned, using `AddGenericSingleChoiceListPage` or `FillContainerWithChoices`. It does not ship a board catalog.
-- Making Monitor a Build target, or running it through `IO::Execute` or `DirectCommands`.
+- Win32, WMI, `/dev`, or IOKit port scans, a USB watcher, and a stored table of serial numbers. Discovery stays `arduino-cli board list --format json`.
+- Rewriting `default_fqbn` because a different board is plugged in, or treating that as the same event as a new port address.
+- Making Monitor a Build target, or running it through `IO::Execute`, `DirectCommands`, or Tools+.
+- Hosting the live session in `arduino-cli monitor`, including a PTY or ConPTY wrapper around it. That stream mixes typed input with received bytes.
+- Redirecting or teeing `arduino-cli monitor`. That fails the terminal check.
+- A confirmation dialog whose only purpose is that the monitor is connected. Upload already authorizes the release and the reconnect.
+- Appending bytes from after an upload onto the recording that was open before it.
 - Downloading Arduino CLI on Windows, installing Homebrew, vendoring cores, or downloading arbitrary libraries. Library Manager and automatic dependency installation stay out of scope.
 - Debug. `arduino-cli debug` and a GDB remote stub are outside this version. Run stays the existing commands-only behaviour and is not the upload action, and it is not the serial monitor.
 - Simulation. v4.4 does not integrate Wokwi, simavr, any other AVR or Arduino simulator, a simulated serial port, a simulated peripheral, or simulation debugging. That work is v4.5 and stays a separate architecture. It does not extend the `arduino-cli` compiler profile.
@@ -522,13 +588,15 @@ v4.4 is accepted when a real AVR board has been through this workflow. Items alr
 
 **Core install blocks the wizard.** `IO.Execute` is synchronous, as the existing Homebrew install is. The core download can take several minutes. The page tells the user that before starting it.
 
-**Board, port, and a live connection are different.** The FQBN in `sketch.yaml` is enough to compile with the board unplugged. The port is required only for Upload and Monitor. Detection writes those two fields when it can. Editing the FQBN in Compiler settings has no effect, because the profile has no board flag. This was confirmed: the compile command had no `-b`, and the CLI reported platform `arduino:avr` 1.8.6 from `sketch.yaml`.
+**The current port is runtime state.** `default_port` can go stale after an unplug, a new USB socket, a reboot, or another machine. Upload and Monitor therefore call `arduino-cli board list --format json` immediately before they open hardware. Build does not. The remembered port is preferred when it is still listed with the project's FQBN. A single new address for that same FQBN is used for that operation and is not written back. Several matches, or a different FQBN on the remembered address, are shown to the user. A different FQBN is a different binary, not another name for the same port. Editing `sketch.yaml` by hand remains possible and is not the normal step. The compiler profile still has no board flag: the unplugged compile used `default_fqbn` and did not pass `-b`.
 
 **The board-list document is one object per port.** The connected Mega produced one array element, one `matching_boards` entry (`name`, `fqbn`), and `port.address` / `protocol` / `properties.vid` / `properties.pid` / `properties.serialNumber` / `hardware_id`. `--json` is not a flag. The default timeout and `--discovery-timeout 5s` matched. An empty array is still the no-board result. A slow port that needs the longer timeout was not the case here.
 
 **Upload without a prior Build fails in the CLI**, because `--input-dir build` is empty. The wizard does not chain compile into the Upload target. The user builds, then uploads. On the Mega, direct upload reused the hex and did not recompile. Exit status 0 from `codeblocks.exe --build` is still not proof of upload: `BatchJob()` returns 0 after calling the compiler plugin. The LED timing was not visible in this pass, so it remains the physical check.
 
-**The monitor owns the port until its process exits.** On this Mega, upload during a real `arduino-cli monitor` session failed with `Access is denied` and the monitor stayed up. After the process exited, upload succeeded and COM3 was unchanged immediately and three seconds later. The later round-trip did not contradict that. A redirected monitor exits with `not running in a terminal` and does not hold the port, which is why the host has to be a console. Tools+ is still that console and is not implemented yet. v4.4 does not watch for a COM-number change. The user edits `sketch.yaml` if one happens. This measurement is a USB-serial Mega, not a native-USB board. Enter in that console sends CRLF, and CLI 0.31.0 has no line-ending setting. The baud rate is chosen at launch from `monitor --describe`; it is not fixed at 9600.
+**A recording file is the serial read for one interval.** Typed commands and pane status are not written into it. Upload closes the open file before it touches the port. Reconnecting with recording still on creates a different file. The two sides of an upload are not one acquisition. The v4.4 target is that behavior at 9600 and 115200. The describe list goes up to 2000000, and that rate is not a promise. `serial-logs\` is user data. The pane and the upload-boundary check are not implemented yet.
+
+**Upload closes the handle it needs.** On this Mega, upload while `arduino-cli monitor` held COM3 failed with `Access is denied`. The pane therefore drops the port before avrdude runs, then rediscovers and opens it again. A failed upload is still followed by that reconnect attempt. The reconnect can fail on its own, and the pane then stays disconnected. This Mega kept COM3 across an upload. Another board can move. Several matches are a question, not a guess. This measurement is a USB-serial Mega, not a native-USB board. The baud rate is chosen from `monitor --describe` and is not fixed at 9600. The line ending is the pane's choice, not the CLI's CRLF.
 
 **The Blink LED was not visible from this session.** avrdude did write the 200 ms / 1800 ms hex. The board was later overwritten by the Hello sketch and then by `SerialRoundTrip` at 115200.
 
@@ -538,9 +606,9 @@ v4.4 is accepted when a real AVR board has been through this workflow. Items alr
 
 ## 11. Done when
 
-A user can create an Arduino project, with Arduino CLI found or installed on macOS and already present on Windows, accept installation of the AVR core when it is missing, and produce a sketch that builds with the board unplugged. The generated project sets `AllowBuildWithoutSources` and contains no file added only to satisfy `FileTypeOf()`. Libraries under `libraries\<directory>\` are compiled by Arduino CLI. A syntax error in the `.ino` opens at the reported line. With a board connected, the wizard records its port and FQBN, Upload places a Blink sketch on that board, and the LED shows the new period. The Arduino Serial Monitor is bidirectional. The user can select the serial baud rate, receive `Serial.print` output, type commands to the running Arduino, and see its response. Closing the monitor releases the port for Upload. Source-level debugging stays outside v4.4. Clean removes `build\` and leaves `libraries\` in place. Code::Blocks does not invoke GCC to build the sketch or the libraries. An ordinary project that does not set the flag still refuses to build when it has no `ftSource` file.
+A user can create an Arduino project, with Arduino CLI found or installed on macOS and already present on Windows, accept installation of the AVR core when it is missing, and produce a sketch that builds with the board unplugged. The generated project sets `AllowBuildWithoutSources` and contains no file added only to satisfy `FileTypeOf()`. Libraries under `libraries\<directory>\` are compiled by Arduino CLI. A syntax error in the `.ino` opens at the reported line. With a board connected, the wizard records its port and FQBN, Upload places a Blink sketch on that board, and the LED shows the new period. The project still builds with no board attached. When Upload or Serial Monitor is requested, Code::Blocks resolves the connected board through Arduino CLI instead of assuming the port saved at creation is still valid. A new port address for the expected FQBN is used without a hand edit. Ambiguous or mismatched hardware is shown to the user and is not guessed. The Arduino Serial Monitor is a Code::Blocks pane on the port Arduino CLI resolved. The user selects the baud rate and the line ending, sees incoming bytes, and sends commands. Recording writes only those incoming bytes, one new file per interval. Upload while the pane is connected closes the port, uploads, rediscovers, and reconnects. A recording that was on resumes in a new file after reconnect, not in the file that ended before the upload. Source-level debugging stays outside v4.4. Clean removes `build\` and leaves `libraries\` and `serial-logs\` in place. Code::Blocks does not invoke GCC to build the sketch or the libraries. An ordinary project that does not set the flag still refuses to build when it has no `ftSource` file.
 
-Code::Blocks edits the project and starts the commands. Arduino CLI compiles, resolves Arduino libraries, detects hardware, uploads, and provides the serial session. The `arduino-cli` compiler profile exists only so the current custom-build pipeline will run those commands and parse GCC diagnostics. Simulation and debugging are not part of v4.4. `DirectCommands` is not on this path.
+Code::Blocks edits the project, starts the commands, and owns the serial session. Arduino CLI compiles, resolves Arduino libraries, detects hardware, and uploads. The `arduino-cli` compiler profile exists only so the current custom-build pipeline will run those commands and parse GCC diagnostics. Simulation and debugging are not part of v4.4. `DirectCommands` is not on this path.
 
 ---
 
