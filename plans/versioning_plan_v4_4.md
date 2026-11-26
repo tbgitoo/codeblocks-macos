@@ -2,15 +2,26 @@
 
 **Status: Planning. The manual pipeline has been exercised. The wizard has not been implemented, and no Code::Blocks source file has been changed.**
 
-The legacy Arduino project wizard was retired in v3.5 and stays retired. This version adds a new wizard only after the manual project below is the one the wizard will generate. The sketch is edited in Code::Blocks. Arduino CLI compiles, links, resolves libraries, and uploads. The existing AVR GCC wizard and the `avr-gcc` compiler profile stay as they are.
+The legacy Arduino project wizard was retired in v3.5 and stays retired. This version adds a new wizard only after the manual project below is the one the wizard will generate. The sketch is edited in Code::Blocks. Arduino CLI compiles, resolves libraries, detects a connected board, uploads, and provides the serial session. The existing AVR GCC wizard and the `avr-gcc` compiler profile stay as they are.
 
 **Question this version answers:** what has to change in Code::Blocks when the build is an external project tool, `arduino-cli`, rather than GCC or any other compiler that Code::Blocks drives one source file at a time?
 
 The investigation answer is narrow. Code::Blocks already has a project-level command path, and the Build button already runs it. What it does not have is a way to press Build with no compiler selected, or with a project that contains no file `FileTypeOf()` classifies as source. v4.4 therefore adds a compiler profile whose only jobs are to be found on disk and to recognise GCC diagnostics, and a wizard that stores `arduino-cli` in the existing custom-build command slots. It does not teach `DirectCommands` to compile `.cpp` files with `arduino-cli`.
 
-The earlier note in `plans/thoughts/codeblocks-arduino-architecture-discussion.md` still holds for debugging and for replacing Arduino IDE 2. v4.4 does not take that on. It delivers edit, build, clickable compiler diagnostics, project-local Arduino libraries, Clean, and Upload for one AVR sketch.
+The earlier note in `plans/thoughts/codeblocks-arduino-architecture-discussion.md` still holds for debugging and for replacing Arduino IDE 2. v4.4 does not take that on. It delivers edit, build, clickable compiler diagnostics, project-local Arduino libraries, detection of a physically connected board, upload, serial monitoring, and Clean for one AVR sketch. Simulation is v4.5.
 
-Verified on Windows against Arduino CLI 0.31.0 (commit 940c9457, 2023-02-22) at `C:\Users\thoma\.vscode\extensions\vscode-arduino.vscode-arduino-community-0.7.2-win32-x64\assets\platform\win32-x64\arduino-cli\arduino-cli.exe`, and against the installed Code::Blocks binary (build date Oct 23 2026). The proof projects live under `%TEMP%\cb-v44-proof` and a throwaway `--user-data-dir`. The user's roaming Code::Blocks config and the real Arduino15 config were not modified.
+## Investigation results
+
+Verified on Windows against Arduino CLI 0.31.0 (commit 940c9457, 2023-02-22) at `C:\Users\thoma\.vscode\extensions\vscode-arduino.vscode-arduino-community-0.7.2-win32-x64\assets\platform\win32-x64\arduino-cli\arduino-cli.exe`, and against the installed Code::Blocks binary (build date Oct 23 2026). Proof projects live under `%TEMP%\cb-v44-proof` and a throwaway `--user-data-dir`. The user's roaming Code::Blocks config and the real Arduino15 config were not modified.
+
+- **Compile.** `arduino-cli compile --build-path build --libraries libraries` is the verified Build command. `--libraries` is a collection root, repeatable or comma-separated. A relative `libraries` path resolves from the working directory. One root holds many library directories. A project path containing a space still works when the space is only in the working directory. `sketch.yaml` `default_fqbn` supplies the board, so the command does not pass `-b`.
+- **StepperDriver.** Version 1.4.1, no `depends=`. The sketch `#include <BasicStepperDriver.h>` / `BasicStepperDriver stepper(200, 8, 9); stepper.begin(120, 1); stepper.rotate(360);` compiled from `D:\Users\thoma\Documents\git\FillingInterfaceArduino\libraries\StepperDriver`. An isolated config showed the project copy (1.4.1) winning over a user-directory copy (9.9.9). A syntax error in a copy of `BasicStepperDriver.cpp` produced `...\BasicStepperDriver.cpp:22:1: error: expected unqualified-id before 'template'`, which matches the existing `Compiler error (2)` regex. The IDE double-click was shown for the `.ino`, not for that library file.
+- **BMP280, later.** With the same `--libraries libraries` root, Adafruit BMP280 Library 2.6.8 pulled Adafruit Unified Sensor and Adafruit BusIO from sibling directories. Removing those siblings failed with `fatal error: Adafruit_Sensor.h`. This does not block the StepperDriver proof.
+- **Board list.** `arduino-cli board list` printed `No boards found.` `arduino-cli board list --format json` printed `[]`. This CLI has no `board list --json` flag; `--format json` is the global switch. `--discovery-timeout` defaults to `1s`. `Win32_SerialPort` and the PnP Ports class were both empty, so a populated board object was not observed. The installed executable's JSON name for the recognised-board list is `matching_boards`. The wizard parser is not written until one non-empty sample is captured.
+- **Upload.** `arduino-cli upload --help` says upload does not compile. It has `--input-dir` and no `--libraries`. From a sketch with `default_port: COM255`, `arduino-cli upload --input-dir build` invoked `avrdude` on the existing hex, did not run `avr-g++`, and failed with `ser_open(): can't open device "\\.\COM255"`. No board was present, so a Blink sketch was not observed running on hardware. That acceptance check is still open.
+- **Monitor.** `arduino-cli monitor` requires `-p`. `--describe -p COM255` exited 0 and listed `baudrate` default `9600` (plus `dtr`, `bits`, `parity`, `rts`, `stop_bits`) without opening a session. The config flag is `-c baudrate=9600`. A live interactive session was not started, and macOS was not exercised. Termination was not observed; the planned action is to close the console that owns the port.
+- **Code::Blocks monitor path.** A build target is the wrong host: the build runner captures the process and holds the build until it exits. `IO::Execute` (`src/sdk/scripting/bindings/sc_io.cpp`) is synchronous and collects output. `ProgramConsole` is the Run/Debug console, and a commands-only target has no host application. The existing interactive launcher is Tools+, `cbTool::LAUNCH_NEW_CONSOLE_WINDOW` (`src/include/cbtool.h`), executed by `ToolsManager::Execute` (`src/sdk/toolsmanager.cpp`) through `cb_console_runner`. It allows one tool process, and nothing in the script bindings reads `sketch.yaml` into that tool. The smallest addition, not implemented in this pass, is one script binding that creates or replaces a single Tools+ entry from the project's port. No new process class.
+- **Pipeline facts that still constrain the wizard.** An `.ino`-only project never reaches the compiler (`ProjectHasDebuggeeSources`). An empty target-level ask-rebuild command falls through to `$make -q` and was observed as `arduino-cli.exe -q -f Makefile Build`. One Code::Blocks `--target=Upload` run refreshed `compile_commands.json`; a direct CLI upload did not. The wizard is not started until that Upload-through-Code::Blocks case is repeated with the plain command.
 
 ---
 
@@ -59,26 +70,24 @@ Build
 ## 2. Scope and responsibility boundary
 
 ```text
-Code::Blocks
-    |
-    +-- Arduino project wizard          not implemented in this pass
-    |       writes sketch.yaml
-    |       writes the custom build commands
-    |       creates an empty libraries/
-    |
-    +-- compiler profile id "arduino-cli"
-    |       found by the existing compiler_*.xml scan
-    |       IsValid() because arduino-cli.exe is on disk
-    |       GCC diagnostic regexes, and no compile/link templates
-    |
-    +-- Build target "Build"
-    |       arduino-cli compile --build-path build --libraries libraries
-    |
-    +-- Build target "Upload"
-            arduino-cli upload --input-dir build
+EDITOR                 Code::Blocks
+BUILD                  arduino-cli compile          custom-build target
+LIBRARY RESOLUTION     arduino-cli                  --libraries libraries
+BOARD DISCOVERY        arduino-cli board list       wizard, once, at creation
+UPLOAD                 arduino-cli upload           custom-build target
+SERIAL                 arduino-cli monitor          Tools+ console, not a build
+SIMULATION             not v4.4                     v4.5
+DEBUGGING              not v4.4
+
+compiler profile "arduino-cli"
+    exists so CompilerValid() passes
+    and so GCC diagnostics are parsed
+    does not store FQBN, port, libraries, or the monitor
 ```
 
-Arduino CLI owns compilation, linking, library resolution, and upload. Code::Blocks does not add library `.cpp` files to `DirectCommands`, restore GCC `CompileObject` or `LinkExe` templates, select `avr-gcc`, copy library sources into the sketch root, install libraries globally, add a build driver, or edit core to make this path easier.
+FQBN, port, and a live board are three different facts. The saved FQBN is what compilation uses, including when nothing is plugged in. The port is what Upload and Monitor need. Detection fills those fields when a board is present. It is not a prerequisite for Build.
+
+Arduino CLI owns compilation, linking, library resolution, board discovery, upload, and the serial session. Code::Blocks does not add library `.cpp` files to `DirectCommands`, restore GCC `CompileObject` or `LinkExe` templates, select `avr-gcc`, copy library sources into the sketch root, install libraries globally, add a build driver, or edit core to make this path easier.
 
 On macOS, Homebrew can install the `arduino-cli` formula through the existing Homebrew wizard helpers. Code::Blocks does not install Homebrew. On Windows, the wizard calls `AutoDetectCompiler("arduino-cli")` and stops when the tool is absent. This version does not download Arduino CLI on Windows.
 
@@ -162,6 +171,8 @@ logging            default, which is full
 ```
 
 Full logging selects `mcBuild` rather than `mcSilentBuild`. The silent command is still set, to the same compile line, so a later logging change does not append `> $(CMD_NULL)` and hide the diagnostics.
+
+The profile does not gain board, port, library, monitor, or simulator settings. Those live in `sketch.yaml`, in the project `libraries\` directory, and in the Tools+ monitor entry.
 
 During a build, `SwitchCompiler("arduino-cli")` calls `SetupEnvironment()`, which prepends `<master>/bin` to `PATH`. The Windows proof install has no `bin` directory there. The custom command can still be the bare name `arduino-cli` when the executable is already on `PATH`, which it was for the proof.
 
@@ -253,8 +264,16 @@ Page order:
 2. Project path. The directory name and the `.ino` name are the project name.
 3. Toolchain. macOS uses `Wizard.MacBrewFormula("arduino-cli")`, and the existing explicit install when the formula is missing. Windows only detects. Both then call `Wizard.AutoDetectCompiler("arduino-cli")` and stop unless `found=1`, `detected=1`, and the master path is non-empty.
 4. AVR core. `arduino-cli core list` is run with `IO.ExecuteAndGetOutput`. When `arduino:avr` is absent, the wizard offers `arduino-cli core update-index` and `arduino-cli core install arduino:avr`. Nothing is downloaded until the user accepts. The page does not advance when the core is still absent.
-5. Board and port. FQBN defaults to `arduino:avr:uno` and stays an editable field. The wizard does not embed a board list. Port is an editable field. When `arduino-cli board list` returns a single serial port, that port is the initial text. An empty port is allowed; Upload then fails with the CLI's own missing-port message until `sketch.yaml` has `default_port`.
+5. Connected board. The page runs `arduino-cli board list --format json` through `IO.ExecuteAndGetOutput`. There is no `--json` flag on this CLI. The human-readable form is only a fallback when the JSON array cannot be read. A populated sample was not captured on this machine (`[]`, and no serial port), so the field parser is not written until one real object is saved next to this plan. The intended reading, once that sample exists, is the port address plus `matching_boards`.
+   - No board: the project is still created. FQBN stays `arduino:avr:uno`. `default_port` is omitted. Build works. Upload and Monitor do not, until the user writes a port into `sketch.yaml`.
+   - One recognised board, with a usable FQBN: that port and that FQBN are written. A detected AVR board that is not an Uno is not replaced with `arduino:avr:uno`.
+   - One port and no usable FQBN: the port is written, and the FQBN stays `arduino:avr:uno` for the user to edit.
+   - Several boards: `Wizard.AddGenericSingleChoiceListPage` (or `FillContainerWithChoices` on a combobox already used by other wizards) lists `port — board name`. The script reads the selection. No new selector widget and no new C++.
 6. The compiler page is `Wizard.AddCompilerPage(_T("arduino-cli"), _T("arduino-cli"), false, false)`. One profile, and the configuration checkboxes hidden. `GetWantDebug()` and `GetWantRelease()` are then false, so `RunProjectWizard` creates a single `default` target instead of Debug and Release. `Wizard.SetCompilerDefault()` ignores its argument and restores the IDE default, so it is not used to select this profile.
+
+Monitor is not a third build target. After the project exists, the user starts it from Tools+. The command is `arduino-cli monitor -p <port> -c baudrate=9600`, launch option "new console window", working directory the project. The port is the `default_port` in `sketch.yaml`. Nothing in the current script bindings can create that tool, so the implementation adds one binding that calls the existing `ToolsManager` add/replace path for a single entry named `Arduino Serial Monitor`. It does not add a process class, and it does not run the monitor inside the build log. `IO::Execute` cannot host it: that call waits and captures output.
+
+Port ownership was not measured, because this machine had no serial port. Until a connected board shows otherwise, the workflow is: if the monitor console is open, close it before Upload; Upload uses the port; start the monitor again afterwards. The plan does not assume that `arduino-cli upload` can take a port the monitor still holds, and it does not assume that a reset keeps the same COM name. Those two facts are recorded on the first physical Uno, and the workflow text is corrected if the observation differs. The correction is a plan change, not a core change.
 
 `SetupProject` then:
 
@@ -269,7 +288,7 @@ Page order:
 
 The sketch template is the usual empty `setup` / `loop`. `*.ino` is added to the file mask of `src/sdk/resources/lexers/lexer_cpp.xml` so the sketch is highlighted as C/C++. `.ino` is not added to `FileTypeOf()`. Doing that would be a core change, and the anchor file already lets `DoBuild` proceed. The internal compiler is not invited to compile the sketch.
 
-No new Scripted Wizard C++ binding is required. `SetMakefileCustom`, `SetMakeCommandFor`, `SetCompilerID`, `SetTargetType`, `AddBuildTarget`, `RenameBuildTarget`, `DefineVirtualBuildTarget`, `AutoDetectCompiler`, the Homebrew helpers, and `IO.ExecuteAndGetOutput` are already exposed.
+Project creation itself needs no new Scripted Wizard binding. `SetMakefileCustom`, `SetMakeCommandFor`, `SetCompilerID`, `SetTargetType`, `AddBuildTarget`, `RenameBuildTarget`, `DefineVirtualBuildTarget`, `AddGenericSingleChoiceListPage`, `FillContainerWithChoices`, `AutoDetectCompiler`, the Homebrew helpers, and `IO.ExecuteAndGetOutput` are already exposed. The monitor binding in the board page is the one new call, and it is not added until this plan is reviewed.
 
 ---
 
@@ -283,6 +302,7 @@ No new Scripted Wizard C++ binding is required. `SetMakefileCustom`, `SetMakeCom
 | `src/plugins/scriptedwizard/resources/config.script` | Registers "Arduino project" under Embedded Systems. |
 | `src/plugins/scriptedwizard/resources/Makefile.am` | Adds the `arduino` wizard directory. |
 | `src/sdk/resources/lexers/lexer_cpp.xml` | Adds `*.ino` to the C/C++ file mask. |
+| `src/sdk/scripting/bindings/` | One proposed binding that creates or replaces the Tools+ entry `Arduino Serial Monitor`. Not added until this plan is reviewed. |
 
 `CompilerGCC`, `DirectCommands`, `Compiler::IsValid`, `CompileFileDefault`, `FileTypeOf`, and `GetMakeCommandFor` stay unchanged. The compiler XML install rule is already `compilers/*.xml`.
 
@@ -290,49 +310,46 @@ No new Scripted Wizard C++ binding is required. `SetMakefileCustom`, `SetMakeCom
 
 ## 7. Milestones
 
-The first milestone is the manual proof. It was run before this plan was revised. The wizard is not milestone 1.
+Order is fixed: prove the build, prove libraries, then the wizard, then a real board, then upload, then the monitor. The wizard is not started while the M1 Upload-through-Code::Blocks repeat in section 5 is still open.
 
 | | Objective | Result on this machine |
 |---|---|---|
-| M1 | Prove the pipeline with a hand-written `.cbp`, the `arduino-cli` profile in a throwaway user-data directory, `sketch.yaml`, and `libraries\`. No wizard. | Build of a sketch that contains one `ftSource` file ran `arduino-cli compile --build-path build --libraries libraries`. The build log named no `gcc`, `g++`, or `avr-gcc` launched by Code::Blocks. A `.ino` syntax error was classified and a double-click opened line 3, column 1. Clean removed `build\` and did not touch the library. A master path with no `arduino-cli.exe` did not update the hex. Upload through the IDE still needs the repeat in section 5. |
-| M2 | Add the same profile under `src/plugins/compilergcc/resources/compilers/`. | Not started. The proof profile was only in the throwaway user-data directory. |
-| M3 | Register the wizard and create the sketch layout in section 2, including empty `libraries/` and `extra/anchor.cpp`. | Not started. Blocked on the Upload repeat in section 5. |
-| M4 | Install or detect the CLI, then the AVR core, before the project exists. | Not started. The proof machine already had CLI 0.31.0 and `arduino:avr` 1.8.6. |
-| M5 | Project-local libraries. | CLI compile of StepperDriver and of Adafruit BMP280 from `FillingInterfaceArduino\libraries` passed. See section 8. The IDE click was shown for the `.ino`, not yet for a library `.cpp`. |
-| M6 | Upload is a target, and Clean stays limited to `build\`. | Clean through Code::Blocks passed. Direct `arduino-cli upload --input-dir build` passed and did not recompile. The IDE Upload repeat is the open item. |
+| M1 | Compiler profile and the manual custom-build path. Build goes through `CompilerValid("arduino-cli")`, the custom command, `arduino-cli compile`, the existing GCC regex, and a click on the `.ino` line. No wizard. | Passed for Build, the `.ino` click, Clean, and a missing executable. The build log named no host `gcc`, `g++`, or `avr-gcc`. One `--target=Upload` run inside Code::Blocks refreshed `compile_commands.json`; the direct CLI upload did not. |
+| M2 | Project-local library. Compile real StepperDriver from `./libraries`. | Passed from `FillingInterfaceArduino\libraries\StepperDriver` 1.4.1, with no non-core dependency. The library diagnostic matched `Compiler error (2)`. The IDE click was not repeated on that `.cpp`. BMP280 sibling resolution also passed and does not gate M1. |
+| M3 | Wizard creates `<name>.ino`, `<name>.cbp`, `sketch.yaml`, empty `libraries\`, `extra/anchor.cpp`, and the Build and Upload targets. | Not started. |
+| M4 | Detect or install Arduino CLI as already specified. Install `arduino:avr` only after confirmation. | Not started. This machine already had CLI 0.31.0 and core 1.8.6. |
+| M5 | Detect a connected AVR board and obtain a usable port and, when the CLI gives one, an FQBN. | Not run. `board list --format json` was `[]`. No serial port was present. |
+| M6 | Build the sketch and the project-local library only through Arduino CLI, including with the board unplugged. | The unplugged compile passed (`sketch.yaml` FQBN, no `-b`). |
+| M7 | Upload Blink to a physical board and watch it run. A blink period different from the previous sketch is the observation. | Not run. `upload --input-dir build` against COM255 failed to open the port and did not recompile. |
+| M8 | Upload a sketch that prints `Hello from Code::Blocks` and read that line from the Tools+ monitor. | Not run. Flags are verified. No port was open. |
+| M9 | Clean removes `build\` only. The existing AVR GCC wizard and profile still behave as before. | Clean passed on the proof project. The AVR wizard was not re-run in this pass. |
 
 ---
 
 ## 8. Acceptance
 
-v4.4 is accepted when all of the following hold.
+v4.4 is accepted when a real AVR board has been through this workflow. Items already shown on this machine are marked. Items that need a plugged-in board are not.
 
-Build and diagnostics:
-
-1. File -> New -> Project contains Arduino project under Embedded Systems, and the retired wizard is not restored.
-2. The wizard's only compiler profile is `arduino-cli`. GCC, `avr-gcc`, Debug, and Release are not selected for the generated project.
-3. On macOS, a missing `arduino-cli` formula can be installed through the existing explicit Homebrew flow. Code::Blocks does not install Homebrew.
-4. On Windows, a missing `arduino-cli` stops the wizard. This version does not download it.
-5. The wizard calls `Wizard.AutoDetectCompiler("arduino-cli")` and creates a project only when detection reports a real master path.
-6. A missing `arduino:avr` core is installed only after the user accepts the download.
-7. The generated directory matches section 2. The Build command is `arduino-cli compile --build-path build --libraries libraries`. The project-level ask-rebuild command is empty.
-8. Build of a fresh Uno sketch finishes with the CLI's size summary. The Code::Blocks build log contains no host `gcc`, `g++`, or `avr-gcc` invocation of the sketch or of a library.
-9. A syntax error in the `.ino` is clickable and lands on that source line. This was shown: `InoClick.ino:3:1: error: expected unqualified-id before '}' token`, double-click, caret on line 3 column 1.
-10. A profile whose master path does not contain `arduino-cli.exe` does not build the target.
-11. The AVR project wizard and the `avr-gcc` profile still build an AVR project the way they do today.
-
-Libraries:
-
-12. The wizard creates an empty `libraries\` directory.
-13. A library placed at `libraries\<library-directory>\` is found by Arduino CLI when the Build command passes `--libraries libraries`.
-14. StepperDriver 1.4.1, which has no `depends=` entry, compiles from `libraries\StepperDriver`. The proof sketch is `#include <BasicStepperDriver.h>` and `BasicStepperDriver stepper(200, 8, 9); stepper.begin(120, 1); stepper.rotate(360);`, taken from `examples\BasicStepperDriver\BasicStepperDriver.ino`.
-15. `Adafruit_BMP280_Library` compiles from the project-local root. Its non-core dependencies, Adafruit Unified Sensor and Adafruit BusIO, resolve from that same root. Wire and SPI come from the AVR core.
-16. The successful BMP280 compile does not depend on a global copy. `arduino-cli lib list` reported none, and the CLI's "Used library" lines named `D:\Users\thoma\Documents\git\FillingInterfaceArduino\libraries\Adafruit_BMP280_Library`.
-17. A libraries root that contains only `Adafruit_BMP280_Library` fails in the build log with `fatal error: Adafruit_Sensor.h: No such file or directory`, pointing at `Adafruit_BMP280.h`.
-18. A library `.cpp` diagnostic is parsed by the same `Compiler error (2)` regex. The line produced from a copy of `BasicStepperDriver.cpp`, not from the user's tree, was `...\libraries\StepperDriver\src\BasicStepperDriver.cpp:22:1: error: expected unqualified-id before 'template'`. The IDE double-click was not repeated on that file. The regex and the click path are the ones that opened the `.ino`.
-19. Clean removes `build\` and leaves `libraries\` untouched, including `library.properties` timestamps.
-20. Upload does not pass `--libraries`, does not rebuild the sketch, and does not modify `libraries\`.
-21. Code::Blocks never invokes GCC directly for the sketch or for library sources. Library objects appear under `build\libraries\<name>\` because Arduino CLI wrote them.
+1. File -> New -> Project contains Arduino project under Embedded Systems.
+2. The retired Arduino wizard is not restored.
+3. The generated project's compiler profile is `arduino-cli`. GCC, `avr-gcc`, Debug, and Release are not selected.
+4. A missing Arduino CLI is detected and, on macOS, can be installed through the existing Homebrew confirmation. A missing `arduino:avr` core is installed only after the user accepts. Windows does not download the CLI. This machine already had CLI 0.31.0 and core 1.8.6.
+5. The generated directory contains `<name>.ino`, `<name>.cbp`, `sketch.yaml`, and `libraries\`. `extra/anchor.cpp` is also present, because an `.ino`-only project does not build.
+6. StepperDriver compiles from that project's `libraries\StepperDriver`. Shown from `FillingInterfaceArduino\libraries\StepperDriver` 1.4.1, which has no `depends=`. The sketch is `#include <BasicStepperDriver.h>` and `BasicStepperDriver stepper(200, 8, 9); stepper.begin(120, 1); stepper.rotate(360);`.
+7. Code::Blocks does not invoke host `gcc`, `g++`, or `avr-gcc`, and does not emit per-file `DirectCommands`, for the sketch or the library. Shown: the Build log contained one `arduino-cli compile` line, and the library objects were under `build\libraries\`.
+8. A deliberate error in the `.ino` is clickable and opens that line. Shown: `InoClick.ino:3:1`, double-click, caret on line 3 column 1.
+9. A deliberate error in a library `.cpp` is tested the same way. The CLI line `BasicStepperDriver.cpp:22:1: error: expected unqualified-id before 'template'` matches `Compiler error (2)`. The click inside the IDE is still to be done. BMP280, after StepperDriver, must also resolve Adafruit Unified Sensor and Adafruit BusIO from the same `libraries\` root, and must fail with `Adafruit_Sensor.h` when they are absent. Shown at the CLI. Neither test used a global copy.
+10. With the board unplugged, Build still compiles for the FQBN in `sketch.yaml`. Shown: no `-b` on the command, platform `arduino:avr` 1.8.6.
+11. A physically connected Arduino is detected with `arduino-cli board list --format json`. Not shown: this machine returned `[]`.
+12. Port and FQBN stay separate. Zero boards leave the port empty and the FQBN at `arduino:avr:uno`. One recognised board fills both from the CLI, and a non-Uno FQBN is kept. Several boards use the existing single-choice wizard page.
+13. A Blink sketch compiles and uploads to a physical board. The command is `arduino-cli upload --input-dir build`. Not shown on hardware. COM255 failed to open and did not recompile.
+14. The board's LED period is one that was not already running, so the new binary is the thing being observed.
+15. A sketch that prints `Hello from Code::Blocks` once a second at 9600 baud is uploaded.
+16. That line is read from the v4.4 monitor, which is the Tools+ console running `arduino-cli monitor -p <port> -c baudrate=9600`, not a Build target.
+17. With the monitor open, Upload is refused until that console is closed, then the monitor is started again. This ownership rule stands until a connected board shows a different result.
+18. Clean and DistClean remove `build\` and do not delete `libraries\`, including `library.properties`. Shown on the StepperDriver proof.
+19. Upload does not pass `--libraries` and does not compile sketch or library sources through `DirectCommands`.
+20. The existing AVR GCC wizard and the `avr-gcc` profile still build an AVR project as they do today.
 
 ---
 
@@ -348,9 +365,11 @@ Libraries:
 - Teaching Compile-current-file to honour `mcCompileFile`.
 - Changing the diagnostic parser so a library path matches. The existing regex already matched the Windows lines from this CLI. A future mismatch is another regex in `options_arduino-cli.xml`, not a parser edit made to force this test.
 - Automatic Arduino include-path discovery for code completion. Headers under `libraries\` are a build concern for the CLI. Code completion is separate and is not part of v4.4 unless the existing project-file mechanism can show the files with no core change.
-- Embedding the Arduino board database, or a board picker larger than one editable FQBN field defaulting to `arduino:avr:uno`.
+- Embedding the Arduino board database. The wizard may list only the boards `arduino-cli board list` just returned, using `AddGenericSingleChoiceListPage` or `FillContainerWithChoices`. It does not ship a board catalog.
+- Making Monitor a Build target, or running it through `IO::Execute` or `DirectCommands`.
 - Downloading Arduino CLI on Windows, installing Homebrew, vendoring cores, or downloading arbitrary libraries. Library Manager and automatic dependency installation stay out of scope.
-- Debug. `arduino-cli debug` and a GDB remote stub are outside this version. Run stays the existing commands-only behaviour and is not the upload action.
+- Debug. `arduino-cli debug` and a GDB remote stub are outside this version. Run stays the existing commands-only behaviour and is not the upload action, and it is not the serial monitor.
+- Simulation. v4.4 does not integrate Wokwi, simavr, any other AVR or Arduino simulator, a simulated serial port, a simulated peripheral, or simulation debugging. That work is v4.5 and stays a separate architecture. It does not extend the `arduino-cli` compiler profile.
 - `arduino-cli cache clean`, and any board package other than `arduino:avr`.
 - Making `arduino-cli` the IDE's default compiler. `RunProjectWizard` already saves and restores the previous default around project creation.
 
@@ -388,9 +407,15 @@ Libraries:
 
 **Core install blocks the wizard.** `IO.Execute` is synchronous, as the existing Homebrew install is. The core download can take several minutes. The page tells the user that before starting it.
 
-**Board and port live in `sketch.yaml`, not in the compiler profile.** Editing the FQBN in Compiler settings has no effect, because that profile has no board flag. This was confirmed: the compile command had no `-b`, and the CLI reported platform `arduino:avr` 1.8.6 from `sketch.yaml`.
+**Board, port, and a live connection are different.** The FQBN in `sketch.yaml` is enough to compile with the board unplugged. The port is required only for Upload and Monitor. Detection writes those two fields when it can. Editing the FQBN in Compiler settings has no effect, because the profile has no board flag. This was confirmed: the compile command had no `-b`, and the CLI reported platform `arduino:avr` 1.8.6 from `sketch.yaml`.
 
-**Upload without a prior Build fails in the CLI**, because `--input-dir build` is empty. The wizard does not chain compile into the Upload target. The user builds, then uploads.
+**The board-list object has not been seen.** `board list --format json` returned `[]`. `--json` is not a flag on 0.31.0. The parser for `matching_boards` waits for one captured non-empty document. A one-second discovery timeout can also miss a slow port; the wizard page may pass `--discovery-timeout 5s` if the first empty result is suspected to be that timeout rather than a missing board.
+
+**Upload without a prior Build fails in the CLI**, because `--input-dir build` is empty. The wizard does not chain compile into the Upload target. The user builds, then uploads. Exit status 0 from `codeblocks.exe --build` is not proof of upload: `BatchJob()` returns 0 after calling the compiler plugin. The physical check is the LED.
+
+**The monitor owns the port until its console is closed.** Tools+ runs one tool process. Upload is a different process. On this machine that interaction could not be tried. The workflow is close monitor, upload, start monitor. A reset that changes the COM number is written back into `sketch.yaml` by the user; v4.4 does not watch for that.
+
+**Physical upload and the serial session are not yet observed.** No COM port was present. COM255 proved the upload command and the missing-port error only.
 
 **Windows does not gain an installer in this version.** A Windows machine without `arduino-cli` on `PATH`, or in a directory the profile searches, cannot finish the wizard.
 
@@ -398,11 +423,9 @@ Libraries:
 
 ## 11. Done when
 
-A user can create an Arduino project, with Arduino CLI found or installed on macOS and already present on Windows, accept installation of the AVR core when it is missing, and produce a sketch whose Build target compiles with `arduino-cli compile --build-path build --libraries libraries` and whose Upload target uploads with `arduino-cli upload --input-dir build`. Libraries live under `libraries\<directory>\` and are compiled by Arduino CLI. Compiler errors in the `.ino` open at the reported line. Clean removes `build\` and leaves `libraries\` in place. Code::Blocks does not invoke GCC to build the sketch or the libraries.
+A user can create an Arduino project, with Arduino CLI found or installed on macOS and already present on Windows, accept installation of the AVR core when it is missing, and produce a sketch that builds with the board unplugged. Libraries under `libraries\<directory>\` are compiled by Arduino CLI. A syntax error in the `.ino` opens at the reported line. With a board connected, the wizard records its port and FQBN, Upload places a Blink sketch on that board, and the LED shows the new period. The Tools+ monitor then shows `Hello from Code::Blocks` from a second sketch. Clean removes `build\` and leaves `libraries\` in place. Code::Blocks does not invoke GCC to build the sketch or the libraries.
 
-The division of responsibility:
-
-**the wizard writes the sketch, the empty library root, the anchor file, and the two commands; Arduino CLI compiles, resolves libraries, links, and uploads; the `arduino-cli` compiler profile exists so the current build pipeline will agree to run those commands and will recognise GCC diagnostics; `DirectCommands` is not on this path.**
+Code::Blocks edits the project and starts the commands. Arduino CLI compiles, resolves Arduino libraries, detects hardware, uploads, and provides the serial session. The `arduino-cli` compiler profile exists only so the current custom-build pipeline will run those commands and parse GCC diagnostics. Simulation and debugging are not part of v4.4. `DirectCommands` is not on this path.
 
 ---
 
@@ -427,7 +450,13 @@ arduino-cli compile --no-color --fqbn arduino:avr:uno --build-path %TEMP%\cb-v44
 cd %TEMP%\cb-v44-proof\StepperSketch
 arduino-cli upload --no-color -v --input-dir build -p COM255 .
 arduino-cli upload --no-color --input-dir build .
+
+arduino-cli board list
+arduino-cli board list --format json
+arduino-cli monitor -p COM255 --describe
 ```
+
+`board list` printed `No boards found.` The JSON form printed `[]`. `monitor --describe` printed `baudrate` default `9600` and exited 0 without a session. No physical board was attached, so Blink and the serial print were not observed.
 
 The BMP280 "Used library" lines named the FillingInterfaceArduino copies of Adafruit BMP280 Library 2.6.8, Adafruit Unified Sensor 1.1.15, and Adafruit BusIO 1.17.2, plus Wire and SPI from `arduino:avr` 1.8.6. The missing-dependency build named `Adafruit_Sensor.h` and the local `Adafruit_BMP280.h`. StepperDriver has no `depends=` line; its includes are `Arduino.h` and its own headers.
 
