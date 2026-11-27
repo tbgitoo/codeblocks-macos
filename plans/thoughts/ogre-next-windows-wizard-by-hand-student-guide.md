@@ -204,87 +204,544 @@ Paste them into the anonymous namespace of `wingit.cpp`.
 
 Note: that anonymous namespace is like the 'using namespace std'. Except for it's anonymous, meaning whatever is in it is reachable only from `wingit.cpp`
 
-The function `KnownSourceDestination` in `macgit.cpp` starts from wxGetHomeDir() and appends Library, then CodeBlocks, then source.leaf. The Windows procedure is different. So in `wincmake.cpp` replace the lines of the block from `wxGetHomeDir` through appending `source.leaf` by the following code: 
+For `KnownSourceDestination` we need to adapt the implementation, because Mac and Windows directory organization is different.
+ In `macgit.cpp` it starts at the home directory and appends `Library`, then `CodeBlocks`. On Windows the root is `%LOCALAPPDATA%\codeblocks`. After you have pasted the helpers into `wingit.cpp`, replace that whole function with:
 
 ```cpp
-wxString local;
-if (!wxGetEnv(wxT("LOCALAPPDATA"), &local) || local.empty())
-    return wxString();
-wxFileName dest = wxFileName::DirName(local);
-dest.AppendDir(wxT("codeblocks"));
-dest.AppendDir(source.leaf);
-```
+wxString KnownSourceDestination(const KnownGitSource& source)
+{
+    wxString local;
+    if (!wxGetEnv(wxT("LOCALAPPDATA"), &local) || local.empty())
+        return wxString();
+    wxFileName dest = wxFileName::DirName(local);
+    dest.AppendDir(wxT("codeblocks"));
+    dest.AppendDir(source.leaf);
+    dest.Normalize(
+        wxPATH_NORM_DOTS | wxPATH_NORM_ABSOLUTE | wxPATH_NORM_TILDE);
 
-Keep the Normalize and StripTrailingSeparator calls that follow in the Mac function.
+    return StripTrailingSeparator(dest.GetFullPath());
+}
+```
 
 ### The acquire functions
-Go back to `macgit.cpp`and copy `AcquireMacGitSource` (from line 1100) and `FormatMacGitAcquire` (from line 1289) to the bottom of `wingit.cpp`, but still above `#endif // __WXMSW__`. 
 
-Rename the types and the two functions as in the header (like they are in `wingit.h`). Then change only these calls inside the copied acquire function:
+`wingit.cpp` does not include `<vector>` yet. Add `#include <vector>` next to the other includes, it's need for the list of git processes.
 
-```text
-ProbeMacGit()     -> ProbeWinGit()
-MacGitWorks       -> WinGitWorks
-MacGitCloneDialog -> WinGitCloneDialog
+ Paste this at the bottom of `wingit.cpp`, still above `#endif // __WXMSW__`.
+
+```cpp
+WinGitAcquireResult AcquireWinOgreNext(
+    wxWindow* parent,
+    const wxString& sourceId,
+    const wxString& explanation,
+    const wxString& confirmLabel)
+{
+    WinGitAcquireResult result;
+    result.sourceId = sourceId;
+
+    const KnownGitSource* source = FindKnownSource(sourceId);
+
+    if (!source)
+    {
+        result.output = wxT("unknown source identifier");
+        return result;
+    }
+
+    result.url = source->url;
+    result.commit = source->commit;
+    result.destination = KnownSourceDestination(*source);
+
+    if (result.destination.empty() || result.destination == wxT("/"))
+    {
+        result.output = wxT("destination is unsafe");
+        return result;
+    }
+
+    const WinGitProbe probe = ProbeWinGit();
+    result.executable = probe.executable;
+
+    if (probe.access != WinGitWorks)
+    {
+        result.output = wxT("git unavailable");
+
+        if (!probe.errorOutput.empty())
+            result.output += wxT(": ") + FirstLine(probe.errorOutput);
+
+        return result;
+    }
+
+    const bool exists = wxDirExists(result.destination);
+    const bool empty = exists && DirectoryIsEmpty(result.destination);
+
+    wxFileName gitMarker(result.destination, wxT(".git"));
+    const bool isGit =
+           exists
+        && (wxDirExists(gitMarker.GetFullPath())
+            || wxFileExists(gitMarker.GetFullPath()));
+
+    wxString head;
+    wxString revError;
+    const bool headMatches =
+           isGit
+        && RevParseHead(
+               probe.executable,
+               result.destination,
+               head,
+               revError)
+        && head == source->commit;
+
+    bool submoduleMatches = source->submodulePath == NULL;
+
+    if (source->submodulePath && headMatches)
+    {
+        const wxString submoduleDir =
+            result.destination
+            + wxFILE_SEP_PATH
+            + source->submodulePath;
+
+        wxString submoduleHash;
+
+        if (RevParseHead(
+                probe.executable,
+                submoduleDir,
+                submoduleHash,
+                revError)
+            && submoduleHash == source->submoduleCommit)
+        {
+            submoduleMatches = true;
+            result.submoduleCommit = submoduleHash;
+        }
+    }
+
+    if (headMatches && submoduleMatches)
+    {
+        result.alreadyPresent = true;
+        result.success = true;
+        result.exitCode = 0;
+        result.output = wxT("pinned checkout already present");
+        return result;
+    }
+
+    const bool submoduleOnly =
+           headMatches
+        && source->submodulePath != NULL
+        && !submoduleMatches;
+
+    if (exists && !empty && !submoduleOnly)
+    {
+        result.output = wxT("destination is not the pinned checkout");
+        return result;
+    }
+
+    if (!submoduleOnly)
+    {
+        wxString parentError;
+
+        if (!EnsureParentDirectory(result.destination, parentError))
+        {
+            result.output = parentError;
+            return result;
+        }
+    }
+
+    if (!ConfirmClone(parent, explanation, confirmLabel))
+    {
+        result.cancelled = true;
+        result.output = wxT("checkout cancelled before launch");
+        return result;
+    }
+
+    WinGitCloneDialog dlg(
+        parent,
+        wxString::Format(
+            _("Git is checking out %s into:\n%s\n\n"
+              "There is no progress percentage."),
+            source->commit,
+            result.destination));
+
+    if (!dlg.StartCommands(
+            probe.executable,
+            CheckoutCommands(*source, result.destination, submoduleOnly)))
+    {
+        result.output = dlg.OutputTail();
+        return result;
+    }
+
+    dlg.ShowModal();
+
+    result.launched = true;
+    result.cancelled = dlg.Cancelled();
+    result.exitCode = dlg.ExitCode();
+    result.output = dlg.OutputTail();
+
+    if (result.cancelled || result.exitCode != 0)
+        return result;
+
+    wxString checked;
+
+    if (!RevParseHead(
+            probe.executable,
+            result.destination,
+            checked,
+            revError)
+        || checked != source->commit)
+    {
+        result.success = false;
+        result.output = wxT("checked out revision does not match the pin");
+        return result;
+    }
+
+    if (source->submodulePath)
+    {
+        const wxString submoduleDir =
+            result.destination
+            + wxFILE_SEP_PATH
+            + source->submodulePath;
+
+        wxString submoduleHash;
+
+        if (!RevParseHead(
+                probe.executable,
+                submoduleDir,
+                submoduleHash,
+                revError)
+            || submoduleHash != source->submoduleCommit)
+        {
+            result.success = false;
+            result.output = wxT("SDL2 submodule does not match the pin");
+            return result;
+        }
+
+        result.submoduleCommit = submoduleHash;
+    }
+
+    result.success = true;
+    return result;
+}
+
+wxString FormatWinGitAcquire(const WinGitAcquireResult& result)
+{
+    return wxString::Format(
+        wxT("launched=%d\n"
+            "cancelled=%d\n"
+            "already_present=%d\n"
+            "exit=%ld\n"
+            "success=%d\n"
+            "executable=%s\n"
+            "source_id=%s\n"
+            "url=%s\n"
+            "commit=%s\n"
+            "destination=%s\n"
+            "submodule_commit=%s\n"
+            "output=%s"),
+        result.launched ? 1 : 0,
+        result.cancelled ? 1 : 0,
+        result.alreadyPresent ? 1 : 0,
+        result.exitCode,
+        result.success ? 1 : 0,
+        result.executable,
+        result.sourceId,
+        result.url,
+        result.commit,
+        result.destination,
+        result.submoduleCommit,
+        FirstLine(result.output));
+}
 ```
 
-### Git Clone Dialog update
+### Giz dialog
 
-A class, in c++ is a collection of both functions and variables (called members).
+Navigate to the class `WinGitCloneDialog` in `wingit.cpp`. 
 
-Go to `macgit.cpp`, and find the class MacGitCloneDialog. Within that class, locate the StartCommands and LaunchStep functions, and copy them over into WinGitCloneDialog (in `wingit.cpp`; as we are in .cpp, don't forget the function body {}).
-Go back to `macgit.cpp`,  look for the class members  `m_commands`, `m_step`, and `m_retired` and copy them over to the corresponding `WinGitCloneDialog` class in wingit.cpp. Class members are like regular variables and have a type, for instance `std::vector<wxArrayString> m_commands;` Don't forget the type, nor the semi-colon. Also, these are class members, so they need to be inside the class, but not inside a function.
+A constructor in C++ is there to initialize objects constructed using a class (here, the series of little dialogs that announce and confirm the git steps). A constructor in C++ is a special function with the class name. The function body is preceded by an initializer list.
 
-Next, go back to `macgit.cpp` and find the `WinGitCloneDialog::OnProcessEnd` function. Copy the body of this function, that is only the stuff between { and }. Go back to `wingit.cpp` and replace the body of the `onProcessEnd` function with the one coming from `macgit.cpp`
+In the `WinGitCloneDialog` constructor, the initializer list has `m_process(nullptr),`. Add `m_step(0),` immediately after that using the same syntax.
 
+In C++ a dstructor is called to clean up an object when it is not needed anymore. It is also special function, and has the name `~classname`. Find the destructor of `WinGitCloneDialog`, and replace the destructor body with:
+
+```cpp
+m_timer.Stop();
+delete m_process;
+
+for (size_t i = 0; i < m_retired.size(); ++i)
+    delete m_retired[i];
+```
+
+In C++ classes have member functions, known as methods.
+
+Paste `StartCommands` as a public method, directly after `Start`:
+
+```cpp
+bool StartCommands(const wxString& executable,
+                   const std::vector<wxArrayString>& commands)
+{
+    m_executable = executable;
+    m_commands = commands;
+    m_step = 0;
+
+    if (m_commands.empty())
+    {
+        Append(wxT("Git was not given a command.\n"));
+        return false;
+    }
+
+    if (!LaunchStep())
+        return false;
+
+    m_timer.Start(200);
+    return true;
+}
+```
+
+`LaunchStep` is private. Paste it in the private section, just before `OnProcessEnd`, and replace the whole `OnProcessEnd` with the one here. Next to `wxProcess* m_process;` add the two members at the bottom of this block.
+
+```cpp
+bool LaunchStep()
+{
+    if (m_step >= m_commands.size())
+        return false;
+
+    m_process = new wxProcess(this);
+    m_process->Redirect();
+
+    wxExecuteEnv env;
+
+    if (!wxGetEnvMap(&env.env) || env.env.empty())
+    {
+        delete m_process;
+        m_process = nullptr;
+
+        Append(
+            wxT("Could not copy the environment, "
+                "so Git was not started.\n"));
+
+        return false;
+    }
+
+    // Do not allow Git to ask for credentials interactively.
+    env.env[wxT("GIT_TERMINAL_PROMPT")] = wxT("0");
+
+    wxArrayString& args = m_commands[m_step];
+
+    // wxWidgets 3.0 declares wxExecute(wchar_t**). The strings are not modified.
+    std::vector<wxChar*> argv;
+    argv.reserve(args.GetCount() + 2);
+    argv.push_back(const_cast<wxChar*>(m_executable.wx_str()));
+
+    for (size_t i = 0; i < args.GetCount(); ++i)
+        argv.push_back(const_cast<wxChar*>(args.Item(i).wx_str()));
+
+    argv.push_back(nullptr);
+
+    Append(
+        wxString::Format(
+            wxT("\n$ git %s\n"),
+            args.Item(0)));
+
+    m_pid = wxExecute(
+        argv.data(),
+        wxEXEC_ASYNC,
+        m_process,
+        &env);
+
+    if (m_pid <= 0)
+    {
+        delete m_process;
+        m_process = nullptr;
+        m_pid = 0;
+
+        Append(wxT("Git did not start.\n"));
+        return false;
+    }
+
+    return true;
+}
+
+void OnProcessEnd(wxProcessEvent& event)
+{
+    ReadPending();
+
+    m_exit = event.GetExitCode();
+    m_pid = 0;
+
+    if (m_process)
+    {
+        m_retired.push_back(m_process);
+        m_process = nullptr;
+    }
+
+    if (m_cancelled || m_exit != 0)
+    {
+        m_finished = true;
+        Finish();
+        return;
+    }
+
+    ++m_step;
+
+    if (m_step >= m_commands.size())
+    {
+        m_finished = true;
+        Finish();
+        return;
+    }
+
+    if (!LaunchStep())
+    {
+        m_exit = -1;
+        m_finished = true;
+        Finish();
+    }
+}
+
+std::vector<wxProcess*> m_retired;
+std::vector<wxArrayString> m_commands;
+size_t m_step;
+```
+
+The two vectors and `m_step` are members, so they go with the other members, not inside a function. 
 
 
 ### Squirrel binding
 
-That c++ work doesn't change the wizard yet. Squirrel binding is needed to use these functions within the wizard. Those bindings live in `wiz.cpp`, which is located in `src/plugins/scriptedwizard`.
-
-Open `wiz.cpp` and find the function `Wiz_MacGitAcquire` (lines 2074–2097). Copy the entire function. Then find the function definition for `Wiz_WinGitClone` that is something like `SQInteger Wiz_WinGitClone(HSQUIRRELVM v){ ... }`. Just after the body {} of `Wiz_WinGitClone`, paste the `Wiz_MacGitAcquire` function definition. 
-
-Rename the pasted function to `Wiz_WinOgreNextAcquire`. Also, inside the function body of `Wiz_WinOgreNextAcquire`, there are calls to the mac functions `AcquireMacGitSource` and  `FormatMacGitAcquire`. Change those calls to `AcquireWinOgreNext` respectively `FormatWinGitAcquire`. If you want to make it easy on people doing debugging, you also change the error message string "Wiz::MacGitAcquire" to "Wiz::WinOgreNextAcquire"), but if you don't want to bother, it will work but remain a trap.
-
-Define the new binding along with the other windows binding:
+Open `wiz.cpp`. Find `Wiz_WinGitClone`. Paste this immediately after its closing brace:
 
 ```cpp
-BindMethod(v, _SC("WinOgreNextAcquire"),Wiz_WinOgreNextAcquire,_SC("Wiz::WinOgreNextAcquire"));
+SQInteger Wiz_WinOgreNextAcquire(HSQUIRRELVM v)
+{
+    // this, sourceId, explanation, confirmLabel
+    ExtractParams4<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::WinOgreNextAcquire"))
+        return extractor.ErrorMessage();
+
+    const WinGitAcquireResult result =
+        AcquireWinOgreNext(
+            extractor.p0->GetWizardWindow(),
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatWinGitAcquire(result));
+}
 ```
 
-Concretely, a good idea would be to open a new ogre-next section in the Windows binding block. For example, but the new binding after:
+Find the Windows `BindMethod` for `WinOgreInstall`. Paste this on the next line:
 
 ```cpp
-BindMethod(v, _SC("WinOgreInstall"), Wiz_WinOgreInstall, _SC("Wiz::WinOgreInstall"));
+BindMethod(v, _SC("WinOgreNextAcquire"), Wiz_WinOgreNextAcquire, _SC("Wiz::WinOgreNextAcquire"));
 ```
 
-Check whether everything compiles, using steps in section 2. You want succesful compilation here. In the IDE nothing changes yet, we only made functions available but haven't changed the Wizard itself yet.
+Check whether everything compiles, using the steps in section 2. You just want a successful compilation here. In Code::Blocks, nothing changes as yet.
 
 
 ## 5. Teach the wizard to do git repo download
 
-Open `wizard.script` again. Copy these functions and paste the copies just above `BeginWinOgreNext`. Rename each copy and change the call inside it.
+Open `wizard.script`. Paste these four functions just above `BeginWinOgreNext`. They are the Mac functions with Windows names already substituted. The Mac copies stay where they are.
 
-```text
-OgreNextResolvePaths       -> OgreNextWinResolvePaths
-    Wizard.MacCMakePaths           -> Wizard.WinCMakePaths
+```javascript
+function OgreNextWinResolvePaths()
+{
+    OgreNextPathsValid = false;
+    OgreNextRoot = _T("");
+    OgreNextDepsSource = _T("");
+    OgreNextDepsInstall = _T("");
+    OgreNextEngineSource = _T("");
+    OgreNextEngineBuild = _T("");
+    OgreNextInstall = _T("");
 
-OgreNextGitBlock           -> OgreNextWinGitBlock
-    Wizard.MacGitProbe             -> Wizard.WinGitProbe
+    local report = Wizard.WinCMakePaths(
+        _T("ogre-next-source-3.0.0"),
+        _T("ogre-next-3.0.0"));
 
-OgreNextAcquire            -> OgreNextWinAcquire
-    Wizard.MacGitAcquire           -> Wizard.WinOgreNextAcquire
+    if (!OgreNextField(report, _T("valid")).Matches(_T("1")))
+        return OgreNextField(report, _T("error"));
 
-OgreNextCheckoutReady      -> OgreNextWinCheckoutReady
-    Wizard.MacGitAcquire           -> Wizard.WinOgreNextAcquire
+    OgreNextRoot = OgreNextField(report, _T("root"));
+    OgreNextEngineSource = OgreNextField(report, _T("source"));
+    OgreNextEngineBuild = OgreNextField(report, _T("build"));
+    OgreNextInstall = OgreNextField(report, _T("install"));
+    OgreNextDepsSource = OgreNextJoin(OgreNextRoot, _T("ogre-next-deps-source-3.0.0"));
+    OgreNextDepsInstall = OgreNextJoin(
+        OgreNextJoin(OgreNextDepsSource, _T("build-codeblocks")),
+        _T("ogredeps"));
+
+    if (OgreNextRoot.IsEmpty() || OgreNextEngineSource.IsEmpty() || OgreNextInstall.IsEmpty())
+        return _("CMake path resolution returned an incomplete result.");
+
+    OgreNextPathsValid = true;
+    return _T("");
+}
+
+function OgreNextWinGitBlock()
+{
+    local report = Wizard.WinGitProbe();
+    OgreNextGitAccess = OgreNextField(report, _T("access"));
+    OgreNextGitExecutable = OgreNextField(report, _T("executable"));
+    OgreNextGitVersion = OgreNextField(report, _T("version"));
+    if (OgreNextGitAccess.Matches(_T("works")))
+        return _T("");
+    if (OgreNextGitAccess.Matches(_T("present_unusable")))
+        return _("Git was found but could not be used from Code::Blocks.");
+    return _("Git could not be found. Code::Blocks does not install Git.");
+}
+
+function OgreNextWinAcquire(sourceId, explanation, confirmLabel)
+{
+    local report = Wizard.WinOgreNextAcquire(sourceId, explanation, confirmLabel);
+    if (OgreNextField(report, _T("success")).Matches(_T("1")))
+        return true;
+    if (OgreNextField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The checkout was stopped. Partial files are left in place."));
+        return false;
+    }
+    ShowError(_("The pinned checkout was not acquired.\n\n") + OgreNextField(report, _T("output")));
+    return false;
+}
+
+function OgreNextWinCheckoutReady(sourceId, path)
+{
+    local gitDir = OgreNextJoin(path, _T(".git"));
+    if (!IO.DirectoryExists(gitDir) && !IO.FileExists(gitDir))
+        return false;
+    if (!IO.FileExists(OgreNextJoin(path, _T("CMakeLists.txt"))))
+        return false;
+    // The directory already exists, so this does not ask to clone.
+    // A different commit is refused and left untouched.
+    local report = Wizard.WinOgreNextAcquire(sourceId, _T("unused"), _T("unused"));
+    return OgreNextField(report, _T("success")).Matches(_T("1"));
+}
+
+function OnLeave_OgreNextWinAcquireDeps(fwd)
+{
+    if (!fwd)
+        return true;
+    if (OgreNextWinCheckoutReady(_T("ogre-next-deps"), OgreNextDepsSource))
+        return true;
+    local explanation = _("Code::Blocks will check out the pinned OGRE-Next dependency sources.\n\nDestination:\n") + OgreNextDepsSource + _("\n\nThe commit and the SDL2 submodule pin are fixed. This step downloads source only.");
+    return OgreNextWinAcquire(_T("ogre-next-deps"), explanation, _("Download OGRE-Next dependencies"));
+}
+
+function OnLeave_OgreNextWinAcquireEngine(fwd)
+{
+    if (!fwd)
+        return true;
+    if (OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
+        return true;
+    local explanation = _("Code::Blocks will check out the pinned OGRE-Next engine sources.\n\nDestination:\n") + OgreNextEngineSource + _("\n\nThe commit is fixed. This step downloads source only.");
+    return OgreNextWinAcquire(_T("ogre-next"), explanation, _("Download OGRE-Next"));
+}
 ```
 
-Duplicate `OnLeave_OgreNextAcquireDeps` and rename it the new copy to `OnLeave_OgreNextWinAcquireDeps`. In the new copy, `OgreNextCheckoutReady` becomes `OgreNextWinCheckoutReady` and `OgreNextAcquire` becomes `OgreNextWinAcquire`.
-
-Duplicate `OnLeave_OgreNextAcquireEngine`, and rename the new copy to `OnLeave_OgreNextWinAcquireEngine`. Inside the new code make the same two renames as you just did.
-
-In `BeginWinOgreNext`, after the welcome `AddInfoPage` add:
+In `BeginWinOgreNext`, after the welcome `AddInfoPage`, add:
 
 ```javascript
 local reason = OgreNextWinResolvePaths();
@@ -318,30 +775,75 @@ if (!OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
 
 Check, using section 2. If everything went well, the welcome page is followed by a download page. Next starts the Git download.
 
-After the wizard git step, check also whether in C:/Users/<current user>/AppData/CodeBlocks we have the ogre-next-deps and ogre-next source downloaded.
+After the wizard git step, check also whether `C:\Users\<you>\AppData\Local\codeblocks` contains `ogre-next-deps-source-3.0.0` and `ogre-next-source-3.0.0`.
 
-If you want, you can also update the welcome message so the wizard so it says something reasonable, not "I don't do anything".
+If you want, update the welcome message so it no longer says the wizard does nothing.
 
 
 ## 6. Teach the Wizard to apply the Patches
 
-Find each of these two functions, copy each, and paste them above `BeginWinOgreNext`. Rename the new copies, and update calls inside the new functions:
+Open `OgreNextApplyRequired` in `wizard.script`. It probes whether the patch actually fits the downloaded code, and if the patch is applicable it asks whether it should be applied, then applies. The Windows copies call `Wizard.WinPatchProbe` and `Wizard.WinPatchApply`. Paste these above `BeginWinOgreNext`. The leave handlers apply only the MinGW patch. The Apple patch ids stay in the Mac functions.
 
-```text
-OgreNextPatchState         -> OgreNextWinPatchState
-    Wizard.MacPatchProbe           -> Wizard.WinPatchProbe
+```javascript
+function OgreNextWinPatchState(patchId, source)
+{
+    local report = Wizard.WinPatchProbe(patchId, source);
+    return OgreNextField(report, _T("state"));
+}
 
-OgreNextApplyRequired      -> OgreNextWinApplyRequired
-    OgreNextPatchState             -> OgreNextWinPatchState
-    Wizard.MacPatchProbe           -> Wizard.WinPatchProbe
-    Wizard.MacPatchApply           -> Wizard.WinPatchApply
+function OgreNextWinApplyRequired(patchId, source, explanation, confirmLabel)
+{
+    local state = OgreNextWinPatchState(patchId, source);
+    if (state.Matches(_T("already_applied")))
+        return true;
+    if (!state.Matches(_T("applicable")))
+    {
+        local report = Wizard.WinPatchProbe(patchId, source);
+        ShowError(_("This patch cannot be applied, so configuration will not start.\n\n") + OgreNextField(report, _T("error")));
+        return false;
+    }
+    local report = Wizard.WinPatchApply(patchId, source, explanation, confirmLabel);
+    if (OgreNextField(report, _T("success")).Matches(_T("1")))
+        return true;
+    if (OgreNextField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("The patch was not applied. Configuration will not start."));
+        return false;
+    }
+    local error = OgreNextField(report, _T("error"));
+    if (error.IsEmpty())
+        error = OgreNextField(report, _T("output"));
+    ShowError(_("The patch was not applied.\n\n") + error);
+    return false;
+}
+
+function OnLeave_OgreNextWinPatchDeps(fwd)
+{
+    if (!fwd)
+        return true;
+    if (!OgreNextWinCheckoutReady(_T("ogre-next-deps"), OgreNextDepsSource))
+    {
+        ShowError(_("The dependency checkout is not the pinned revision."));
+        return false;
+    }
+    local mingw = _("Code::Blocks will apply the packaged MinGW dependency patch to the pinned checkout.\n\nDeclining leaves the checkout unchanged and does not start configuration.");
+    return OgreNextWinApplyRequired(_T("ogre-next-deps-mingw"), OgreNextDepsSource, mingw, _("Apply dependency patch"));
+}
+
+function OnLeave_OgreNextWinPatchEngine(fwd)
+{
+    if (!fwd)
+        return true;
+    if (!OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
+    {
+        ShowError(_("The engine checkout is not the pinned revision."));
+        return false;
+    }
+    local mingw = _("Code::Blocks will apply the packaged OGRE-Next engine patch to the pinned checkout.\n\nDeclining leaves the checkout unchanged and does not start configuration.");
+    return OgreNextWinApplyRequired(_T("ogre-next-v3-0-mingw"), OgreNextEngineSource, mingw, _("Apply engine patch"));
+}
 ```
 
-Duplicate `OnLeave_OgreNextPatchDeps`, rename the new copy to `OnLeave_OgreNextWinPatchDeps`. In the copy, use the `Win` names from the list above. Delete the second `OgreNextApplyRequired` call, the one whose id is `ogre-next-deps-apple`. The function should return after `ogre-next-deps-mingw`.
-
-Duplicate `OnLeave_OgreNextPatchEngine`, rename the new copy to `OnLeave_OgreNextWinPatchEngine`. Delete the call whose id is `ogre-apple`. The function should return after `ogre-next-v3-0-mingw`.
-
-`already_applied` is already treated as success inside the copied `OgreNextApplyRequired`. A cancel returns false, so the next page does not start.
 
 In `BeginWinOgreNext`, after the dependency download `AddInfoPage`, insert:
 
@@ -365,75 +867,30 @@ if (!OgreNextWinPatchState(_T("ogre-next-v3-0-mingw"), OgreNextEngineSource).Mat
 }
 ```
 
-Check using the build instructions in section 2: after each download page comes a patch page.
+Check using the build instructions in section 2: after each download page there should now be a patch page.
 
 
 ## 7. `wincmake.h` and `wincmake.cpp` - configure and build
 
-We are still operating in `src/plugins/scriptedwizard`. The method is still the same: get useful code from the mac implementation and transform it into the Windows code by applying Operating-System specific edits.
-
-Open `maccmake.h`. Copy the declaration of the function `RunMacCMakeOgreNext`  (lines 117–126). Paste it into `wincmake.h`, still inside `#if defined(__WXMSW__)`, after the declaration of `InstallWinOgre`.
-
-Rename:
-
-`RunMacCMakeOgreNext` -> `RunWinCMakeOgreNext`
-
-Add one argument directly after `parent`:
-
-```cpp
-const wxString& compilerId,
-```
-
-The wizard's selected compiler is that argument. Squirrel will not pass it; the binding below reads it in C++.
-
-The copied function already accepts only `ogre-next-deps` and `ogre-next`, and only `configure`, `build`, and `install`. Leave those checks. An unknown value returns before CMake starts.
-
-### Helpers to copy into `wincmake.cpp`
-
-Open `maccmake.cpp`. Copy these into the anonymous namespace of `wincmake.cpp`, above the line `} // namespace` that sits just before `WinCMakeProbe ProbeWinCMake()`.
+Still in `src/plugins/scriptedwizard`. Open `maccmake.cpp` and find the anonymous-namespace helpers that describe an OGRE-Next tree. Copy these into the anonymous namespace of `wincmake.cpp`, above the `} // namespace` that sits just before `WinCMakeProbe ProbeWinCMake()`.
 
 ```text
-struct ExpectedEntry                         line 1699
-kOgreNextDepsFiles                           line 1705
-kOgreNextEngineFiles                         line 1718
-enum OgreNextCacheState                      line 1741
-struct OgreNextTree                          line 1749
-CacheValue                                   line 1787
-ResolveOgreNextTree                          line 1875
-FilesPresent                                 line 1927
-OgreNextFilesPresent                         line 1956
-ReadOgreNextCache                            line 1976
-OgreNextConfigureArguments                   line 2066
-OgreNextConfigureDescription                 line 2093
+struct ExpectedEntry
+kOgreNextDepsFiles
+kOgreNextEngineFiles
+enum OgreNextCacheState
+struct OgreNextTree
+CacheValue
+ResolveOgreNextTree
+FilesPresent
+OgreNextFilesPresent
 ```
 
-`CacheValue` opens `CMakeCache.txt` with `wxTextFile`. Add `#include <wx/textfile.h>` next to the other `#include <wx/...>` lines at the top of `wincmake.cpp`.
 
-Leave these where they are. `wincmake.cpp` already has them:
 
-```text
-CodeBlocksRoot()          line 376
-BoundedJobCount()         line 309
-SamePath()                line 241
-MingwTools()              line 981
-RunCMake()                line 1028
-FormatWinCMakeRun()       line 2906
-```
+Still in `wincmake.cpp`: Add `#include <wx/textfile.h>` next to the other `#include <wx/...>` lines at the top of `wincmake.cpp`. That hashtag file is needed by the new code.
 
-`RunMacCMakeOgreNext` itself is not part of this paste. It goes outside the anonymous namespace, in the next subsection, because `wiz.cpp` has to call it.
-
-### Folder paths
-
-In the pasted `ResolveOgreNextTree`, search for:
-
-```cpp
-const wxString root = CodeBlocksRoot(error);
-
-if (root.empty())
-    return false;
-```
-
-Replace it with:
+In the copied `ResolveOgreNextTree`, the Mac call is `CodeBlocksRoot(error)`. The Windows function takes no argument. Replace that call and the empty-root test with:
 
 ```cpp
 const wxString root = CodeBlocksRoot();
@@ -445,7 +902,7 @@ if (root.empty())
 }
 ```
 
-The Windows `CodeBlocksRoot()` takes no error argument. The rest of `ResolveOgreNextTree` already builds the six folders, so leave it:
+Leave the six folders that follow:
 
 ```text
 ogre-next-deps-source-3.0.0
@@ -456,9 +913,7 @@ ogre-next-source-3.0.0\build-codeblocks
 ogre-next-3.0.0
 ```
 
-### Files the install must contain
-
-The pasted arrays name Mac files (`.dylib`, `.framework`). Replace the whole brace list of `kOgreNextDepsFiles` with:
+The copied file lists name Mac libraries (`.dylib`, `.framework`). Replace the brace list of `kOgreNextDepsFiles` with:
 
 ```cpp
 { wxT("include/FreeImage.h"), false },
@@ -466,7 +921,9 @@ The pasted arrays name Mac files (`.dylib`, `.framework`). Replace the whole bra
 { wxT("bin/Release/SDL2.dll"), false },
 ```
 
-Replace the whole brace list of `kOgreNextEngineFiles` with:
+This is correct: instead of the 9 entries in the mac case, only 3 are need under windows.
+
+Replace the brace list of `kOgreNextEngineFiles` with:
 
 ```cpp
 { wxT("include/OGRE/OgreRoot.h"), false },
@@ -484,190 +941,387 @@ Replace the whole brace list of `kOgreNextEngineFiles` with:
 { wxT("Media/materials/textures"), true },
 ```
 
-`false` means a file. `true` means a directory. Keep the forward slashes inside the strings. `FilesPresent` joins them with `wxFILE_SEP_PATH`.
+Keep the forward slashes even though we are under Windows. `FilesPresent` joins them with `wxFILE_SEP_PATH`.
 
-### Cache check
-
-In the pasted `ReadOgreNextCache`, delete the second parameter `const wxString& sdk`.
-
-Search for `SameDirectory` in that function and replace each call with `SamePath`. `SamePath` is the comparison already in this file.
-
-Delete the block that reads `CMAKE_OSX_ARCHITECTURES` and returns `OgreNextCacheDiffers`. Delete the `wxString sysroot` lines and both blocks that mention `CMAKE_OSX_SYSROOT`. Those three checks are the Mac SDK pin.
-
-Leave the checks that remain: `CMakeCache.txt` exists, `CMAKE_INSTALL_PREFIX` matches `tree.install`, `CMAKE_BUILD_TYPE` is `Release`, and, for the engine only, `OGRE_DEPENDENCIES_DIR` matches `tree.dependencies` and both `OGRE_BUILD_SAMPLES2` and `OGRE_BUILD_TESTS` are `OFF`.
-
-Every call of `ReadOgreNextCache(tree, sdk, error)` in the pasted code becomes `ReadOgreNextCache(tree, error)`.
-
-### Configure arguments
-
-In the pasted `OgreNextConfigureArguments`, replace the parameter `const wxString& sdk` with:
+Paste these three into that same anonymous namespace of `wincmake.cpp`:
 
 ```cpp
-const wxString& gcc,
-const wxString& gxx,
-const wxString& make,
-const wxString& windres
+OgreNextCacheState ReadOgreNextCache(
+    const OgreNextTree& tree,
+    wxString& error)
+{
+    const wxString cachePath =
+        tree.build
+        + wxFILE_SEP_PATH
+        + wxT("CMakeCache.txt");
+
+    if (!wxFileExists(cachePath))
+    {
+        error = wxT("CMakeCache.txt was not found");
+        return OgreNextCacheMissing;
+    }
+
+    wxString prefix;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_INSTALL_PREFIX"), prefix)
+        || !SamePath(prefix, tree.install))
+    {
+        error =
+            tree.engine
+                ? wxT("CMAKE_INSTALL_PREFIX does not match the pinned install directory")
+                : wxT("CMAKE_INSTALL_PREFIX is not the dependency SDK");
+
+        return OgreNextCachePrefixWrong;
+    }
+
+    wxString buildType;
+
+    if (!CacheValue(cachePath, wxT("CMAKE_BUILD_TYPE"), buildType)
+        || buildType != wxT("Release"))
+    {
+        error = wxT("CMAKE_BUILD_TYPE is not Release");
+        return OgreNextCacheDiffers;
+    }
+
+    if (tree.engine)
+    {
+        wxString dependencies;
+
+        if (!CacheValue(cachePath, wxT("OGRE_DEPENDENCIES_DIR"), dependencies)
+            || !SamePath(dependencies, tree.dependencies))
+        {
+            error = wxT("OGRE_DEPENDENCIES_DIR does not match the dependency SDK");
+            return OgreNextCacheDiffers;
+        }
+
+        wxString samples;
+        wxString tests;
+
+        if (!CacheValue(cachePath, wxT("OGRE_BUILD_SAMPLES2"), samples)
+            || samples != wxT("OFF")
+            || !CacheValue(cachePath, wxT("OGRE_BUILD_TESTS"), tests)
+            || tests != wxT("OFF"))
+        {
+            error = wxT("samples or tests are not off");
+            return OgreNextCacheDiffers;
+        }
+    }
+
+    return OgreNextCacheMatches;
+}
+
+wxArrayString OgreNextConfigureArguments(
+    const OgreNextTree& tree,
+    const wxString& gcc,
+    const wxString& gxx,
+    const wxString& make,
+    const wxString& windres)
+{
+    wxArrayString args;
+
+    args.Add(wxT("-S"));
+    args.Add(tree.source);
+    args.Add(wxT("-B"));
+    args.Add(tree.build);
+    args.Add(wxT("-DCMAKE_BUILD_TYPE=Release"));
+    args.Add(wxT("-G"));
+    args.Add(wxT("MinGW Makefiles"));
+    args.Add(wxT("-DCMAKE_C_COMPILER=") + gcc);
+    args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
+    args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
+    args.Add(wxT("-DCMAKE_RC_COMPILER=") + windres);
+
+    // The dependency project writes <build>/ogredeps only while the
+    // prefix is still CMake's default. Do not pass CMAKE_INSTALL_PREFIX.
+    if (tree.engine)
+    {
+        args.Add(wxT("-DCMAKE_INSTALL_PREFIX=") + tree.install);
+        args.Add(wxT("-DOGRE_DEPENDENCIES_DIR=") + tree.dependencies);
+        args.Add(wxT("-DOGRE_BUILD_SAMPLES2=OFF"));
+        args.Add(wxT("-DOGRE_BUILD_TESTS=OFF"));
+    }
+
+    return args;
+}
+
+wxString OgreNextConfigureDescription(const OgreNextTree& tree)
+{
+    wxString text =
+        tree.engine
+            ? _("CMake is configuring OGRE-Next.\n\n")
+            : _("CMake is configuring the OGRE-Next dependencies.\n\n");
+
+    text +=
+        _("Source:\n")
+        + tree.source
+        + _("\n\nBuild:\n")
+        + tree.build
+        + _("\n\nInstall:\n")
+        + tree.install;
+
+    if (tree.engine)
+    {
+        text +=
+            _("\n\nDependencies:\n")
+            + tree.dependencies
+            + _("\n\nSamples and tests are off. "
+                "The install prefix is fixed now.");
+    }
+    else
+    {
+        text +=
+            _("\n\nThe dependency project selects this install "
+              "directory itself. Code::Blocks does not pass "
+              "CMAKE_INSTALL_PREFIX.");
+    }
+
+    text += _("\n\nThere is no progress percentage.");
+
+    return text;
+}
 ```
 
-Delete these two lines:
-
-```cpp
-args.Add(wxT("-DCMAKE_OSX_ARCHITECTURES=arm64"));
-args.Add(wxT("-DCMAKE_OSX_SYSROOT=") + sdk);
-```
-
-After the `-B` / `tree.build` pair, paste the generator and compiler lines from `ConfigureWinCMake` in this same file (around line 1276). Stop before `-DCMAKE_INSTALL_PREFIX` and before every `-DFLTK_` line. The lines to add are:
-
-```cpp
-args.Add(wxT("-G"));
-args.Add(wxT("MinGW Makefiles"));
-args.Add(wxT("-DCMAKE_C_COMPILER=") + gcc);
-args.Add(wxT("-DCMAKE_CXX_COMPILER=") + gxx);
-args.Add(wxT("-DCMAKE_MAKE_PROGRAM=") + make);
-args.Add(wxT("-DCMAKE_RC_COMPILER=") + windres);
-```
-
-Leave the comment and the `if (tree.engine)` block. That block is what adds `-DCMAKE_INSTALL_PREFIX`, `-DOGRE_DEPENDENCIES_DIR`, `-DOGRE_BUILD_SAMPLES2=OFF`, and `-DOGRE_BUILD_TESTS=OFF` for the engine only. The dependency configure must not pass `CMAKE_INSTALL_PREFIX`, because that project then writes `build-codeblocks\ogredeps` by itself.
-
-In `OgreNextConfigureDescription`, delete the `sdk` parameter and delete the lines that append `Architecture:` and `SDK:`. The dialog text no longer has a Mac SDK to show.
 
 ### The run function
 
-Go back to `maccmake.cpp` and copy `RunMacCMakeOgreNext` (from line 2599) to the bottom of `wincmake.cpp`, after `FormatWinCMakeRun`, still above `#endif // __WXMSW__`. This one stays outside the anonymous namespace.
-
-Rename `MacCMakeRunResult` to `WinCMakeRunResult` and `RunMacCMakeOgreNext` to `RunWinCMakeOgreNext`. Add `const wxString& compilerId` after `parent`, matching the header.
-
-Delete the `ReadMacSdkPath` block. That function runs `xcrun`. In its place, paste the `MingwTools` call from `ConfigureWinCMake` (around line 1260):
+In `wincmake.h`,  inside `#if defined(__WXMSW__)`, after the declaration of `InstallWinOgre`, paste:
 
 ```cpp
-wxString gcc;
-wxString gxx;
-wxString make;
-wxString bin;
+WinCMakeRunResult RunWinCMakeOgreNext(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& projectId,
+    const wxString& operation,
+    const wxString& explanation,
+    const wxString& confirmLabel);
+```
 
-if (!MingwTools(compilerId, gcc, gxx, make, bin, error))
+`compilerId` is the wizard's selected compiler.
+
+Paste this at the bottom of `wincmake.cpp`, after `FormatWinCMakeRun`, still above `#endif // __WXMSW__`. It stays outside the anonymous namespace, because `wiz.cpp` calls it. It follows the example of cmake and can do configure, build and install.
+
+```cpp
+WinCMakeRunResult RunWinCMakeOgreNext(
+    wxWindow* parent,
+    const wxString& compilerId,
+    const wxString& projectId,
+    const wxString& operation,
+    const wxString& explanation,
+    const wxString& confirmLabel)
 {
-    result.output = error;
+    WinCMakeRunResult result;
+
+    const bool configure = operation == wxT("configure");
+    const bool build = operation == wxT("build");
+    const bool install = operation == wxT("install");
+
+    if (!configure && !build && !install)
+    {
+        result.output = wxT("unknown operation");
+        return result;
+    }
+
+    result.operation = operation;
+
+    OgreNextTree tree;
+    wxString error;
+
+    if (!ResolveOgreNextTree(projectId, tree, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    if (!wxDirExists(tree.source))
+    {
+        result.output = wxT("source checkout is not present");
+        return result;
+    }
+
+    wxString gcc;
+    wxString gxx;
+    wxString make;
+    wxString bin;
+
+    if (!MingwTools(compilerId, gcc, gxx, make, bin, error))
+    {
+        result.output = error;
+        return result;
+    }
+
+    const wxString windres = bin + wxT("\\windres.exe");
+
+    if (!wxFileExists(windres))
+    {
+        result.output = wxT("windres.exe is not beside gcc.exe");
+        return result;
+    }
+
+    const OgreNextCacheState cache = ReadOgreNextCache(tree, error);
+
+    // Reconfiguring cannot repair a dependency prefix. The project
+    // keeps a prefix that is already in the cache, and passing a new
+    // one would skip the project's own ogredeps default.
+    if (!tree.engine && cache == OgreNextCachePrefixWrong)
+    {
+        result.output =
+            wxT("CMAKE_INSTALL_PREFIX is not the dependency SDK; "
+                "the build directory was left unchanged");
+
+        return result;
+    }
+
+    wxString filesError;
+    const bool filesOk = OgreNextFilesPresent(tree, filesError);
+
+    if (configure && cache == OgreNextCacheMatches)
+    {
+        result.success = true;
+        result.output = wxT("configure already matches");
+        return result;
+    }
+
+    if ((build || install)
+        && cache == OgreNextCacheMatches
+        && filesOk)
+    {
+        result.success = true;
+        result.output =
+            install
+                ? wxT("install already valid")
+                : wxT("build already installed");
+
+        return result;
+    }
+
+    if ((build || install) && cache != OgreNextCacheMatches)
+    {
+        result.output =
+            error.empty()
+                ? wxString(wxT("configure does not match the pinned options"))
+                : error;
+
+        return result;
+    }
+
+    if (tree.engine && (configure || build))
+    {
+        OgreNextTree dependencies;
+
+        dependencies.engine = false;
+        dependencies.install = tree.dependencies;
+
+        wxString dependencyError;
+
+        if (!OgreNextFilesPresent(dependencies, dependencyError))
+        {
+            result.output = wxT("dependency SDK is not installed");
+            return result;
+        }
+    }
+
+    if (!ConfirmAction(parent, explanation, confirmLabel))
+    {
+        result.cancelled = true;
+        result.output = wxT("cancelled before launch");
+        return result;
+    }
+
+    if (configure)
+    {
+        result = RunCMake(
+            parent,
+            wxT("configure"),
+            OgreNextConfigureArguments(tree, gcc, gxx, make, windres),
+            bin,
+            OgreNextConfigureDescription(tree),
+            explanation,
+            wxEmptyString);
+
+        if (!result.success)
+            return result;
+
+        wxString cacheError;
+
+        if (ReadOgreNextCache(tree, cacheError) != OgreNextCacheMatches)
+        {
+            result.success = false;
+            result.output = cacheError;
+            return result;
+        }
+
+        result.success = true;
+        return result;
+    }
+
+    if (build)
+    {
+        const int jobs = BoundedJobCount();
+        wxArrayString buildArgs;
+        buildArgs.Add(wxT("--build"));
+        buildArgs.Add(tree.build);
+        buildArgs.Add(wxT("--parallel"));
+        buildArgs.Add(wxString::Format(wxT("%d"), jobs));
+
+        return RunCMake(
+            parent,
+            wxT("build"),
+            buildArgs,
+            wxEmptyString,
+            wxString::Format(
+                _("CMake is building.\n\nBuild:\n%s\n\nParallel jobs: %d"),
+                tree.build,
+                jobs),
+            explanation,
+            wxEmptyString);
+    }
+
+    result.operation = wxT("install");
+    result.output = wxT("install comes in a later step");
     return result;
 }
+```
 
-const wxString windres = bin + wxT("\\windres.exe");
+Quality check: Search this function for `Mac`, `sdk`, and `xcrun`. Those words should be gone.
 
-if (!wxFileExists(windres))
+## 8. Squirrel binding for `RunWinCMakeOgreNext`
+
+Open `wiz.cpp`. Find `Wiz_WinCMakeInstall`. Paste this immediately after its closing `}`.
+
+```cpp
+SQInteger Wiz_WinCMakeOgreNext(HSQUIRRELVM v)
 {
-    result.output = wxT("windres.exe is not beside gcc.exe");
-    return result;
+    // this, projectId, operation, explanation, confirmLabel
+    // projectId is ogre-next-deps or ogre-next.
+    // operation is configure, build, or install.
+    // Paths and -D flags are not script arguments.
+    // The compiler id is read here, not passed by Squirrel.
+    ExtractParams5<
+        Wiz*,
+        const wxString *,
+        const wxString *,
+        const wxString *,
+        const wxString *
+    > extractor(v);
+
+    if (!extractor.Process("Wiz::WinCMakeOgreNext"))
+        return extractor.ErrorMessage();
+
+    const WinCMakeRunResult result =
+        RunWinCMakeOgreNext(
+            extractor.p0->GetWizardWindow(),
+            extractor.p0->GetCompilerID(),
+            *extractor.p1,
+            *extractor.p2,
+            *extractor.p3,
+            *extractor.p4);
+
+    return ConstructAndReturnInstance(
+        v,
+        FormatWinCMakeRun(result));
 }
 ```
 
-`MingwTools` fills `gcc`, `gxx`, `mingw32-make`, and the compiler `bin` for the wizard's compiler. `windres.exe` is that `bin` plus the file name, so the dependencies, the engine, and the generated project use one MinGW.
-
-Search the pasted function for `ConfirmConfigure` and replace that name with `ConfirmAction`. `ConfirmAction` is the yes/no dialog already in `wincmake.cpp`.
-
-Delete the `ProbeMacCMake` / `MacCMakeWorks` block. `RunCMake`, already in this file, checks that `cmake.exe` works.
-
-The three Mac dialog launches do not exist on Windows. Replace each one with `RunCMake`. Pass `wxEmptyString` as its confirm-label argument, because `ConfirmAction` already asked.
-
-Configure branch. Delete from `MacCMakeConfigureDialog dlg` through `result.success = true; return result;` and put this there:
-
-```cpp
-result = RunCMake(
-    parent,
-    wxT("configure"),
-    OgreNextConfigureArguments(tree, gcc, gxx, make, windres),
-    bin,
-    OgreNextConfigureDescription(tree),
-    explanation,
-    wxEmptyString);
-
-if (!result.success)
-    return result;
-
-wxString cacheError;
-
-if (ReadOgreNextCache(tree, cacheError) != OgreNextCacheMatches)
-{
-    result.success = false;
-    result.output = cacheError;
-    return result;
-}
-
-result.success = true;
-return result;
-```
-
-Build branch. `BoundedJobCount()` is already in this file. Delete from `MacCMakeBuildDialog dlg` through the build `return result;` and put this there:
-
-```cpp
-const int jobs = BoundedJobCount();
-wxArrayString buildArgs;
-buildArgs.Add(wxT("--build"));
-buildArgs.Add(tree.build);
-buildArgs.Add(wxT("--parallel"));
-buildArgs.Add(wxString::Format(wxT("%d"), jobs));
-
-return RunCMake(
-    parent,
-    wxT("build"),
-    buildArgs,
-    wxEmptyString,
-    wxString::Format(
-        _("CMake is building.\n\nBuild:\n%s\n\nParallel jobs: %d"),
-        tree.build,
-        jobs),
-    explanation,
-    wxEmptyString);
-```
-
-Install branch. Delete from `MacCMakeInstallDialog dlg` through the final `return result;` of the function. Put this stub there. Section 10 replaces it with the real install. The build page must not install yet.
-
-```cpp
-result.operation = wxT("install");
-result.output = wxT("install comes in a later step");
-return result;
-```
-
-Search the pasted function for `Mac`, `sdk`, and `xcrun`. Those words should be gone.
-
-`FormatWinCMakeRun` already prints `launched`, `cancelled`, `exit`, `success`, `operation`, and `output`. The binding below returns that string. Do not add a second formatter.
-
-### Squirrel binding for `RunWinCMakeOgreNext`
-
-Open `wiz.cpp`. Copy `Wiz_MacCMakeOgreNext` (lines 2304–2332). Paste it immediately after the closing `}` of `Wiz_WinCMakeInstall`. That function is already inside `#if defined(__WXMSW__)`.
-
-Rename the pasted function to `Wiz_WinCMakeOgreNext`.
-
-Inside it, change:
-
-```text
-"Wiz::MacCMakeOgreNext"   -> "Wiz::WinCMakeOgreNext"
-MacCMakeRunResult         -> WinCMakeRunResult
-RunMacCMakeOgreNext       -> RunWinCMakeOgreNext
-FormatMacCMakeRun         -> FormatWinCMakeRun
-```
-
-The string is only the text Squirrel shows when the call has the wrong arguments. `FormatWinCMakeRun` is the report string.
-
-The Mac call passes `GetWizardWindow()` and then the four script strings. Insert the compiler between the window and the first string, copying the line from `Wiz_WinOgreConfigure`:
-
-```cpp
-extractor.p0->GetCompilerID(),
-```
-
-The call becomes:
-
-```cpp
-const WinCMakeRunResult result =
-    RunWinCMakeOgreNext(
-        extractor.p0->GetWizardWindow(),
-        extractor.p0->GetCompilerID(),
-        *extractor.p1,
-        *extractor.p2,
-        *extractor.p3,
-        *extractor.p4);
-```
-
-`ExtractParams5` stays as it is. Squirrel still passes `projectId`, `operation`, `explanation`, and `confirmLabel`. `GetCompilerID()` is the compiler selected on the wizard page.
 
 After the `WinOgreNextAcquire` binding from section 4, add:
 
@@ -677,32 +1331,75 @@ BindMethod(v, _SC("WinCMakeOgreNext"),
            _SC("Wiz::WinCMakeOgreNext"));
 ```
 
-Look, using the C++ steps in section 2: the IDE starts, and the wizard still ends at the patch pages. `Wizard.WinCMakeOgreNext` exists, and no page calls it yet.
-
-
+Check whether everything is fine, using the steps in section 2: the IDE starts, and the wizard still ends at the patch pages. Nothing new yet, because `Wizard.WinCMakeOgreNext` exists, but no page calls it. But definitely, if there is an error, it won't compile.
 
 
 ## 9. Build pages
 
-Copy these functions and paste them above `BeginWinOgreNext`.
+Back to the wizard (`src\plugins\scriptedwizard\resources\ogre-next\wizard.script`). Paste these above `BeginWinOgreNext`. `OgreNextWinBuildTree` configures and builds. It does not install. Section 11 adds that page.
 
-```text
-OgreNextCMakeBlock         -> OgreNextWinCMakeBlock
-    Wizard.MacCMakeProbe           -> Wizard.WinCMakeProbe
-    OgreNextResolvePaths()         -> OgreNextWinResolvePaths()
+```javascript
+function OgreNextWinCMakeBlock()
+{
+    local report = Wizard.WinCMakeProbe();
+    OgreNextNativeCMakeAccess = OgreNextField(report, _T("access"));
+    OgreNextNativeCMakeExecutable = OgreNextField(report, _T("executable"));
+    OgreNextNativeCMakeVersion = OgreNextField(report, _T("version"));
+    if (OgreNextNativeCMakeAccess.Matches(_T("works")))
+        return OgreNextWinResolvePaths();
+    if (OgreNextNativeCMakeAccess.Matches(_T("present_unusable")))
+        return _("CMake was found but failed cmake --version.");
+    return _("CMake could not be found by the native CMake helper.");
+}
 
-OgreNextRun                -> OgreNextWinRun
-    Wizard.MacCMakeOgreNext        -> Wizard.WinCMakeOgreNext
+function OgreNextWinRun(projectId, operation, explanation, confirmLabel)
+{
+    local report = Wizard.WinCMakeOgreNext(projectId, operation, explanation, confirmLabel);
+    if (OgreNextField(report, _T("success")).Matches(_T("1")))
+        return true;
+    if (OgreNextField(report, _T("cancelled")).Matches(_T("1")))
+    {
+        ShowMessage(_("CMake was stopped. Files already written are left in place."));
+        return false;
+    }
+    ShowError(_("OGRE-Next ") + operation + _(" did not succeed.\n\n") + OgreNextField(report, _T("output")));
+    return false;
+}
 
-OgreNextBuildTree          -> OgreNextWinBuildTree
-    OgreNextRun                    -> OgreNextWinRun
+function OgreNextWinBuildTree(projectId, title)
+{
+    local configure = _("Code::Blocks will configure ") + title + _(".\n\nThe options are fixed by Code::Blocks. This page does not accept extra CMake arguments.");
+    if (projectId.Matches(_T("ogre-next")))
+    {
+        configure += _("\n\nInstall prefix:\n") + OgreNextInstall;
+        configure += _("\n\nDependencies:\n") + OgreNextDepsInstall;
+        configure += _("\n\nSamples and tests stay off. The prefix is fixed before the build.");
+    }
+    else
+    {
+        configure += _("\n\nThe dependency project selects its own ogredeps directory. Code::Blocks does not pass CMAKE_INSTALL_PREFIX.");
+    }
+    if (!OgreNextWinRun(projectId, _T("configure"), configure, _("Configure ") + title))
+        return false;
+
+    local build = _("Code::Blocks will build ") + title + _(".\n\nThis step does not install it.");
+    return OgreNextWinRun(projectId, _T("build"), build, _("Build ") + title);
+}
+
+function OnLeave_OgreNextWinBuildDeps(fwd)
+{
+    if (!fwd)
+        return true;
+    return OgreNextWinBuildTree(_T("ogre-next-deps"), _("the OGRE-Next dependencies"));
+}
+
+function OnLeave_OgreNextWinBuildEngine(fwd)
+{
+    if (!fwd)
+        return true;
+    return OgreNextWinBuildTree(_T("ogre-next"), _("OGRE-Next"));
+}
 ```
-
-In `OgreNextWinBuildTree`, delete the third call, the one whose operation is `_T("install")`. This page configures and builds. Section 11 adds the install page.
-
-Copy `OnLeave_OgreNextBuildDeps` to `OnLeave_OgreNextWinBuildDeps`. In the copy, delete both `OgreNextDepsInstalled` checks and delete the final `ShowError` about the file list. `OgreNextBuildTree` becomes `OgreNextWinBuildTree`. The function returns true when that call returns true. The file list is the install page's check, in section 11.
-
-Copy `OnLeave_OgreNextBuildEngine` to `OnLeave_OgreNextWinBuildEngine`. Delete the `OgreNextDepsInstalled` check, the `OgreNextEngineInstalled` checks, and the final file-list `ShowError`. `OgreNextBuildTree` becomes `OgreNextWinBuildTree`.
 
 In `BeginWinOgreNext`, after the dependency patch page, insert:
 
@@ -772,54 +1469,52 @@ result.success = true;
 return result;
 ```
 
-The file arrays from section 8 are what `OgreNextFilesPresent` checks. No new binding. `Wizard.WinCMakeOgreNext(..., "install", ...)` now does this branch.
+The file arrays from section 7 are what `OgreNextFilesPresent` checks. No new binding. `Wizard.WinCMakeOgreNext(..., "install", ...)` now does this branch.
 
-Look, using the C++ steps in section 2: the wizard is unchanged, and it still ends at the build pages.
+Look, using the steps in section 2: the wizard is unchanged, and it still ends at the build pages.
 
 
 ## 11. Install pages
 
-Copy `OgreNextDepsInstalled` to `OgreNextWinDepsInstalled`. Replace the `return IO.FileExists...` chain with:
+Paste these above `BeginWinOgreNext`. The Mac lists stay in `OgreNextDepsInstalled` and `OgreNextEngineInstalled`.
 
 ```javascript
-return IO.FileExists(OgreNextJoin(root, _T("include/FreeImage.h")))
-    && IO.FileExists(OgreNextJoin(root, _T("include/SDL2/SDL.h")))
-    && IO.FileExists(OgreNextJoin(root, _T("bin/Release/SDL2.dll")));
-```
+function OgreNextWinDepsInstalled()
+{
+    if (!OgreNextPathsValid)
+        return false;
+    local root = OgreNextDepsInstall;
+    return IO.FileExists(OgreNextJoin(root, _T("include/FreeImage.h")))
+        && IO.FileExists(OgreNextJoin(root, _T("include/SDL2/SDL.h")))
+        && IO.FileExists(OgreNextJoin(root, _T("bin/Release/SDL2.dll")));
+}
 
-Copy `OgreNextEngineInstalled` to `OgreNextWinEngineInstalled`. Replace its `return` chain with:
+function OgreNextWinEngineInstalled()
+{
+    if (!OgreNextPathsValid)
+        return false;
+    local root = OgreNextInstall;
+    return IO.FileExists(OgreNextJoin(root, _T("include/OGRE/OgreRoot.h")))
+        && IO.FileExists(OgreNextJoin(root, _T("include/OGRE/Hlms/Unlit/OgreHlmsUnlit.h")))
+        && IO.FileExists(OgreNextJoin(root, _T("include/OGRE/Hlms/Pbs/OgreHlmsPbs.h")))
+        && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreMain.dll.a")))
+        && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreHlmsPbs.dll.a")))
+        && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreHlmsUnlit.dll.a")))
+        && IO.FileExists(OgreNextJoin(root, _T("bin/Release/OgreMain.dll")))
+        && IO.FileExists(OgreNextJoin(root, _T("bin/Release/RenderSystem_Direct3D11.dll")))
+        && IO.FileExists(OgreNextJoin(root, _T("bin/Release/RenderSystem_GL3Plus.dll")))
+        && IO.FileExists(OgreNextJoin(root, _T("bin/Release/Plugin_ParticleFX.dll")))
+        && IO.DirectoryExists(OgreNextJoin(root, _T("Media/Hlms/Unlit")))
+        && IO.DirectoryExists(OgreNextJoin(root, _T("Media/Hlms/Pbs")))
+        && IO.DirectoryExists(OgreNextJoin(root, _T("Media/materials/textures")));
+}
 
-```javascript
-return IO.FileExists(OgreNextJoin(root, _T("include/OGRE/OgreRoot.h")))
-    && IO.FileExists(OgreNextJoin(root, _T("include/OGRE/Hlms/Unlit/OgreHlmsUnlit.h")))
-    && IO.FileExists(OgreNextJoin(root, _T("include/OGRE/Hlms/Pbs/OgreHlmsPbs.h")))
-    && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreMain.dll.a")))
-    && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreHlmsPbs.dll.a")))
-    && IO.FileExists(OgreNextJoin(root, _T("lib/Release/libOgreHlmsUnlit.dll.a")))
-    && IO.FileExists(OgreNextJoin(root, _T("bin/Release/OgreMain.dll")))
-    && IO.FileExists(OgreNextJoin(root, _T("bin/Release/RenderSystem_Direct3D11.dll")))
-    && IO.FileExists(OgreNextJoin(root, _T("bin/Release/RenderSystem_GL3Plus.dll")))
-    && IO.FileExists(OgreNextJoin(root, _T("bin/Release/Plugin_ParticleFX.dll")))
-    && IO.DirectoryExists(OgreNextJoin(root, _T("Media/Hlms/Unlit")))
-    && IO.DirectoryExists(OgreNextJoin(root, _T("Media/Hlms/Pbs")))
-    && IO.DirectoryExists(OgreNextJoin(root, _T("Media/materials/textures")));
-```
-
-The Mac lists stay in `OgreNextDepsInstalled` and `OgreNextEngineInstalled`.
-
-Add this function above `BeginWinOgreNext`:
-
-```javascript
 function OgreNextWinInstall(projectId, title)
 {
     local install = _("Code::Blocks will install ") + title + _(" with cmake --install.\n\nNo replacement prefix is passed. The prefix from configuration is used.");
     return OgreNextWinRun(projectId, _T("install"), install, _("Install ") + title);
 }
-```
 
-Copy is not required for the leave handlers. Add them above `BeginWinOgreNext`:
-
-```javascript
 function OnLeave_OgreNextWinInstallDeps(fwd)
 {
     if (!fwd)
@@ -854,26 +1549,34 @@ function OnLeave_OgreNextWinInstallEngine(fwd)
 }
 ```
 
-In `OnLeave_OgreNextWinBuildDeps`, put the skip back at the top of the forward path:
+Replace `OnLeave_OgreNextWinBuildDeps` and `OnLeave_OgreNextWinBuildEngine` with these. A tree that is already installed is skipped, and the engine refuses to build when the dependency SDK is missing.
 
 ```javascript
-if (OgreNextWinDepsInstalled())
-    return true;
-```
-
-In `OnLeave_OgreNextWinBuildEngine`, put both skips back:
-
-```javascript
-if (OgreNextWinEngineInstalled())
-    return true;
-if (!OgreNextWinDepsInstalled())
+function OnLeave_OgreNextWinBuildDeps(fwd)
 {
-    ShowError(_("The dependency SDK is not installed."));
-    return false;
+    if (!fwd)
+        return true;
+    if (OgreNextWinDepsInstalled())
+        return true;
+    return OgreNextWinBuildTree(_T("ogre-next-deps"), _("the OGRE-Next dependencies"));
+}
+
+function OnLeave_OgreNextWinBuildEngine(fwd)
+{
+    if (!fwd)
+        return true;
+    if (OgreNextWinEngineInstalled())
+        return true;
+    if (!OgreNextWinDepsInstalled())
+    {
+        ShowError(_("The dependency SDK is not installed."));
+        return false;
+    }
+    return OgreNextWinBuildTree(_T("ogre-next"), _("OGRE-Next"));
 }
 ```
 
-In `BeginWinOgreNext`, wrap the dependency build page so it is skipped once the SDK files exist, and add the install page after it:
+In `BeginWinOgreNext`, replace the dependency build page so it is skipped once the SDK files exist, and add the install page after it:
 
 ```javascript
 if (!OgreNextWinDepsInstalled())
@@ -887,7 +1590,19 @@ if (!OgreNextWinDepsInstalled())
 }
 ```
 
-Do the same for the engine, using `OgreNextWinEngineInstalled`, `OgreNextWinBuildEngine`, `OgreNextWinInstallEngine`, and `OgreNextInstall` in the destination line.
+Replace the engine build page the same way:
+
+```javascript
+if (!OgreNextWinEngineInstalled())
+{
+    Wizard.AddInfoPage(
+        _T("OgreNextWinBuildEngine"),
+        _("OGRE-Next is not built yet.\n\nPress Next to configure and build it. This page does not install."));
+    Wizard.AddInfoPage(
+        _T("OgreNextWinInstallEngine"),
+        _("OGRE-Next is not installed yet.\n\nDestination:\n    ") + OgreNextInstall + _("\n\nPress Next to install it."));
+}
+```
 
 Look, using the script copy in section 2: after each build page comes an install page. Next runs `cmake --install`. A second run skips a pair whose file list is already present.
 
@@ -912,7 +1627,7 @@ Plugin=Plugin_ParticleFX
 
 Leave `files/resources2.cfg` and `files/main.cpp` unchanged. They already contain `[OGRE_NEXT_MEDIA]` and `[OGRE_NEXT_TEXTURES]`.
 
-In `GetGeneratedFile`, case 1 currently sets `templateFile` to `ogre-next/files/plugins.cfg`. Change that case to:
+In `GetGeneratedFile`, case 1 currently sets `templateFile` to `ogre-next/files/plugins.cfg`. Replace that case with:
 
 ```javascript
 case 1:
@@ -931,23 +1646,90 @@ buffer.Replace(_T("[OGRE_NEXT_BIN]"), OgreNextJoin(OgreNextInstall, _T("bin/Rele
 
 `OgreNextJoin` writes `/`. The Mac template has no `[OGRE_NEXT_BIN]`, so this extra `Replace` changes nothing on Mac. OGRE loads the render-system DLLs from that folder. `OgreMain.dll` is copied beside the exe below, because Windows loads that DLL from the exe's own folder.
 
-Copy `OgreNextAllReady` to `OgreNextWinAllReady`. In the copy:
-
-- Delete the `OgreNextBrewBlock()` block.
-- `OgreNextCMakeBlock` -> `OgreNextWinCMakeBlock`
-- `OgreNextGitBlock` -> `OgreNextWinGitBlock`
-- `OgreNextCheckoutReady` -> `OgreNextWinCheckoutReady`
-- `OgreNextDepsInstalled` -> `OgreNextWinDepsInstalled`
-- `OgreNextEngineInstalled` -> `OgreNextWinEngineInstalled`
-- `OgreNextPatchState` -> `OgreNextWinPatchState`
-- Delete the two lines that mention `ogre-next-deps-apple` and `ogre-apple`.
-
-`OnLeave_ProjectPathPage` and `OnLeave_CompilerPage` currently call `OgreNextAllReady()`. Change each body to:
+Open `src/plugins/scriptedwizard/resources/ogre/wizard.script` and find `OgreWinQueueDll`. It adds one `cmd /c copy /Y` after the link, into `$(TARGET_OUTPUT_DIR)`. Do not edit that file. Paste this copy into the OGRE-Next script, above `BeginWinOgreNext`:
 
 ```javascript
-if (PLATFORM == PLATFORM_MSW)
-    return !fwd || OgreNextWinAllReady();
-return !fwd || OgreNextAllReady();
+function OgreNextWinQueueDll(project, dir, name)
+{
+    if (dir.IsEmpty())
+        return;
+
+    local path = dir + wxFILE_SEP_PATH + name;
+
+    if (!IO.FileExists(path))
+        return;
+
+    project.AddCommandsAfterBuild(_T("cmd /c copy /Y \"") + path + _T("\" \"$(TARGET_OUTPUT_DIR)") + name + _T("\""));
+}
+```
+
+Paste `OgreNextWinAllReady` above `BeginWinOgreNext`. Compare it with `OgreNextAllReady`. The Homebrew block is gone, and so are the two Apple patch ids.
+
+```javascript
+function OgreNextWinAllReady()
+{
+    local reason = OgreNextWinCMakeBlock();
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+    reason = OgreNextWinGitBlock();
+    if (!reason.IsEmpty())
+    {
+        ShowError(reason);
+        return false;
+    }
+    if (!OgreNextWinCheckoutReady(_T("ogre-next-deps"), OgreNextDepsSource))
+    {
+        ShowError(_("The pinned dependency checkout is not present."));
+        return false;
+    }
+    if (!OgreNextWinPatchState(_T("ogre-next-deps-mingw"), OgreNextDepsSource).Matches(_T("already_applied")))
+    {
+        ShowError(_("The dependency patches are not applied."));
+        return false;
+    }
+    if (!OgreNextWinDepsInstalled())
+    {
+        ShowError(_("The dependency SDK is not installed."));
+        return false;
+    }
+    if (!OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
+    {
+        ShowError(_("The pinned OGRE-Next checkout is not present."));
+        return false;
+    }
+    if (!OgreNextWinPatchState(_T("ogre-next-v3-0-mingw"), OgreNextEngineSource).Matches(_T("already_applied")))
+    {
+        ShowError(_("The engine patches are not applied."));
+        return false;
+    }
+    if (!OgreNextWinEngineInstalled())
+    {
+        ShowError(_("The OGRE-Next SDK is not installed."));
+        return false;
+    }
+    return true;
+}
+```
+
+`OnLeave_ProjectPathPage` and `OnLeave_CompilerPage` currently call `OgreNextAllReady()`. Replace each function with:
+
+```javascript
+function OnLeave_ProjectPathPage(fwd)
+{
+    if (PLATFORM == PLATFORM_MSW)
+        return !fwd || OgreNextWinAllReady();
+    return !fwd || OgreNextAllReady();
+}
+
+function OnLeave_CompilerPage(fwd)
+{
+    if (PLATFORM == PLATFORM_MSW)
+        return !fwd || OgreNextWinAllReady();
+    return !fwd || OgreNextAllReady();
+}
 ```
 
 Those two pages are shared. The branch keeps the Mac check on Mac.
@@ -966,60 +1748,68 @@ if (PLATFORM == PLATFORM_MSW)
     return SetupWinOgreNextProject(project);
 ```
 
-Copy `SetupProject` and rename the copy `SetupWinOgreNextProject`. In the copy, change `OgreNextAllReady()` to `OgreNextWinAllReady()`.
-
-Delete these Mac link lines:
+Open `SetupProject` and read the linker block. It is `-F` and `-framework`, then a shell line that builds a Mac `.app` and a Frameworks symlink. The release target is `ttExecutable`, and both targets set an output filename inside that `.app`. None of that belongs on Windows. Paste this function above `BeginWinOgreNext`. The three link names are `libOgreHlmsPbs.dll.a`, `libOgreHlmsUnlit.dll.a`, and `libOgreMain.dll.a` in `lib/Release`. `AddLinkLib` on the project applies to both targets. Both targets are `ttConsoleOnly`, so the console window keeps `Light show rendered and closed cleanly.` visible. Without `SetOutputFilename`, Code::Blocks keeps `bin\Debug` and `bin\Release`.
 
 ```javascript
-project.AddLinkerOption(_T("-F") + frameworkDir);
-project.AddLinkerOption(_T("-framework Ogre"));
-project.AddLinkerOption(_T("-framework OgreHlmsPbs"));
-project.AddLinkerOption(_T("-framework OgreHlmsUnlit"));
-project.AddLinkerOption(_T("-Wl,-search_paths_first"));
-project.AddLinkerOption(_T("-Wl,-headerpad_max_install_names"));
+function SetupWinOgreNextProject(project)
+{
+    if (!OgreNextWinAllReady())
+        return false;
+
+    local includeRoot = OgreNextJoin(OgreNextInstall, _T("include/OGRE"));
+
+    project.AddIncludeDir(includeRoot);
+    project.AddIncludeDir(OgreNextJoin(includeRoot, _T("Hlms/Common")));
+    project.AddIncludeDir(OgreNextJoin(includeRoot, _T("Hlms/Unlit")));
+    project.AddIncludeDir(OgreNextJoin(includeRoot, _T("Hlms/Pbs")));
+    project.AddCompilerOption(_T("-std=gnu++17"));
+
+    project.AddLibDir(OgreNextJoin(OgreNextInstall, _T("lib/Release")));
+    project.AddLinkLib(_T("OgreHlmsPbs"));
+    project.AddLinkLib(_T("OgreHlmsUnlit"));
+    project.AddLinkLib(_T("OgreMain"));
+
+    WarningsOn(project, Wizard.GetCompilerID());
+    CppExceptionsOn(project, Wizard.GetCompilerID());
+
+    local projectDir = Wizard.GetProjectFullFilename().BeforeLast(_T("\\"));
+    local target = project.GetBuildTarget(Wizard.GetDebugName());
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttConsoleOnly);
+        target.SetWorkingDir(projectDir);
+        DebugSymbolsOn(target, Wizard.GetCompilerID());
+    }
+
+    target = project.GetBuildTarget(Wizard.GetReleaseName());
+    if (!IsNull(target))
+    {
+        target.SetTargetType(ttConsoleOnly);
+        target.SetWorkingDir(projectDir);
+        target.AddCompilerOption(_T("-DNDEBUG"));
+        OptimizationsOn(target, Wizard.GetCompilerID());
+    }
+
+    local releaseBin = OgreNextJoin(OgreNextInstall, _T("bin/Release"));
+    local compilerBin = OgreNextField(Wizard.WinOgreTools(Wizard.GetCompilerID()), _T("bin"));
+
+    OgreNextWinQueueDll(project, releaseBin, _T("OgreMain.dll"));
+    OgreNextWinQueueDll(project, releaseBin, _T("OgreHlmsPbs.dll"));
+    OgreNextWinQueueDll(project, releaseBin, _T("OgreHlmsUnlit.dll"));
+    OgreNextWinQueueDll(project, compilerBin, _T("libgcc_s_seh-1.dll"));
+    OgreNextWinQueueDll(project, compilerBin, _T("libstdc++-6.dll"));
+    OgreNextWinQueueDll(project, compilerBin, _T("libwinpthread-1.dll"));
+
+    project.AddCommandsAfterBuild(
+        _T("cmd /c copy /Y \"")
+        + OgreNextJoin(OgreNextInstall, _T("Media/models/ogrehead.mesh"))
+        + _T("\" \"$(PROJECT_DIR)/ogrehead.mesh\""));
+
+    return true;
+}
 ```
 
-Delete the `local afterBuild = ...` block and its `project.AddCommandsAfterBuild(afterBuild);`. That block builds a Mac `.app` and a Frameworks symlink.
-
-In their place, after `project.AddCompilerOption(_T("-std=gnu++17"));`, add:
-
-```javascript
-project.AddLibDir(OgreNextJoin(OgreNextInstall, _T("lib/Release")));
-project.AddLinkLib(_T("OgreHlmsPbs"));
-project.AddLinkLib(_T("OgreHlmsUnlit"));
-project.AddLinkLib(_T("OgreMain"));
-```
-
-Those three link names are `libOgreHlmsPbs.dll.a`, `libOgreHlmsUnlit.dll.a`, and `libOgreMain.dll.a` in `lib/Release`. `AddLinkLib` on the project applies to both targets. The include lines and `-std=gnu++17` above them stay.
-
-Search for `BeforeLast(_T("/"))` and replace it with `BeforeLast(_T("\\"))`. `GetProjectFullFilename()` separates Windows folders with a backslash.
-
-On both targets, `SetTargetType` must be `ttConsoleOnly`. The release target currently says `ttExecutable`. Change that one. The console window is what keeps `Light show rendered and closed cleanly.` visible.
-
-Delete both `target.SetOutputFilename(...)` lines. Those lines name the Mac `.app`. Without them, Code::Blocks keeps `bin\Debug` and `bin\Release`.
-
-Open `src/plugins/scriptedwizard/resources/ogre/wizard.script`. Copy `OgreWinQueueDll` (lines 1966–1977) into the OGRE-Next script and rename it `OgreNextWinQueueDll`. Do not edit the OGRE 1.x script. The copied function adds one `cmd /c copy /Y` after the link, into `$(TARGET_OUTPUT_DIR)`.
-
-In `SetupWinOgreNextProject`, after the target setup, add:
-
-```javascript
-local releaseBin = OgreNextJoin(OgreNextInstall, _T("bin/Release"));
-local compilerBin = OgreNextField(Wizard.WinOgreTools(Wizard.GetCompilerID()), _T("bin"));
-
-OgreNextWinQueueDll(project, releaseBin, _T("OgreMain.dll"));
-OgreNextWinQueueDll(project, releaseBin, _T("OgreHlmsPbs.dll"));
-OgreNextWinQueueDll(project, releaseBin, _T("OgreHlmsUnlit.dll"));
-OgreNextWinQueueDll(project, compilerBin, _T("libgcc_s_seh-1.dll"));
-OgreNextWinQueueDll(project, compilerBin, _T("libstdc++-6.dll"));
-OgreNextWinQueueDll(project, compilerBin, _T("libwinpthread-1.dll"));
-
-project.AddCommandsAfterBuild(
-    _T("cmd /c copy /Y \"")
-    + OgreNextJoin(OgreNextInstall, _T("Media/models/ogrehead.mesh"))
-    + _T("\" \"$(PROJECT_DIR)/ogrehead.mesh\""));
-```
-
-`bin=` comes from `Wizard.WinOgreTools`. The three MinGW DLLs then belong to the compiler selected in the wizard. `ogrehead.mesh` is copied into the project folder because `main.cpp` opens it there.
+`bin` comes from `Wizard.WinOgreTools`. The three MinGW DLLs then belong to the compiler selected in the wizard. `ogrehead.mesh` is copied into the project folder because `main.cpp` opens it there.
 
 Look, using the script copy in section 2: the wizard now ends with the project-path page and the compiler page. Finish creates the project. Build it. Running it opens a window titled `OGRE-Next Light Show`, shows the rotating Ogre head, and after the window is closed prints `Light show rendered and closed cleanly.`
 
