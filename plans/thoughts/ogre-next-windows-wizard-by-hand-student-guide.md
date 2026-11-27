@@ -177,7 +177,9 @@ Get the mac stuff that we will adapt to windows:
 Rename those function declarations:
 
 `MacGitAcquireResult`   -> `WinGitAcquireResult`
+
 `AcquireMacGitSource`   -> `AcquireWinOgreNext`
+
 `FormatMacGitAcquire`   -> `FormatWinGitAcquire`
 
 Leave the fields and the comments as they are. The functions have no body {}. Normal: we are in header ("hashtag") file.
@@ -200,7 +202,7 @@ CheckoutCommands
 
 Paste them into the anonymous namespace of `wingit.cpp`.
 
-Note: that anonymous namespace is like the 'using namespace std'. Except for it's anonymous, meaning whatever is init is reachable only from `wingit.cpp`
+Note: that anonymous namespace is like the 'using namespace std'. Except for it's anonymous, meaning whatever is in it is reachable only from `wingit.cpp`
 
 The function `KnownSourceDestination` in `macgit.cpp` starts from wxGetHomeDir() and appends Library, then CodeBlocks, then source.leaf. The Windows procedure is different. So in `wincmake.cpp` replace the lines of the block from `wxGetHomeDir` through appending `source.leaf` by the following code: 
 
@@ -220,13 +222,13 @@ Go back to `macgit.cpp`and copy `AcquireMacGitSource` (from line 1100) and `Form
 
 Rename the types and the two functions as in the header (like they are in `wingit.h`). Then change only these calls inside the copied acquire function:
 
-
+```text
 ProbeMacGit()     -> ProbeWinGit()
 MacGitWorks       -> WinGitWorks
 MacGitCloneDialog -> WinGitCloneDialog
+```
 
-
-### Running a command list
+### Git Clone Dialog update
 
 A class, in c++ is a collection of both functions and variables (called members).
 
@@ -239,9 +241,11 @@ Next, go back to `macgit.cpp` and find the `WinGitCloneDialog::OnProcessEnd` fun
 
 ### Squirrel binding
 
-That c++ work doesn't change the wizard yet. Squirrel binding is needed to use these functions. Those bindings live in `wiz.cpp`, which is located in `src/plugins/scriptedwizard`.
+That c++ work doesn't change the wizard yet. Squirrel binding is needed to use these functions within the wizard. Those bindings live in `wiz.cpp`, which is located in `src/plugins/scriptedwizard`.
 
-Open `wiz.cpp` and find the function `Wiz_MacGitAcquire` (lines 2074–2097). Copy the entire function. Find the function definition for `Wiz_WinGitClone` that is something like `SQInteger Wiz_WinGitClone(HSQUIRRELVM v){ ... }`. Just after the body {} of `Wiz_WinGitClone`, paste the `Wiz_MacGitAcquire` function definition. Rename the pasted function to `Wiz_WinOgreNextAcquire`. Also, inside the function body of `Wiz_WinOgreNextAcquire`, there are calls to the mac functions `AcquireMacGitSource` and  `FormatMacGitAcquire`. Change those calls to `AcquireWinOgreNext` respectively `FormatWinGitAcquire`. Attention, one calls is quite unusual because it passes the function name instead of calling it directly. If you want to make it easy on people doing debugging, you change the error message string "Wiz::MacGitAcquire" to "Wiz::WinOgreNextAcquire"), but if you don't it will work but remain a trap.
+Open `wiz.cpp` and find the function `Wiz_MacGitAcquire` (lines 2074–2097). Copy the entire function. Then find the function definition for `Wiz_WinGitClone` that is something like `SQInteger Wiz_WinGitClone(HSQUIRRELVM v){ ... }`. Just after the body {} of `Wiz_WinGitClone`, paste the `Wiz_MacGitAcquire` function definition. 
+
+Rename the pasted function to `Wiz_WinOgreNextAcquire`. Also, inside the function body of `Wiz_WinOgreNextAcquire`, there are calls to the mac functions `AcquireMacGitSource` and  `FormatMacGitAcquire`. Change those calls to `AcquireWinOgreNext` respectively `FormatWinGitAcquire`. If you want to make it easy on people doing debugging, you also change the error message string "Wiz::MacGitAcquire" to "Wiz::WinOgreNextAcquire"), but if you don't want to bother, it will work but remain a trap.
 
 Define the new binding along with the other windows binding:
 
@@ -276,9 +280,9 @@ OgreNextCheckoutReady      -> OgreNextWinCheckoutReady
     Wizard.MacGitAcquire           -> Wizard.WinOgreNextAcquire
 ```
 
-Copy `OnLeave_OgreNextAcquireDeps` to `OnLeave_OgreNextWinAcquireDeps`. In the copy, `OgreNextCheckoutReady` becomes `OgreNextWinCheckoutReady` and `OgreNextAcquire` becomes `OgreNextWinAcquire`.
+Duplicate `OnLeave_OgreNextAcquireDeps` and rename it the new copy to `OnLeave_OgreNextWinAcquireDeps`. In the new copy, `OgreNextCheckoutReady` becomes `OgreNextWinCheckoutReady` and `OgreNextAcquire` becomes `OgreNextWinAcquire`.
 
-Copy `OnLeave_OgreNextAcquireEngine` to `OnLeave_OgreNextWinAcquireEngine` and make the same two renames.
+Duplicate `OnLeave_OgreNextAcquireEngine`, and rename the new copy to `OnLeave_OgreNextWinAcquireEngine`. Inside the new code make the same two renames as you just did.
 
 In `BeginWinOgreNext`, after the welcome `AddInfoPage` add:
 
@@ -312,16 +316,16 @@ if (!OgreNextWinCheckoutReady(_T("ogre-next"), OgreNextEngineSource))
 }
 ```
 
-Check, using the script copy in section 2. If everything went well, the welcome page is followed by a download page. Next starts Git. Cancel on the Git question leaves the destination uncreated. 
+Check, using section 2. If everything went well, the welcome page is followed by a download page. Next starts the Git download.
 
-Check also whether in C:/Users/<current user>/AppData/CodeBlocks we have the ogre-next-deps and ogre-next source downloaded.
+After the wizard git step, check also whether in C:/Users/<current user>/AppData/CodeBlocks we have the ogre-next-deps and ogre-next source downloaded.
 
-If you feel like it, update the welcome message so the wizard doesn't say anymore that it doesn't do anything ...
+If you want, you can also update the welcome message so the wizard so it says something reasonable, not "I don't do anything".
 
 
-## 6. Teach the Wizard to apply
+## 6. Teach the Wizard to apply the Patches
 
-Copy these functions and paste them above `BeginWinOgreNext`. Rename the new copies:
+Find each of these two functions, copy each, and paste them above `BeginWinOgreNext`. Rename the new copies, and update calls inside the new functions:
 
 ```text
 OgreNextPatchState         -> OgreNextWinPatchState
@@ -333,9 +337,9 @@ OgreNextApplyRequired      -> OgreNextWinApplyRequired
     Wizard.MacPatchApply           -> Wizard.WinPatchApply
 ```
 
-Copy `OnLeave_OgreNextPatchDeps` to `OnLeave_OgreNextWinPatchDeps`. In the copy, use the `Win` names from the list above. Delete the second `OgreNextApplyRequired` call, the one whose id is `ogre-next-deps-apple`. The function returns after `ogre-next-deps-mingw`.
+Duplicate `OnLeave_OgreNextPatchDeps`, rename the new copy to `OnLeave_OgreNextWinPatchDeps`. In the copy, use the `Win` names from the list above. Delete the second `OgreNextApplyRequired` call, the one whose id is `ogre-next-deps-apple`. The function should return after `ogre-next-deps-mingw`.
 
-Copy `OnLeave_OgreNextPatchEngine` to `OnLeave_OgreNextWinPatchEngine`. Delete the call whose id is `ogre-apple`. The function returns after `ogre-next-v3-0-mingw`.
+Duplicate `OnLeave_OgreNextPatchEngine`, rename the new copy to `OnLeave_OgreNextWinPatchEngine`. Delete the call whose id is `ogre-apple`. The function should return after `ogre-next-v3-0-mingw`.
 
 `already_applied` is already treated as success inside the copied `OgreNextApplyRequired`. A cancel returns false, so the next page does not start.
 
