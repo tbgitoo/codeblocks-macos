@@ -2706,6 +2706,12 @@ namespace ScriptBindings
                        _SC("cbProject::IsMakefileCustom"));
             BindMethod(v, _SC("SetMakefileCustom"), Generic_SetBool<cbProject, &cbProject::SetMakefileCustom>,
                        _SC("cbProject::SetMakefileCustom"));
+            BindMethod(v, _SC("GetAllowBuildWithoutSources"),
+                       Generic_GetBool<cbProject, &cbProject::GetAllowBuildWithoutSources>,
+                       _SC("cbProject::GetAllowBuildWithoutSources"));
+            BindMethod(v, _SC("SetAllowBuildWithoutSources"),
+                       Generic_SetBool<cbProject, &cbProject::SetAllowBuildWithoutSources>,
+                       _SC("cbProject::SetAllowBuildWithoutSources"));
             BindMethod(v, _SC("CloseAllFiles"), cbProject_CloseAllFiles,
                        _SC("cbProject::CloseAllFiles"));
             BindMethod(v, _SC("SaveAllFiles"),

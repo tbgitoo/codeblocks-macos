@@ -1163,7 +1163,8 @@ bool CompilerGCC::PrepareBuildOrRunRouting(ActiveSourceRoute& routeOut, wxString
     if (!ed)
     {
         // No editor: project route only if the project itself has a valid build identity.
-        if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+        if (!m_pProject->GetAllowBuildWithoutSources()
+            && !DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
             return false;
         routeOut = asrProject;
         return true;
@@ -3235,7 +3236,8 @@ int CompilerGCC::DoBuild(const wxString& target, bool clean, bool build, bool cl
         if (route == asrProject)
         {
             AskForActiveProject();
-            if (!DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
+            if (!m_pProject->GetAllowBuildWithoutSources()
+                && !DebuggeeDescriptionUtil::ProjectHasDebuggeeSources(m_pProject))
             {
                 ClearRunAfterCompileContinuation();
                 LogMessage(_("Cannot build: the active project has no source files."), cltError);

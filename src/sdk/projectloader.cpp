@@ -394,6 +394,7 @@ void ProjectLoader::DoProjectOptions(TiXmlElement* parentNode)
     wxString execution_dir;
     wxString defaultTarget;
     wxString compilerId = "gcc";
+    bool allow_build_without_sources = false;
     bool extendedObjectNames = false;
     wxArrayString vfolders;
     int platformsFinal = spAll;
@@ -420,6 +421,9 @@ void ProjectLoader::DoProjectOptions(TiXmlElement* parentNode)
 
         else if (node->Attribute("makefile_is_custom"))
             makefile_custom = strncmp(node->Attribute("makefile_is_custom"), "1", 1) == 0;
+
+        else if (node->Attribute("allow_build_without_sources"))
+            allow_build_without_sources = strncmp(node->Attribute("allow_build_without_sources"), "1", 1) == 0;
 
         else if (node->Attribute("execution_dir"))
             execution_dir = UnixFilename(cbC2U(node->Attribute("execution_dir")));
@@ -463,6 +467,7 @@ void ProjectLoader::DoProjectOptions(TiXmlElement* parentNode)
     m_pProject->SetPlatforms(platformsFinal);
     m_pProject->SetMakefile(makefile);
     m_pProject->SetMakefileCustom(makefile_custom);
+    m_pProject->SetAllowBuildWithoutSources(allow_build_without_sources);
     m_pProject->SetMakefileExecutionDir(execution_dir);
     m_pProject->SetDefaultExecuteTarget(defaultTarget);
     m_pProject->SetCompilerID(compilerId);
@@ -1510,6 +1515,8 @@ bool ProjectLoader::ExportTargetAsProject(const wxString& filename, const wxStri
         AddElement(prjnode, "Option", "makefile", UnixFilename(m_pProject->GetMakefile(), wxPATH_UNIX));
     if (m_pProject->IsMakefileCustom())
         AddElement(prjnode, "Option", "makefile_is_custom", 1);
+    if (m_pProject->GetAllowBuildWithoutSources())
+        AddElement(prjnode, "Option", "allow_build_without_sources", 1);
     if (m_pProject->GetMakefileExecutionDir() != m_pProject->GetBasePath())
         AddElement(prjnode, "Option", "execution_dir", UnixFilename(m_pProject->GetMakefileExecutionDir(), wxPATH_UNIX));
     if (m_pProject->GetModeForPCH() != pchObjectDir)

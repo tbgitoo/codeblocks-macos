@@ -54,6 +54,7 @@
 // class constructor
 cbProject::cbProject(const wxString& filename) :
     m_CustomMakefile(false),
+    m_AllowBuildWithoutSources(false),
     m_Globs(),
     m_FileArray(ProjectFile::CompareProjectFiles),
     m_Loaded(false),
@@ -184,6 +185,7 @@ cbProject& cbProject::operator=(const cbProject &p)
     m_DefaultExecuteTarget = p.m_DefaultExecuteTarget;
     m_Makefile = p.m_Makefile;
     m_CustomMakefile = p.m_CustomMakefile;
+    m_AllowBuildWithoutSources = p.m_AllowBuildWithoutSources;
     m_MakefileExecutionDir = p.m_MakefileExecutionDir;
 
     m_Globs = p.m_Globs;
@@ -306,6 +308,20 @@ void cbProject::SetMakefileCustom(bool custom)
         m_CustomMakefile = custom;
         SetModified(true);
     }
+}
+
+void cbProject::SetAllowBuildWithoutSources(bool allow)
+{
+    if (m_AllowBuildWithoutSources != allow)
+    {
+        m_AllowBuildWithoutSources = allow;
+        SetModified(true);
+    }
+}
+
+bool cbProject::GetAllowBuildWithoutSources() const
+{
+    return m_AllowBuildWithoutSources;
 }
 
 wxString cbProject::CreateUniqueFilename()

@@ -319,6 +319,20 @@ class DLLIMPORT cbProject : public CompileTargetBase
         /** @return True if the project is using a custom Makefile for compilation, false if not. */
         bool IsMakefileCustom() const { return m_CustomMakefile; }
 
+        /** Allow building projects without source files.
+         *
+         * When enabled, it bypasses only the source-presence checks that prevent
+         * Build/Rebuild/Clean/DistClean (and named target / virtual target /
+         * batch builds that reach those paths) from reaching the normal build pipeline
+         * when the project contains no ftSource units.
+         *
+         * Default is false.
+         */
+        void SetAllowBuildWithoutSources(bool allow);
+
+        /** @return True if source-presence checks are bypassed for Build/Rebuild/Clean/DistClean. */
+        bool GetAllowBuildWithoutSources() const;
+
         /** Allow the specification of specific execution directory if the project use a custom Makefile.
           * Defaults to the projects base path, if no custom makefile is used.
           * @param dir The directory the custom Makefile should be executed from.
@@ -924,6 +938,7 @@ class DLLIMPORT cbProject : public CompileTargetBase
         wxString               m_DefaultExecuteTarget;
         mutable wxString       m_Makefile;
         bool                   m_CustomMakefile;
+        bool                   m_AllowBuildWithoutSources;
         mutable wxString       m_MakefileExecutionDir;
 
         std::vector<ProjectGlob> m_Globs;

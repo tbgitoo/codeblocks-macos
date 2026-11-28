@@ -692,6 +692,26 @@ class sdkTest extends script_test_base
             project.SetMakefileCustom(true);
             test_true("cbProject::SetMakefileCustom", project.IsMakefileCustom());
 
+            test_false("cbProject::GetAllowBuildWithoutSources default",
+                       project.GetAllowBuildWithoutSources());
+
+            // Verify the setter toggles Modified only on actual value changes.
+            project.SetModified(false);
+            test_false("cbProject::SetModified reset", project.GetModified());
+            project.SetAllowBuildWithoutSources(false);
+            test_false("cbProject::SetAllowBuildWithoutSources(false) no-change keeps Modified",
+                       project.GetModified());
+
+            project.SetAllowBuildWithoutSources(true);
+            test_true("cbProject::SetAllowBuildWithoutSources(true)", project.GetAllowBuildWithoutSources());
+            test_true("cbProject::SetAllowBuildWithoutSources(true) marks Modified",
+                      project.GetModified());
+
+            project.SetModified(false);
+            project.SetAllowBuildWithoutSources(true);
+            test_false("cbProject::SetAllowBuildWithoutSources(true) same-value keeps Modified",
+                       project.GetModified());
+
             // This is commented because the call does strange things and breaks following tests.
             // test_true("cbProject::CloseAllFiles", project.CloseAllFiles(true));
 
@@ -1081,6 +1101,14 @@ class sdkTest extends script_test_base
             test_equal("ProjectManager::RemoveProjectFromAllDependencies project3 empty",
                        projectMgr.GetDependenciesForProject(project3), null);
 
+            test_false("cbProject::GetAllowBuildWithoutSources default project2 before set",
+                       project2.GetAllowBuildWithoutSources());
+            project2.SetAllowBuildWithoutSources(true);
+            test_true("cbProject::SetAllowBuildWithoutSources(true) project2",
+                      project2.GetAllowBuildWithoutSources());
+            test_false("cbProject::GetAllowBuildWithoutSources default project3",
+                       project3.GetAllowBuildWithoutSources());
+
             project.SetModified(true);
             project2.SetModified(true);
             project3.SetModified(true);
@@ -1113,6 +1141,8 @@ class sdkTest extends script_test_base
             test_false("ProjectManager::LoadProject null", IsNull(project2));
             test_true("ProjectManager::LoadProject active",
                       project2 != projectMgr.GetActiveProject());
+            test_true("cbProject::GetAllowBuildWithoutSources persisted on load",
+                      project2.GetAllowBuildWithoutSources());
 
             // Just test if it will be called.
             projectMgr.RebuildTree();
