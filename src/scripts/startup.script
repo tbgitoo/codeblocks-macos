@@ -15,5 +15,9 @@ Log(_("Running startup script"));
 
 Include(_T("plugin_find_broken_files.script"));
 
+Include(_T("tests/script_test_plugin.script"));
+
+
+
 // add a menu entry to edit this script
 GetScriptingManager().RegisterScriptMenu(_("&Settings") + _T("/-") + _("Edit startup script"), _T("edit_startup_script.script"), false);
