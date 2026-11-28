@@ -722,6 +722,13 @@ function OgreNextBundleOutput(outputDir, name)
 
 function SetupProject(project)
 {
+
+if (PLATFORM == PLATFORM_MSW)
+{
+    ShowError(_("The Windows project is added in a later step. Press Cancel."));
+    return false;
+}
+
     if (!OgreNextAllReady())
         return false;
 
@@ -782,9 +789,22 @@ function SetupProject(project)
 ////////////////////////////////////////////////////////////////////////////////
 // Wizard pages
 ////////////////////////////////////////////////////////////////////////////////
+function BeginWinOgreNext()
+{
+    local intro = _("Welcome to the OGRE-Next project wizard.\n\nThis creates a C++ project for OGRE-Next 3.0.0.\n\nI'm not doing anything useful yet. Your wizard truly\n\nPress Cancel.");
+    Wizard.AddInfoPage(_T("OgreNextWinIntro"), intro);
+    Wizard.AddProjectPathPage();
+    Wizard.AddCompilerPage(_T(""), _T("*"), true, true);
+}
 
 function BeginWizard()
 {
+
+if (PLATFORM == PLATFORM_MSW)
+{
+    BeginWinOgreNext();
+    return;
+}
     local intro = _("Welcome to the OGRE-Next project wizard.\n\nThis creates an ordinary C++ project for the pinned OGRE-Next 3.0.0 SDK. It is separate from the OGRE project wizard.\n\nCode::Blocks checks out the dependency and engine sources, applies the packaged patches, and installs the SDK under Library/CodeBlocks. The generated project links only that installed SDK.\n\nThe engine MinGW patch is applied first. The Mac engine patch is applied after it. That patch closes the Metal window brace and moves include/GL out of the Apple guard.\n\nCompleted checkout, patch, build, and install stages are skipped.");
     Wizard.AddInfoPage(_T("OgreNextIntro"), intro);
 
